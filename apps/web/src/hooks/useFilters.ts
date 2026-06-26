@@ -1,51 +1,57 @@
-import { useState, useEffect } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { metaApi, type FilterParams } from '../lib/api';
+import { useState, useEffect, useMemo } from 'react';
+import type { DashboardPayload } from '../lib/dashboardCompute';
+import type { FilterParams } from '../lib/api';
 
 export type FilterMode = 'week' | 'daterange';
 
-export function useFilters() {
+export interface WeekOption {
+  week_number: number;
+  week_start: string | null;
+  week_end: string | null;
+}
+
+export function useFilters(dashboard: DashboardPayload | undefined) {
   const [mode, setMode] = useState<FilterMode>('week');
 
-  // Week mode state
-  const { data: years = [] } = useQuery({ queryKey: ['years'], queryFn: metaApi.years });
+  const years = dashboard?.meta.years ?? [];
+  const weeks: WeekOption[] = useMemo(
+    () => (dashboard?.meta.weeks ?? []).map((w) => ({
+      week_number: w.week_number,
+      week_start: w.week_start,
+      week_end: w.week_end,
+    })),
+    [dashboard]
+  );
+
   const [selectedYear, setSelectedYear] = useState<number | null>(null);
+  const [selectedWeek, setSelectedWeek] = useState<number | null>(null);
 
   useEffect(() => {
     if (years.length > 0 && selectedYear === null) setSelectedYear(years[0]);
   }, [years, selectedYear]);
 
-  const { data: weeks = [] } = useQuery({
-    queryKey: ['weeks', selectedYear],
-    queryFn: () => metaApi.weeks(selectedYear!),
-    enabled: selectedYear !== null,
-  });
-
-  const [selectedWeek, setSelectedWeek] = useState<number | null>(null);
-
   useEffect(() => {
     if (weeks.length > 0 && selectedWeek === null) {
-      setSelectedWeek(weeks[weeks.length - 1].week_number);
+      setSelectedWeek(weeks[0].week_number);
     }
   }, [weeks, selectedWeek]);
+
+  const gp = dashboard?.meta.generateParams;
+  const today = new Date().toISOString().slice(0, 10);
+  const weekAgo = new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10);
+  const [startDate, setStartDate] = useState(gp?.startDate || weekAgo);
+  const [endDate, setEndDate] = useState(gp?.endDate || today);
+
+  useEffect(() => {
+    if (gp?.startDate) setStartDate(gp.startDate);
+    if (gp?.endDate) setEndDate(gp.endDate);
+  }, [gp?.startDate, gp?.endDate]);
 
   const handleYearChange = (year: number) => {
     setSelectedYear(year);
     setSelectedWeek(null);
   };
 
-  // Date range mode state
-  const { data: dbRange } = useQuery({
-    queryKey: ['date-range'],
-    queryFn: metaApi.dateRange,
-  });
-
-  const today = new Date().toISOString().slice(0, 10);
-  const weekAgo = new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString().slice(0, 10);
-  const [startDate, setStartDate] = useState<string>(weekAgo);
-  const [endDate, setEndDate] = useState<string>(today);
-
-  // Build the FilterParams object used by all API calls
   const filterParams: FilterParams | null =
     mode === 'daterange'
       ? { startDate, endDate }
@@ -61,23 +67,20 @@ export function useFilters() {
       : '';
 
   return {
-    // week mode
     years,
     weeks,
     selectedYear,
     selectedWeek,
     setSelectedYear: handleYearChange,
     setSelectedWeek,
-    // date range mode
     mode,
     setMode,
     startDate,
     endDate,
     setStartDate,
     setEndDate,
-    dbRange,
-    // combined
     filterParams,
     filterLabel,
+    generatedAt: dashboard?.meta.generatedAt,
   };
 }

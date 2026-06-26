@@ -1,0 +1,22 @@
+{
+  "name": "qa-dashboard-batch",
+  "version": "1.0.0",
+  "private": true,
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "generate": "ts-node src/cli.ts"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.106.0",
+    "dotenv": "^16.4.5",
+    "pdf-parse": "^2.4.5",
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "@types/node": "^20.12.7",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.4.5"
+  }
+}

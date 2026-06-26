@@ -1,17 +1,8 @@
 import React from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
-import { useQuery } from '@tanstack/react-query';
-import { resourcesApi } from '../../lib/api';
 
-export function WeeklyTrendsChart({ year }: { year: number }) {
-  const { data = [], isLoading } = useQuery({
-    queryKey: ['weekly-trends', year],
-    queryFn: () => resourcesApi.weeklyTrends(year),
-  });
-
-  if (isLoading) return <div className="h-72 flex items-center justify-center text-slate-400 text-sm">Loading...</div>;
-  if (!data.length) return <div className="h-72 flex items-center justify-center text-slate-400 text-sm">No trend data for {year}</div>;
-
+export function WeeklyTrendsChart({ data }: { data: { week: number; testsExecuted: number; bugsReported: number; bugsClosed: number }[] }) {
+  if (!data.length) return <div className="h-72 flex items-center justify-center text-slate-400 text-sm">No trend data</div>;
   return (
     <ResponsiveContainer width="100%" height={280}>
       <LineChart data={data} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
