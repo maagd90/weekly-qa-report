@@ -93,3 +93,20 @@ export const aiApi = {
   listReports: () => api.get('/ai/reports').then((r) => r.data),
   getReport: (id: number) => api.get(`/ai/reports/${id}`).then((r) => r.data),
 };
+
+export const jenkinsApi = {
+  jobs: () => api.get('/jenkins/jobs').then((r) => r.data),
+  builds: (params?: { jobName?: string; result?: string; limit?: number }) =>
+    api.get('/jenkins/builds', { params }).then((r) => r.data),
+  jobBuilds: (jobName: string, limit = 30) =>
+    api.get(`/jenkins/jobs/${encodeURIComponent(jobName)}/builds?limit=${limit}`).then((r) => r.data),
+  summary: () => api.get('/jenkins/summary').then((r) => r.data),
+  trends: (params?: { jobName?: string; days?: number }) =>
+    api.get('/jenkins/trends', { params }).then((r) => r.data),
+  sync: () => api.post('/jenkins/sync').then((r) => r.data),
+  getSettings: () => api.get('/settings/jenkins').then((r) => r.data),
+  saveSettings: (payload: { url: string; username: string; apiToken: string; pollIntervalMinutes: number }) =>
+    api.post('/settings/jenkins', payload).then((r) => r.data),
+  deleteSettings: () => api.delete('/settings/jenkins').then((r) => r.data),
+  testConnection: () => api.post('/settings/jenkins/test').then((r) => r.data),
+};

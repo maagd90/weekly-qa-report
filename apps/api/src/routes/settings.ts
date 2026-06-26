@@ -27,15 +27,37 @@ function decrypt(encoded: string): string {
   return Buffer.concat([decipher.update(enc), decipher.final()]).toString('utf8');
 }
 
-export function getClaudeApiKey(): string | null {
+function getSetting(key: string): string | null {
   const db = getDb();
-  const row = db.prepare(`SELECT value FROM settings WHERE key = 'claude_api_key'`).get() as { value: string } | undefined;
+  const row = db.prepare(`SELECT value FROM settings WHERE key = ?`).get(key) as { value: string } | undefined;
   if (!row) return null;
-  try {
-    return decrypt(row.value);
-  } catch {
-    return null;
-  }
+  try { return decrypt(row.value); } catch { return null; }
+}
+
+function setSetting(key: string, value: string): void {
+  const db = getDb();
+  db.prepare(`INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)`)
+    .run(key, encrypt(value), new Date().toISOString());
+}
+
+export function getClaudeApiKey(): string | null {
+  return getSetting('claude_api_key');
+}
+
+export interface JenkinsConfig {
+  url: string;
+  username: string;
+  apiToken: string;
+  pollIntervalMinutes: number;
+}
+
+export function getJenkinsConfig(): JenkinsConfig | null {
+  const url      = getSetting('jenkins_url');
+  const username = getSetting('jenkins_username');
+  const apiToken = getSetting('jenkins_api_token');
+  if (!url || !apiToken) return null;
+  const pollStr = getSetting('jenkins_poll_interval');
+  return { url: url.replace(/\/$/, ''), username: username || '', apiToken, pollIntervalMinutes: pollStr ? Number(pollStr) : 5 };
 }
 
 // GET /api/settings/ai — key configured status only
@@ -79,6 +101,61 @@ router.post('/ai/test', async (_req: Request, res: Response) => {
     });
     const text = msg.content[0]?.type === 'text' ? msg.content[0].text : '';
     res.json({ ok: true, response: text.trim() });
+  } catch (err) {
+    res.status(400).json({ ok: false, error: (err as Error).message });
+  }
+});
+
+// ── Jenkins settings ──────────────────────────────────────────────────────
+
+// GET /api/settings/jenkins
+router.get('/jenkins', (_req: Request, res: Response) => {
+  const cfg = getJenkinsConfig();
+  const url = getSetting('jenkins_url');
+  res.json({
+    configured: !!cfg,
+    url: url || '',
+    username: getSetting('jenkins_username') || '',
+    pollIntervalMinutes: cfg?.pollIntervalMinutes ?? 5,
+  });
+});
+
+// POST /api/settings/jenkins
+router.post('/jenkins', (req: Request, res: Response) => {
+  const { url, username, apiToken, pollIntervalMinutes } = req.body as {
+    url?: string; username?: string; apiToken?: string; pollIntervalMinutes?: number;
+  };
+  if (!url || !apiToken) return res.status(400).json({ error: 'url and apiToken are required' });
+  setSetting('jenkins_url', url.trim());
+  setSetting('jenkins_username', username?.trim() || '');
+  setSetting('jenkins_api_token', apiToken.trim());
+  setSetting('jenkins_poll_interval', String(pollIntervalMinutes ?? 5));
+
+  // (Re)start the poller immediately with the new config
+  const newCfg = getJenkinsConfig();
+  if (newCfg) {
+    const { startJenkinsPoller } = require('../services/jenkinsPoller');
+    startJenkinsPoller(newCfg);
+  }
+
+  res.json({ ok: true, configured: true });
+});
+
+// DELETE /api/settings/jenkins
+router.delete('/jenkins', (_req: Request, res: Response) => {
+  const db = getDb();
+  db.prepare(`DELETE FROM settings WHERE key IN ('jenkins_url','jenkins_username','jenkins_api_token','jenkins_poll_interval')`).run();
+  res.json({ ok: true, configured: false });
+});
+
+// POST /api/settings/jenkins/test — ping Jenkins and list jobs
+router.post('/jenkins/test', async (_req: Request, res: Response) => {
+  const cfg = getJenkinsConfig();
+  if (!cfg) return res.status(400).json({ error: 'Jenkins not configured' });
+  try {
+    const { testJenkinsConnection } = require('../services/jenkinsPoller');
+    const result = await testJenkinsConnection(cfg);
+    res.json(result);
   } catch (err) {
     res.status(400).json({ ok: false, error: (err as Error).message });
   }

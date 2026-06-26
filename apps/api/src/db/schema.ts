@@ -120,5 +120,32 @@ function initSchema(db: Database.Database) {
       report_markdown TEXT,
       tool_calls_json TEXT
     );
+
+    CREATE TABLE IF NOT EXISTS jenkins_jobs (
+      job_name TEXT PRIMARY KEY,
+      display_name TEXT,
+      url TEXT,
+      job_type TEXT,
+      last_synced TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS jenkins_builds (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      job_name TEXT NOT NULL,
+      build_number INTEGER NOT NULL,
+      result TEXT,
+      status TEXT DEFAULT 'FINISHED',
+      duration_ms INTEGER DEFAULT 0,
+      estimated_duration_ms INTEGER DEFAULT 0,
+      timestamp TEXT,
+      tests_total INTEGER DEFAULT 0,
+      tests_passed INTEGER DEFAULT 0,
+      tests_failed INTEGER DEFAULT 0,
+      tests_skipped INTEGER DEFAULT 0,
+      branch TEXT,
+      triggered_by TEXT,
+      description TEXT,
+      UNIQUE(job_name, build_number)
+    );
   `);
 }

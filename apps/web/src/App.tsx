@@ -1,12 +1,13 @@
 import React, { useState } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { LayoutDashboard, FolderKanban, Upload, Brain, Settings } from 'lucide-react';
+import { LayoutDashboard, FolderKanban, Upload, Brain, Settings, Hammer } from 'lucide-react';
 import clsx from 'clsx';
 import { GlobalFilters } from './components/filters/GlobalFilters';
 import { ResourcesPage } from './pages/ResourcesPage';
 import { ProjectStatusPage } from './pages/ProjectStatusPage';
 import { ImportStatusPage } from './pages/ImportStatusPage';
 import { AiReportPage } from './pages/AiReportPage';
+import { BuildsPage } from './pages/BuildsPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { useFilters } from './hooks/useFilters';
 
@@ -14,13 +15,14 @@ const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, staleTime: 30_000 } },
 });
 
-type Tab = 'resources' | 'projects' | 'import' | 'ai' | 'settings';
+type Tab = 'resources' | 'projects' | 'import' | 'ai' | 'builds' | 'settings';
 
 const TABS: { id: Tab; label: string; icon: React.ReactNode; hideFilters?: boolean }[] = [
   { id: 'resources', label: 'Resources',      icon: <LayoutDashboard size={16} /> },
   { id: 'projects',  label: 'Project Status', icon: <FolderKanban size={16} /> },
   { id: 'import',    label: 'Import Data',    icon: <Upload size={16} />,      hideFilters: true },
   { id: 'ai',        label: 'AI Report',      icon: <Brain size={16} />,       hideFilters: true },
+  { id: 'builds',    label: 'Builds',         icon: <Hammer size={16} />,      hideFilters: true },
   { id: 'settings',  label: 'Settings',       icon: <Settings size={16} />,    hideFilters: true },
 ];
 
@@ -88,7 +90,7 @@ function AppContent() {
       )}
 
       {/* Page content */}
-      <main className={clsx('flex-1', activeTab === 'ai' ? 'flex flex-col overflow-hidden' : 'overflow-auto')}>
+      <main className={clsx('flex-1', (activeTab === 'ai' || activeTab === 'builds') ? 'flex flex-col overflow-hidden' : 'overflow-auto')}>
         {activeTab === 'resources' && filterParams && (
           <ResourcesPage filter={filterParams} year={filters.selectedYear ?? new Date().getFullYear()} />
         )}
@@ -97,6 +99,7 @@ function AppContent() {
         )}
         {activeTab === 'import' && <ImportStatusPage />}
         {activeTab === 'ai' && <AiReportPage />}
+        {activeTab === 'builds' && <BuildsPage onOpenSettings={() => setActiveTab('settings')} />}
         {activeTab === 'settings' && <SettingsPage />}
 
         {/* No filter selected yet */}
