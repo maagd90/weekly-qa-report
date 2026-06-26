@@ -1,0 +1,29 @@
+version: "3.9"
+
+services:
+  dashboard-api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    restart: unless-stopped
+    environment:
+      - EXCEL_SOURCE_PATH=/data/team-metrics.xlsx
+      - DB_PATH=/data/qa_dashboard.db
+      - PORT=3001
+    volumes:
+      # Mount your Excel file and SQLite DB here.
+      # LOCAL: change ./data to the folder on the manager's Mac containing team-metrics.xlsx
+      # INTERNAL SERVER: mount the shared network drive path
+      - ./data:/data
+    ports:
+      - "3001:3001"
+
+  dashboard-web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    restart: unless-stopped
+    ports:
+      - "3000:80"
+    depends_on:
+      - dashboard-api
