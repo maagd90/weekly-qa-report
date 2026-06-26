@@ -1,0 +1,17 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-slate-50 text-slate-900 antialiased;
+  }
+}
+
+@media print {
+  body { background: white; }
+  .print\:hidden { display: none !important; }
+  .prose { max-width: 100% !important; }
+  h1, h2, h3 { break-after: avoid; }
+  table { break-inside: avoid; }
+}
