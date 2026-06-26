@@ -1,19 +1,24 @@
 FROM node:20-slim AS builder
 WORKDIR /app
 COPY package*.json ./
+COPY apps/batch/package*.json ./apps/batch/
 COPY apps/api/package*.json ./apps/api/
-RUN npm install --workspace=apps/api
+RUN npm install --workspace=apps/batch --workspace=apps/api
 
+COPY apps/batch/tsconfig.json ./apps/batch/
+COPY apps/batch/src ./apps/batch/src
 COPY apps/api/tsconfig.json ./apps/api/
 COPY apps/api/src ./apps/api/src
-RUN cd apps/api && npx tsc
+RUN npm run build --workspace=apps/batch && npm run build --workspace=apps/api
 
 FROM node:20-slim
-RUN apt-get update && apt-get install -y --no-install-recommends python3 make g++ && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
-COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/apps/api/dist ./apps/api/dist
+COPY package*.json ./
+COPY apps/batch/package.json ./apps/batch/
 COPY apps/api/package.json ./apps/api/
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/apps/batch/dist ./apps/batch/dist
+COPY --from=builder /app/apps/api/dist ./apps/api/dist
 
 EXPOSE 3001
 CMD ["node", "apps/api/dist/index.js"]

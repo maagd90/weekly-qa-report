@@ -6,15 +6,17 @@ services:
       context: .
       dockerfile: apps/api/Dockerfile
     restart: unless-stopped
+    env_file:
+      - .env
     environment:
-      - EXCEL_SOURCE_PATH=/data/team-metrics.xlsx
-      - DB_PATH=/data/qa_dashboard.db
       - PORT=3001
+      - INPUT_DIR=/data/input
+      - OUTPUT_DIR=/data/output
+      - CONFIG_DIR=/data/config
     volumes:
-      # Mount your Excel file and SQLite DB here.
-      # LOCAL: change ./data to the folder on the manager's Mac containing team-metrics.xlsx
-      # INTERNAL SERVER: mount the shared network drive path
-      - ./data:/data
+      - ./input:/data/input
+      - ./output:/data/output
+      - ./config:/data/config
     ports:
       - "3001:3001"
 

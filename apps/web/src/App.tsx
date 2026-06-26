@@ -1,43 +1,52 @@
 import React, { useState } from 'react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { LayoutDashboard, FolderKanban, Upload, Brain, Settings, Hammer } from 'lucide-react';
+import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query';
+import { LayoutDashboard, FolderKanban, Upload, Brain, Settings, BarChart3 } from 'lucide-react';
 import clsx from 'clsx';
 import { GlobalFilters } from './components/filters/GlobalFilters';
 import { ResourcesPage } from './pages/ResourcesPage';
 import { ProjectStatusPage } from './pages/ProjectStatusPage';
 import { ImportStatusPage } from './pages/ImportStatusPage';
 import { AiReportPage } from './pages/AiReportPage';
-import { BuildsPage } from './pages/BuildsPage';
 import { SettingsPage } from './pages/SettingsPage';
+import { ChartPickerPanel, EmptyDashboard } from './components/common/ChartPickerPanel';
 import { useFilters } from './hooks/useFilters';
+import { batchApi } from './lib/api';
+import type { DashboardPayload } from './lib/dashboardCompute';
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, staleTime: 30_000 } },
 });
 
-type Tab = 'resources' | 'projects' | 'import' | 'ai' | 'builds' | 'settings';
+type Tab = 'resources' | 'projects' | 'import' | 'ai' | 'settings' | 'charts';
 
 const TABS: { id: Tab; label: string; icon: React.ReactNode; hideFilters?: boolean }[] = [
-  { id: 'resources', label: 'Resources',      icon: <LayoutDashboard size={16} /> },
-  { id: 'projects',  label: 'Project Status', icon: <FolderKanban size={16} /> },
-  { id: 'import',    label: 'Import Data',    icon: <Upload size={16} />,      hideFilters: true },
-  { id: 'ai',        label: 'AI Report',      icon: <Brain size={16} />,       hideFilters: true },
-  { id: 'builds',    label: 'Builds',         icon: <Hammer size={16} />,      hideFilters: true },
-  { id: 'settings',  label: 'Settings',       icon: <Settings size={16} />,    hideFilters: true },
+  { id: 'resources', label: 'Resources', icon: <LayoutDashboard size={16} /> },
+  { id: 'projects', label: 'Project Status', icon: <FolderKanban size={16} /> },
+  { id: 'import', label: 'Import Data', icon: <Upload size={16} />, hideFilters: true },
+  { id: 'ai', label: 'AI Report', icon: <Brain size={16} />, hideFilters: true },
+  { id: 'charts', label: 'Charts', icon: <BarChart3 size={16} />, hideFilters: true },
+  { id: 'settings', label: 'Settings', icon: <Settings size={16} />, hideFilters: true },
 ];
 
 function AppContent() {
   const [activeTab, setActiveTab] = useState<Tab>('resources');
-  const filters = useFilters();
 
+  const { data: dashboard, isLoading, refetch } = useQuery<DashboardPayload | null>({
+    queryKey: ['dashboard'],
+    queryFn: batchApi.getDashboard,
+    retry: false,
+  });
+
+  const filters = useFilters(dashboard ?? undefined);
   const currentTab = TABS.find((t) => t.id === activeTab)!;
-  const showFilters = !currentTab.hideFilters;
-
+  const showFilters = !currentTab.hideFilters && !!dashboard;
   const filterParams = filters.filterParams;
+  const hasDashboard = !!dashboard;
+
+  const goGenerate = () => setActiveTab('ai');
 
   return (
     <div className="min-h-screen bg-slate-100 flex flex-col">
-      {/* Header */}
       <header className="bg-white border-b border-slate-200 shadow-sm print:hidden">
         <div className="px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -46,22 +55,18 @@ function AppContent() {
             </div>
             <div>
               <h1 className="text-lg font-bold text-slate-800">QA Dashboard</h1>
-              <p className="text-xs text-slate-400">Team Metrics & AI Reports</p>
+              <p className="text-xs text-slate-400">File-based batch · no database</p>
             </div>
           </div>
         </div>
-
-        {/* Tabs */}
-        <nav className="flex px-6 -mb-px gap-1">
+        <nav className="flex px-6 -mb-px gap-1 overflow-x-auto">
           {TABS.map((tab) => (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
               className={clsx(
-                'flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors',
-                activeTab === tab.id
-                  ? 'border-blue-600 text-blue-600'
-                  : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'
+                'flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap',
+                activeTab === tab.id ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-500 hover:text-slate-700'
               )}
             >
               {tab.icon}
@@ -71,7 +76,6 @@ function AppContent() {
         </nav>
       </header>
 
-      {/* Global filters (shown only on data tabs) */}
       {showFilters && (
         <GlobalFilters
           years={filters.years}
@@ -86,26 +90,37 @@ function AppContent() {
           endDate={filters.endDate}
           onStartDateChange={filters.setStartDate}
           onEndDateChange={filters.setEndDate}
+          generatedAt={filters.generatedAt}
         />
       )}
 
-      {/* Page content */}
-      <main className={clsx('flex-1', (activeTab === 'ai' || activeTab === 'builds') ? 'flex flex-col overflow-hidden' : 'overflow-auto')}>
-        {activeTab === 'resources' && filterParams && (
-          <ResourcesPage filter={filterParams} year={filters.selectedYear ?? new Date().getFullYear()} />
+      <main className={clsx('flex-1', activeTab === 'ai' ? 'flex flex-col overflow-hidden min-h-0' : 'overflow-auto')}>
+        {isLoading && (activeTab === 'resources' || activeTab === 'projects') && (
+          <div className="flex items-center justify-center h-64 text-slate-400 text-sm">Loading dashboard…</div>
         )}
-        {activeTab === 'projects' && filterParams && (
-          <ProjectStatusPage filter={filterParams} year={filters.selectedYear ?? new Date().getFullYear()} />
+
+        {!isLoading && !hasDashboard && (activeTab === 'resources' || activeTab === 'projects') && (
+          <EmptyDashboard onGenerate={goGenerate} />
+        )}
+
+        {hasDashboard && activeTab === 'resources' && filterParams && (
+          <ResourcesPage dashboard={dashboard} filter={filterParams} year={filters.selectedYear ?? new Date().getFullYear()} />
+        )}
+        {hasDashboard && activeTab === 'projects' && filterParams && (
+          <ProjectStatusPage dashboard={dashboard} filter={filterParams} year={filters.selectedYear ?? new Date().getFullYear()} />
         )}
         {activeTab === 'import' && <ImportStatusPage />}
-        {activeTab === 'ai' && <AiReportPage />}
-        {activeTab === 'builds' && <BuildsPage onOpenSettings={() => setActiveTab('settings')} />}
+        {activeTab === 'ai' && <AiReportPage onGenerated={() => refetch()} />}
+        {activeTab === 'charts' && (
+          <div className="p-6 max-w-2xl mx-auto">
+            <ChartPickerPanel />
+          </div>
+        )}
         {activeTab === 'settings' && <SettingsPage />}
 
-        {/* No filter selected yet */}
-        {(activeTab === 'resources' || activeTab === 'projects') && !filterParams && (
+        {hasDashboard && (activeTab === 'resources' || activeTab === 'projects') && !filterParams && (
           <div className="flex items-center justify-center h-64 text-slate-400 text-sm">
-            Select a year and week (or date range) to load data.
+            Select a year and week (or date range) to filter charts.
           </div>
         )}
       </main>

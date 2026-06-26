@@ -3,11 +3,13 @@
   "private": true,
   "workspaces": [
     "apps/api",
-    "apps/web"
+    "apps/web",
+    "apps/batch"
   ],
   "scripts": {
     "dev": "concurrently \"npm run dev --workspace=apps/api\" \"npm run dev --workspace=apps/web\"",
-    "build": "npm run build --workspace=apps/api && npm run build --workspace=apps/web",
+    "build": "npm run build --workspace=apps/batch && npm run build --workspace=apps/api && npm run build --workspace=apps/web",
+    "generate": "npm run generate --workspace=apps/batch",
     "install:all": "npm install"
   },
   "devDependencies": {

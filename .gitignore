@@ -1,7 +1,13 @@
+input/
+output/
+config/mappings/
+*.db
+*.db-shm
+*.db-wal
+
 node_modules/
 dist/
-build/
-*.db
 .env
+data/
+*.tsbuildinfo
 .DS_Store
-*.log

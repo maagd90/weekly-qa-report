@@ -1,71 +1,61 @@
 import React, { useState, useRef, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Upload, CheckCircle, AlertCircle, FileText, X, ArrowRight, RefreshCw } from 'lucide-react';
+import { Upload, CheckCircle, AlertCircle, FileText, ArrowRight, Trash2, FolderOpen } from 'lucide-react';
 import clsx from 'clsx';
-import { uploadApi, importApi } from '../lib/api';
-
-interface UploadResponse {
-  format: string;
-  needsMapping: boolean;
-  headers?: string[];
-  sampleRows?: string[][];
-  filePath?: string;
-  importResult?: ImportResult;
-  text?: string;
-}
-
-interface ImportResult {
-  rowsAdded: number;
-  rowsUpdated: number;
-  rowsSkipped: number;
-  errors: string[];
-  importedAt: string;
-}
+import { batchApi } from '../lib/api';
 
 const TEMPLATE_COLUMNS = [
-  'ResourceID', 'CR_ID', 'Year', 'WeekNumber', 'WeekStart', 'WeekEnd',
-  'TC_Planned', 'TC_Executed', 'TC_Passed', 'TC_Failed',
-  'Bugs_Reported', 'Bugs_Closed', 'Hours_Spent', 'Notes',
+  'ResourceID', 'ResourceName', 'Team', 'Role',
+  'ProjectID', 'ProjectName', 'CR_ID', 'CR_Title',
+  'Year', 'WeekNumber', 'WeekStart', 'WeekEnd',
+  'TestCasesPlanned', 'TestCasesExecuted', 'TestCasesPassed', 'TestCasesFailed',
+  'BugsReported', 'BugsClosed', 'Hours_Spent', 'Notes',
+  'Status', 'Priority', 'PercentComplete', 'KeyAccomplishments', 'Risks', 'Blockers',
 ];
+
+interface StagedFile {
+  name: string;
+  size: number;
+  modifiedAt: string;
+}
 
 export function ImportStatusPage() {
   const queryClient = useQueryClient();
-
-  const { data: importStatus } = useQuery({
-    queryKey: ['import-status'],
-    queryFn: importApi.status,
-    refetchInterval: 10_000,
-  });
-
   const [isDragging, setIsDragging] = useState(false);
-  const [uploadResponse, setUploadResponse] = useState<UploadResponse | null>(null);
+  const [mappingOpen, setMappingOpen] = useState(false);
+  const [pattern, setPattern] = useState('');
   const [mapping, setMapping] = useState<Record<string, string>>({});
-  const [weekYear, setWeekYear] = useState<number>(new Date().getFullYear());
-  const [weekNumber, setWeekNumber] = useState<number>(1);
+  const [weekYear, setWeekYear] = useState(new Date().getFullYear());
+  const [weekNumber, setWeekNumber] = useState(1);
+  const [headers, setHeaders] = useState<string[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const uploadMutation = useMutation({
-    mutationFn: uploadApi.upload,
-    onSuccess: (data: UploadResponse) => {
-      setUploadResponse(data);
-      if (!data.needsMapping && data.importResult) {
-        queryClient.invalidateQueries();
-      }
-    },
+  const { data: files = [], isLoading } = useQuery<StagedFile[]>({
+    queryKey: ['input-files'],
+    queryFn: batchApi.listInputFiles,
+    refetchInterval: 15_000,
   });
 
-  const applyMappingMutation = useMutation({
-    mutationFn: uploadApi.applyMapping,
+  const uploadMutation = useMutation({
+    mutationFn: batchApi.upload,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['input-files'] }),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: batchApi.deleteInputFile,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['input-files'] }),
+  });
+
+  const saveMappingMutation = useMutation({
+    mutationFn: batchApi.saveMapping,
     onSuccess: () => {
-      setUploadResponse(null);
+      setMappingOpen(false);
       setMapping({});
-      queryClient.invalidateQueries();
+      setHeaders([]);
     },
   });
 
   const handleFile = useCallback((file: File) => {
-    setUploadResponse(null);
-    setMapping({});
     uploadMutation.mutate(file);
   }, [uploadMutation]);
 
@@ -76,31 +66,15 @@ export function ImportStatusPage() {
     if (file) handleFile(file);
   };
 
-  const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) handleFile(file);
-  };
-
-  const handleApplyMapping = () => {
-    if (!uploadResponse?.filePath) return;
-    applyMappingMutation.mutate({
-      filePath: uploadResponse.filePath,
-      mapping,
-      weekYear,
-      weekNumber,
-    });
-  };
-
-  const lastResult: ImportResult | null = importStatus || null;
-
   return (
     <div className="p-6 max-w-4xl mx-auto space-y-8">
       <div>
-        <h2 className="text-xl font-bold text-slate-800">Data Import</h2>
-        <p className="text-sm text-slate-500 mt-1">Upload an Excel, CSV, or PDF file to populate the dashboard with fresh data.</p>
+        <h2 className="text-xl font-bold text-slate-800">Stage Input Files</h2>
+        <p className="text-sm text-slate-500 mt-1">
+          Upload exports to the <code className="bg-slate-100 px-1 rounded">input/</code> folder. Files are stored only — go to AI Report to generate the dashboard and report.
+        </p>
       </div>
 
-      {/* Drop Zone */}
       <div
         onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
         onDragLeave={() => setIsDragging(false)}
@@ -111,15 +85,15 @@ export function ImportStatusPage() {
           isDragging ? 'border-blue-500 bg-blue-50' : 'border-slate-300 hover:border-blue-400 hover:bg-slate-50'
         )}
       >
-        <input ref={fileInputRef} type="file" accept=".xlsx,.xls,.csv,.pdf" className="hidden" onChange={handleFileInput} />
+        <input ref={fileInputRef} type="file" accept=".xlsx,.xls,.csv,.tsv,.json,.pdf,.xml" className="hidden"
+          onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); e.target.value = ''; }} />
         <Upload size={36} className={clsx('mx-auto mb-3', isDragging ? 'text-blue-500' : 'text-slate-400')} />
         <p className="text-base font-medium text-slate-700">
           {uploadMutation.isPending ? 'Uploading…' : 'Drop file here or click to browse'}
         </p>
-        <p className="text-sm text-slate-400 mt-1">Supports XLSX, CSV, PDF (max 20 MB)</p>
+        <p className="text-sm text-slate-400 mt-1">XLSX, CSV, TSV, JSON, PDF, XML (max 20 MB)</p>
       </div>
 
-      {/* Upload error */}
       {uploadMutation.error && (
         <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-sm text-red-700 flex items-start gap-2">
           <AlertCircle size={16} className="mt-0.5 shrink-0" />
@@ -127,171 +101,91 @@ export function ImportStatusPage() {
         </div>
       )}
 
-      {/* Success — no mapping needed */}
-      {uploadResponse && !uploadResponse.needsMapping && uploadResponse.importResult && (
-        <ImportResultCard result={uploadResponse.importResult} onDismiss={() => setUploadResponse(null)} />
+      {uploadMutation.isSuccess && (
+        <div className="bg-green-50 border border-green-200 rounded-xl p-4 text-sm text-green-700 flex items-center gap-2">
+          <CheckCircle size={16} /> File staged. Run Generate Report on the AI Report tab.
+        </div>
       )}
 
-      {/* Mapping panel */}
-      {uploadResponse && uploadResponse.needsMapping && (
-        <div className="bg-white rounded-2xl border border-slate-200 p-6 space-y-6">
-          <div className="flex items-center justify-between">
-            <h3 className="font-semibold text-slate-800 flex items-center gap-2">
-              <FileText size={16} className="text-blue-500" />
-              Column Mapping Required
-            </h3>
-            <button onClick={() => setUploadResponse(null)} className="text-slate-400 hover:text-slate-600">
-              <X size={16} />
-            </button>
-          </div>
+      <div className="bg-white rounded-2xl border border-slate-200 p-6">
+        <div className="flex items-center gap-2 mb-4">
+          <FolderOpen size={18} className="text-blue-500" />
+          <h3 className="font-semibold text-slate-800">Staged files ({files.length})</h3>
+        </div>
+        {isLoading ? (
+          <p className="text-sm text-slate-400">Loading…</p>
+        ) : files.length === 0 ? (
+          <p className="text-sm text-slate-400">No files in input/ yet.</p>
+        ) : (
+          <ul className="divide-y divide-slate-100">
+            {files.map((f) => (
+              <li key={f.name} className="flex items-center gap-3 py-3 text-sm">
+                <FileText size={16} className="text-slate-400 shrink-0" />
+                <span className="font-medium text-slate-700 flex-1 truncate">{f.name}</span>
+                <span className="text-slate-400 text-xs">{(f.size / 1024).toFixed(1)} KB</span>
+                <button onClick={() => deleteMutation.mutate(f.name)} className="text-red-500 hover:text-red-700 p-1" title="Remove">
+                  <Trash2 size={14} />
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
 
-          <p className="text-sm text-slate-600">
-            This file uses different column names. Map each source column to the corresponding template column.
-            Columns left as "— Skip —" will be ignored.
-          </p>
+      <div className="bg-white rounded-2xl border border-slate-200 p-6 space-y-4">
+        <div className="flex items-center justify-between">
+          <h3 className="font-semibold text-slate-800">JIRA column mapping</h3>
+          <button onClick={() => setMappingOpen(!mappingOpen)} className="text-sm text-blue-600 hover:underline">
+            {mappingOpen ? 'Hide' : 'Configure mapping'}
+          </button>
+        </div>
+        <p className="text-sm text-slate-500">
+          Save column maps for JIRA or custom exports. Use a filename pattern (e.g. <code className="bg-slate-100 px-1 rounded">*jira*.csv</code>).
+        </p>
 
-          {/* Sample preview */}
-          {uploadResponse.sampleRows && uploadResponse.sampleRows.length > 0 && (
-            <div className="overflow-x-auto rounded-xl border border-slate-200">
-              <table className="text-xs">
-                <thead>
-                  <tr className="bg-slate-50">
-                    {uploadResponse.headers?.map((h) => (
-                      <th key={h} className="px-3 py-2 text-left font-semibold text-slate-500">{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {uploadResponse.sampleRows.slice(0, 3).map((row, i) => (
-                    <tr key={i} className="border-t border-slate-100">
-                      {row.map((cell, j) => (
-                        <td key={j} className="px-3 py-1.5 text-slate-600">{cell}</td>
-                      ))}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+        {mappingOpen && (
+          <div className="space-y-4 border-t border-slate-100 pt-4">
+            <div className="flex gap-3 flex-wrap">
+              <input type="text" placeholder="Filename pattern" value={pattern} onChange={(e) => setPattern(e.target.value)}
+                className="border border-slate-300 rounded-lg px-3 py-2 text-sm flex-1 min-w-[200px]" />
+              <input type="number" value={weekYear} onChange={(e) => setWeekYear(Number(e.target.value))} className="w-24 border rounded-lg px-2 py-2 text-sm" placeholder="Year" />
+              <input type="number" min={1} max={53} value={weekNumber} onChange={(e) => setWeekNumber(Number(e.target.value))} className="w-20 border rounded-lg px-2 py-2 text-sm" placeholder="Week" />
             </div>
-          )}
-
-          {/* Mapping grid */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {uploadResponse.headers?.map((srcCol) => (
+            <div className="flex gap-2">
+              <button type="button" onClick={() => setHeaders(['Issue key', 'Summary', 'Assignee', 'Status', 'Priority', 'Created'])}
+                className="text-xs text-slate-500 underline">Load JIRA sample columns</button>
+            </div>
+            {headers.map((srcCol) => (
               <div key={srcCol} className="flex items-center gap-2 bg-slate-50 rounded-xl px-3 py-2">
                 <span className="text-sm font-medium text-slate-700 flex-1 truncate">{srcCol}</span>
                 <ArrowRight size={14} className="text-slate-400 shrink-0" />
-                <select
-                  value={mapping[srcCol] || ''}
-                  onChange={(e) => setMapping((m) => ({ ...m, [srcCol]: e.target.value }))}
-                  className="text-sm border border-slate-300 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-400"
-                >
+                <select value={mapping[srcCol] || ''} onChange={(e) => setMapping((m) => ({ ...m, [srcCol]: e.target.value }))}
+                  className="text-sm border border-slate-300 rounded-lg px-2 py-1">
                   <option value="">— Skip —</option>
-                  {TEMPLATE_COLUMNS.map((col) => (
-                    <option key={col} value={col}>{col}</option>
-                  ))}
+                  {TEMPLATE_COLUMNS.map((col) => <option key={col} value={col}>{col}</option>)}
                 </select>
               </div>
             ))}
-          </div>
-
-          {/* Week context for JIRA imports */}
-          <div className="flex gap-4">
-            <div className="flex items-center gap-2">
-              <label className="text-sm text-slate-600 font-medium">Year</label>
-              <input type="number" value={weekYear} onChange={(e) => setWeekYear(Number(e.target.value))}
-                className="w-24 border border-slate-300 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
-            </div>
-            <div className="flex items-center gap-2">
-              <label className="text-sm text-slate-600 font-medium">Week #</label>
-              <input type="number" min={1} max={53} value={weekNumber} onChange={(e) => setWeekNumber(Number(e.target.value))}
-                className="w-20 border border-slate-300 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
-            </div>
-          </div>
-
-          <div className="flex gap-3">
             <button
-              onClick={handleApplyMapping}
-              disabled={applyMappingMutation.isPending}
-              className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-sm px-5 py-2 rounded-xl transition disabled:opacity-60"
+              onClick={() => saveMappingMutation.mutate({ pattern, mapping, weekYear, weekNumber })}
+              disabled={!pattern.trim() || saveMappingMutation.isPending}
+              className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-sm px-4 py-2 rounded-lg disabled:opacity-50"
             >
-              {applyMappingMutation.isPending ? <RefreshCw size={14} className="animate-spin" /> : <CheckCircle size={14} />}
-              Apply Mapping & Import
-            </button>
-            <button onClick={() => setUploadResponse(null)} className="text-sm text-slate-500 hover:text-slate-700 px-3 py-2">
-              Cancel
+              <CheckCircle size={14} /> Save mapping
             </button>
           </div>
+        )}
+      </div>
 
-          {applyMappingMutation.error && (
-            <p className="text-sm text-red-600">{(applyMappingMutation.error as Error).message}</p>
-          )}
-          {applyMappingMutation.isSuccess && (
-            <p className="text-sm text-green-600 flex items-center gap-1"><CheckCircle size={14} /> Import successful!</p>
-          )}
-        </div>
-      )}
-
-      {/* Last import status */}
-      {lastResult && !uploadResponse && (
-        <div className="bg-white rounded-2xl border border-slate-200 p-6">
-          <h3 className="font-semibold text-slate-700 mb-4">Last Import Status</h3>
-          <LastImportStatus result={lastResult} />
-        </div>
-      )}
-
-      {/* Supported formats card */}
       <div className="bg-slate-50 rounded-2xl border border-slate-200 p-5">
-        <h4 className="text-sm font-semibold text-slate-700 mb-3">Supported Formats</h4>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm text-slate-600">
-          <FormatCard ext="XLSX / XLS" desc="Template format with 5 sheets (Resources, Projects, CRs, Weekly_Log, Project_Status_Weekly). Data is imported directly." />
-          <FormatCard ext="CSV" desc="Single-sheet CSV. Use the column mapper if your CSV is a JIRA export or other custom format." />
-          <FormatCard ext="PDF" desc="Text extracted and shown for review. Column mapping panel will appear so you can align PDF table columns to the schema." />
+        <h4 className="text-sm font-semibold text-slate-700 mb-3">Supported formats</h4>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm text-slate-600">
+          <p><strong className="text-blue-600">XLSX</strong> — Template with Resources, Projects, CRs, Weekly_Log, Project_Status_Weekly sheets.</p>
+          <p><strong className="text-blue-600">CSV / TSV</strong> — JIRA exports or custom; use column mapping if needed.</p>
+          <p><strong className="text-blue-600">JSON</strong> — JIRA REST export or template JSON.</p>
+          <p><strong className="text-blue-600">PDF / XML</strong> — Text/table extraction with optional mapping.</p>
         </div>
       </div>
-    </div>
-  );
-}
-
-function ImportResultCard({ result, onDismiss }: { result: ImportResult; onDismiss: () => void }) {
-  const hasErrors = result.errors?.length > 0;
-  return (
-    <div className={clsx('rounded-2xl border p-5', hasErrors ? 'bg-yellow-50 border-yellow-200' : 'bg-green-50 border-green-200')}>
-      <div className="flex items-start justify-between">
-        <h4 className={clsx('font-semibold mb-3', hasErrors ? 'text-yellow-800' : 'text-green-800')}>
-          {hasErrors ? 'Import completed with warnings' : 'Import successful'}
-        </h4>
-        <button onClick={onDismiss} className="text-slate-400 hover:text-slate-600"><X size={16} /></button>
-      </div>
-      <LastImportStatus result={result} />
-    </div>
-  );
-}
-
-function LastImportStatus({ result }: { result: ImportResult }) {
-  return (
-    <div className="space-y-3">
-      <div className="flex gap-6 text-sm">
-        <span className="flex items-center gap-1 text-green-700"><CheckCircle size={14} /> {result.rowsAdded ?? 0} added</span>
-        <span className="flex items-center gap-1 text-blue-700"><RefreshCw size={14} /> {result.rowsUpdated ?? 0} updated</span>
-        <span className="text-slate-500">{result.rowsSkipped ?? 0} skipped</span>
-        {result.importedAt && <span className="text-slate-400 ml-auto">{new Date(result.importedAt).toLocaleString()}</span>}
-      </div>
-      {result.errors?.length > 0 && (
-        <div className="bg-yellow-100 rounded-lg p-3 max-h-40 overflow-y-auto">
-          {result.errors.map((e, i) => (
-            <p key={i} className="text-xs text-yellow-800 font-mono">{e}</p>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function FormatCard({ ext, desc }: { ext: string; desc: string }) {
-  return (
-    <div className="bg-white rounded-xl border border-slate-200 p-3">
-      <p className="font-semibold text-blue-600 text-xs mb-1">{ext}</p>
-      <p className="text-xs text-slate-500">{desc}</p>
     </div>
   );
 }
