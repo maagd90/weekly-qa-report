@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
+import path from 'path';
 import multer from 'multer';
 import fs from 'fs';
-import path from 'path';
 import {
   runGenerate,
   buildDataset,
@@ -41,7 +41,8 @@ async function ensureDataset(): Promise<{ dataset: import('qa-dashboard-batch').
     }
     saveRawDataset(OUTPUT_DIR, dataset, fingerprint);
     return { dataset, fingerprint };
-  } catch {
+  } catch (err) {
+    console.error('[api] buildDataset failed:', (err as Error).message);
     return dataset ? { dataset, fingerprint: cached || fingerprint } : null;
   }
 }
@@ -66,12 +67,20 @@ router.get('/status', (_req: Request, res: Response) => {
 
 const storage = multer.diskStorage({
   destination: (_req, _file, cb) => cb(null, INPUT_DIR),
-  filename: (_req, file, cb) => cb(null, `${Date.now()}_${file.originalname}`),
+  filename: (_req, file, cb) => {
+    const safe = path.basename(file.originalname).replace(/[/\\]/g, '_');
+    cb(null, `${Date.now()}_${safe}`);
+  },
 });
 
 const upload = multer({
   storage,
   limits: { fileSize: 20 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    const ext = path.extname(file.originalname).toLowerCase();
+    if (ext === '.xlsx' || ext === '.xls') cb(null, true);
+    else cb(new Error('Only .xlsx and .xls files are allowed'));
+  },
 });
 
 // POST /api/generate

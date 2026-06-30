@@ -1,14 +1,20 @@
 import fs from 'fs';
 import path from 'path';
-import * as XLSX from 'xlsx';
 import type { Dataset } from '../types/dataset';
 import { emptyDataset } from '../types/dataset';
-import { isZephyrFile, parseZephyr } from './parseZephyr';
-import { isJiraExport, parseJira } from './parseJira';
-import { isOdlFile, parseOdl } from './parseOdl';
+import { readWorkbookRows } from '../utils/readWorkbook';
+import { isZephyrFile, parseZephyrFromRows } from './parseZephyr';
+import { isJiraExport, parseJiraFromRows } from './parseJira';
+import { isOdlFile, parseOdlFromRows } from './parseOdl';
 import { mergeDatasets } from '../merge/mergeDataset';
 
 export type FileFormat = 'xlsx' | 'unknown';
+
+const SHEET_PREFS: Record<string, string[]> = {
+  odl: [],
+  jira: ['general_report'],
+  zephyr: ['Data'],
+};
 
 export function detectFormat(filename: string): FileFormat {
   const ext = path.extname(filename).toLowerCase();
@@ -23,43 +29,56 @@ export function discoverInputFiles(inputDir: string): string[] {
     .filter((p) => fs.statSync(p).isFile());
 }
 
-export function parseFile(filePath: string): Dataset {
-  const format = detectFormat(filePath);
-  if (format !== 'xlsx') {
-    const ds = emptyDataset();
-    ds.meta.warnings.push(`Unsupported format: ${path.basename(filePath)}`);
-    ds.meta.sourceFiles.push(filePath);
-    return ds;
-  }
-
-  const buffer = fs.readFileSync(filePath);
-  const wb = XLSX.read(buffer, { type: 'buffer' });
-  const sheetName = wb.SheetNames[0];
-  const rows = XLSX.utils.sheet_to_json<unknown[]>(wb.Sheets[sheetName], { header: 1, defval: '' }) as unknown[][];
-
+function routeParse(rows: unknown[][], fileName: string, warnings: string[]): Dataset {
   const ds = emptyDataset();
-  ds.meta.sourceFiles.push(filePath);
-
   if (isOdlFile(rows)) {
-    const { uat, file } = parseOdl(filePath);
+    const { uat, file } = parseOdlFromRows(rows, fileName, warnings);
     ds.uat = uat;
     ds.files.push(file);
     return ds;
   }
   if (isJiraExport(rows)) {
-    const { issues, file } = parseJira(filePath);
+    const { issues, file } = parseJiraFromRows(rows, fileName, warnings);
     ds.issues = issues;
     ds.files.push(file);
     return ds;
   }
   if (isZephyrFile(rows)) {
-    const { executions, file } = parseZephyr(filePath);
+    const { executions, file } = parseZephyrFromRows(rows, fileName);
     ds.executions = executions;
     ds.files.push(file);
     return ds;
   }
+  warnings.push(`Unknown xlsx format: ${fileName}`);
+  return ds;
+}
 
-  ds.meta.warnings.push(`Unknown xlsx format: ${path.basename(filePath)}`);
+export function parseFile(filePath: string): Dataset {
+  const format = detectFormat(filePath);
+  const fileName = path.basename(filePath);
+  const ds = emptyDataset();
+  ds.meta.sourceFiles.push(filePath);
+
+  if (format !== 'xlsx') {
+    ds.meta.warnings.push(`Unsupported format: ${fileName}`);
+    return ds;
+  }
+
+  try {
+    const { rows } = readWorkbookRows(filePath, [
+      ...SHEET_PREFS.odl,
+      ...SHEET_PREFS.jira,
+      ...SHEET_PREFS.zephyr,
+    ]);
+    const parsed = routeParse(rows, fileName, ds.meta.warnings);
+    ds.executions = parsed.executions;
+    ds.issues = parsed.issues;
+    ds.uat = parsed.uat;
+    ds.files = parsed.files;
+  } catch (err) {
+    console.error(`[parse] Failed to read ${fileName}:`, (err as Error).message);
+    ds.meta.warnings.push(`Failed to parse ${fileName}: ${(err as Error).message}`);
+  }
   return ds;
 }
 
@@ -70,12 +89,12 @@ export function parseAllFiles(filePaths: string[]): Dataset {
 
 export function sniffFileType(filePath: string): 'zephyr' | 'jira' | 'odl' | 'unknown' {
   try {
-    const buffer = fs.readFileSync(filePath);
-    const wb = XLSX.read(buffer, { type: 'buffer' });
-    const rows = XLSX.utils.sheet_to_json<unknown[]>(wb.Sheets[wb.SheetNames[0]], { header: 1, defval: '' }) as unknown[][];
+    const { rows } = readWorkbookRows(filePath, ['general_report', 'Data']);
     if (isOdlFile(rows)) return 'odl';
     if (isJiraExport(rows)) return 'jira';
     if (isZephyrFile(rows)) return 'zephyr';
-  } catch { /* ignore */ }
+  } catch (err) {
+    console.error(`[sniff] ${path.basename(filePath)}:`, (err as Error).message);
+  }
   return 'unknown';
 }

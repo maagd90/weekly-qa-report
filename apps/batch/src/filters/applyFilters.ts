@@ -17,11 +17,13 @@ function dataDateBounds(dataset: Dataset): { min: string | null; max: string | n
     if (e.updatedAt) dates.push(e.updatedAt);
   }
   for (const i of dataset.issues) {
-    dates.push(i.createdAt, i.updatedAt);
+    if (i.createdAt) dates.push(i.createdAt);
+    if (i.updatedAt) dates.push(i.updatedAt);
     if (i.resolvedAt) dates.push(i.resolvedAt);
   }
   for (const u of dataset.uat) {
-    dates.push(u.submittedAt, u.updatedAt);
+    if (u.submittedAt) dates.push(u.submittedAt);
+    if (u.updatedAt) dates.push(u.updatedAt);
   }
   if (!dates.length) return { min: null, max: null };
   dates.sort();
@@ -58,9 +60,8 @@ function filterIssues(rows: IssueRow[], filter: FilterParams, allDates: boolean)
   if (!allDates && filter.startDate && filter.endDate) {
     const { startDate, endDate } = filter;
     out = out.filter((r) =>
-      inRange(r.updatedAt, startDate, endDate) ||
       (r.resolvedAt ? inRange(r.resolvedAt, startDate, endDate) : false) ||
-      (r.status === 'open' && r.createdAt <= endDate)
+      (r.status === 'open' && r.createdAt !== null && r.createdAt <= endDate)
     );
   }
   const q = (filter.search || '').trim().toLowerCase();
@@ -104,7 +105,7 @@ export function applyFilters(dataset: Dataset, filter: FilterParams): FilteredDa
 
   let executions = filterByProject(dataset.executions, filter.project);
   let issues = filterByProject(dataset.issues, filter.project);
-  let uat = dataset.uat;
+  let uat = filterByProject(dataset.uat, filter.project);
 
   executions = filterExecutions(executions, filter, allDates);
   issues = filterIssues(issues, filter, allDates);

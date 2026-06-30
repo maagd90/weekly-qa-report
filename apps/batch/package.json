@@ -7,7 +7,8 @@
   "scripts": {
     "build": "tsc",
     "generate": "ts-node src/cli.ts",
-    "test": "npm run build && node dist/parse/__tests__/regression.test.js && node dist/export/__tests__/dashboard.test.js"
+    "test": "npm run build && npm run fixtures:synthetic && node dist/parse/__tests__/regression.test.js && node dist/export/__tests__/dashboard.test.js",
+    "fixtures:synthetic": "npx ts-node scripts/generateSyntheticFixtures.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.106.0",

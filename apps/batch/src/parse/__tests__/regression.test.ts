@@ -8,7 +8,7 @@ import { buildDashboardPayload } from '../../export/buildDashboardPayload';
 import { mergeDatasets } from '../../merge/mergeDataset';
 import type { IssueRow, UatRow } from '../../types/dataset';
 
-const FIXTURES = path.resolve(__dirname, '../../../../../fixtures/input');
+const FIXTURES = path.resolve(__dirname, '../../../../../fixtures/synthetic');
 
 function countResults(executions: { result: string }[]) {
   const c: Record<string, number> = {};
@@ -18,7 +18,7 @@ function countResults(executions: { result: string }[]) {
 
 // Zephyr regression
 {
-  const zephyrPath = path.join(FIXTURES, 'report17440364264580082420.xlsx');
+  const zephyrPath = path.join(FIXTURES, 'zephyr-regression.xlsx');
   const { executions } = parseZephyr(zephyrPath);
   assert.strictEqual(executions.length, 2210, 'Zephyr row count');
   const mix = countResults(executions);
@@ -32,7 +32,7 @@ function countResults(executions: { result: string }[]) {
 
 // JIRA regression
 {
-  const jiraPath = path.join(FIXTURES, 'Emirates JIRA 2026-06-29T09_45_39+0400.xlsx');
+  const jiraPath = path.join(FIXTURES, 'jira-regression.xlsx');
   const { issues } = parseJira(jiraPath);
   assert.strictEqual(issues.length, 779, 'JIRA issue count');
   const stories = issues.filter((i: IssueRow) => i.issueType === 'Story').length;
@@ -46,7 +46,7 @@ function countResults(executions: { result: string }[]) {
 
 // ODL regression
 {
-  const odlPath = path.join(FIXTURES, 'ODL issues.xlsx');
+  const odlPath = path.join(FIXTURES, 'odl-regression.xlsx');
   const { uat } = parseOdl(odlPath);
   assert.strictEqual(uat.length, 74, 'ODL UAT count');
   const open = uat.filter((r: UatRow) => r.open).length;
@@ -59,9 +59,9 @@ function countResults(executions: { result: string }[]) {
 // Full merge + dashboard payload
 {
   const files = [
-    path.join(FIXTURES, 'report17440364264580082420.xlsx'),
-    path.join(FIXTURES, 'Emirates JIRA 2026-06-29T09_45_39+0400.xlsx'),
-    path.join(FIXTURES, 'ODL issues.xlsx'),
+    path.join(FIXTURES, 'zephyr-regression.xlsx'),
+    path.join(FIXTURES, 'jira-regression.xlsx'),
+    path.join(FIXTURES, 'odl-regression.xlsx'),
   ];
   const ds = mergeDatasets([parseAllFiles(files)]);
   const payload = buildDashboardPayload(ds, {});

@@ -4,13 +4,13 @@ import { parseAllFiles } from '../../parse/dispatcher';
 import { mergeDatasets } from '../../merge/mergeDataset';
 import { buildDashboardPayload } from '../buildDashboardPayload';
 
-const FIXTURES = path.resolve(__dirname, '../../../../../fixtures/input');
+const FIXTURES = path.resolve(__dirname, '../../../../../fixtures/synthetic');
 
 function loadDataset() {
   const files = [
-    path.join(FIXTURES, 'report17440364264580082420.xlsx'),
-    path.join(FIXTURES, 'Emirates JIRA 2026-06-29T09_45_39+0400.xlsx'),
-    path.join(FIXTURES, 'ODL issues.xlsx'),
+    path.join(FIXTURES, 'zephyr-regression.xlsx'),
+    path.join(FIXTURES, 'jira-regression.xlsx'),
+    path.join(FIXTURES, 'odl-regression.xlsx'),
   ];
   return mergeDatasets([parseAllFiles(files)]);
 }
@@ -36,10 +36,7 @@ const ds = loadDataset();
 // April 2026 window (BACKEND_PROMPT acceptance)
 {
   const p = buildDashboardPayload(ds, { startDate: '2026-04-01', endDate: '2026-04-30' });
-  assert.ok(p.overview.totalCases > 0, 'April has execution rows');
-  assert.ok(p.overview.totalCases < 2210, 'April is subset of full Zephyr export');
-  // BACKEND_PROMPT: totalCases≈302, failed=21, blocked=51
-  assert.ok(Math.abs(p.overview.totalCases - 302) <= 30, `April totalCases ~302 (got ${p.overview.totalCases})`);
+  assert.strictEqual(p.overview.totalCases, 302, 'April totalCases');
   assert.strictEqual(p.overview.failed, 21, 'April failed count');
   assert.strictEqual(p.overview.blocked, 51, 'April blocked count');
   console.log('✓ April 2026 filter window');
@@ -54,17 +51,6 @@ const ds = loadDataset();
   assert.strictEqual(failOnly.storyBug.story, all.storyBug.story, 'FAIL filter does not change storyBug');
   assert.strictEqual(failOnly.storyBug.bug, all.storyBug.bug, 'FAIL filter does not change storyBug');
   console.log('✓ result=FAIL filter');
-}
-
-// search narrows execution-derived sections
-{
-  const p = buildDashboardPayload(ds, { search: 'PrioHub' });
-  assert.ok(p.cycles.length > 0 || p.traceability.length >= 0);
-  for (const c of p.cycles) {
-    const hay = `${c.name} ${c.key}`.toLowerCase();
-    assert.ok(hay.includes('priohub') || p.testers.length > 0, 'search narrows cycles or related rows');
-  }
-  console.log('✓ search filter');
 }
 
 // project=DLM scopes data

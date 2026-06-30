@@ -23,7 +23,7 @@ export interface IssueRow {
   status: IssueStatus;
   priority: string;
   assignee: string;
-  createdAt: string;
+  createdAt: string | null;
   resolvedAt: string | null;
   updatedAt: string;
   source: DataSource;
@@ -37,10 +37,11 @@ export interface UatRow {
   priority: string;
   clientPriority: string;
   submitter: string;
-  submittedAt: string;
+  submittedAt: string | null;
   updatedAt: string;
   status: string;
   open: boolean;
+  project: string;
   source: DataSource;
 }
 

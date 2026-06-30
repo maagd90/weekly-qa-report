@@ -146,17 +146,50 @@ cp config/integrations.example.json config/integrations.json
 
 #### QMetry section
 
+Matches the Emirates **QMetry Test Management (qtm4j)** UI API pattern used in Java `QmetryPublisher`:
+
 | Field | Description |
 |---|---|
 | `enabled` | `true` to fetch test executions from QMetry API |
-| `baseUrl` | Same host as JIRA |
+| `baseUrl` | JIRA host (e.g. `https://jiraagile.emirates.com`) |
 | `apiPrefix` | `/rest/qtm4j/ui/latest` |
-| `projectKey` | `DLM` |
-| `cycleIds` | List of test cycle IDs to fetch (e.g. `["Qr0MHaDZtj"]`) |
+| `projectKey` | JIRA project key for display (e.g. `DLM`) |
+| `projectId` | Numeric QMetry project ID (e.g. `"23000"`) — used to discover test cycles when `cycleIds` is empty |
+| `cycleIds` | Explicit test cycle IDs to fetch (e.g. `["XM8PIR4eFa"]`). If set, skips cycle discovery |
+| `usePostSearch` | `true` — POST with JSON body for test case search (Emirates default) |
 | `testCasesSearchPath` | `/testcycles/{cycleId}/testcases/search` |
+| `testCasesSearchBody` | POST filter body, e.g. `{ "filter": { "filter": { "folderId": -1 } } }` |
+| `testCyclesSearchPath` | Optional — `/projects/{projectId}/testcycles/search` to auto-discover cycles |
 | `testCaseFields` | Comma-separated API fields |
-| `pageSize` | Results per page (default `50`) |
+| `pageSize` | Results per page (default `50`, QMetry max) |
 | `maxPages` | Pagination limit per cycle (default `200`) |
+
+**Authentication** — either:
+
+1. **Email + token** (same as JIRA): set `JIRA_EMAIL` and `JIRA_API_TOKEN` in `.env`
+2. **Pre-encoded Basic auth** (Java `automation.qmetry.encoded.authorization` pattern): set `QMETRY_BASIC_AUTH=Basic xxxxx` in `.env`
+
+Example with explicit cycle ID (like `automation.qmetry.testCycleId`):
+
+```json
+{
+  "qmetry": {
+    "enabled": true,
+    "baseUrl": "https://jiraagile.emirates.com",
+    "apiPrefix": "/rest/qtm4j/ui/latest",
+    "projectKey": "DLM",
+    "projectId": "23000",
+    "usePostSearch": true,
+    "testCasesSearchPath": "/testcycles/{cycleId}/testcases/search",
+    "testCasesSearchBody": { "filter": { "filter": { "folderId": -1 } } },
+    "cycleIds": ["XM8PIR4eFa"],
+    "pageSize": 50,
+    "maxPages": 200
+  }
+}
+```
+
+To **auto-discover cycles** by project, set `projectId` and leave `cycleIds` empty (or use `testCyclesSearchPath` with a custom search body).
 
 Example with APIs enabled:
 
@@ -169,17 +202,19 @@ Example with APIs enabled:
     "projectKeys": ["DLM"],
     "jql": "project = DLM AND issuetype in (Story, Bug) ORDER BY updated DESC",
     "pageSize": 100,
-    "statusDone": ["Done", "CLOSED", "Cancel", "Closed"]
+    "statusDone": ["Done", "CLOSED", "Cancel"]
   },
   "qmetry": {
     "enabled": true,
     "baseUrl": "https://jiraagile.emirates.com",
     "apiPrefix": "/rest/qtm4j/ui/latest",
     "projectKey": "DLM",
-    "testCyclesSearchPath": null,
+    "projectId": "23000",
+    "usePostSearch": true,
     "testCasesSearchPath": "/testcycles/{cycleId}/testcases/search",
+    "testCasesSearchBody": { "filter": { "filter": { "folderId": -1 } } },
     "testCaseFields": "seqNo,key,versionNo,summary,priority,status,environment,executionResult,executionAssignee,executedOn,executedBy,lastModified,build",
-    "cycleIds": ["Qr0MHaDZtj"],
+    "cycleIds": ["XM8PIR4eFa"],
     "pageSize": 50,
     "maxPages": 200
   }
@@ -190,9 +225,13 @@ To use **Excel files only** (no live API), leave both `enabled` fields as `false
 
 ### Step 4 — Sample data (optional)
 
+Committed synthetic fixtures under `fixtures/synthetic/` power `npm test` on a clean clone. For local runs with real exports:
+
 ```bash
 cp fixtures/input/*.xlsx input/
 ```
+
+Real exports in `fixtures/input/` are gitignored — never commit them.
 
 Fixture files:
 

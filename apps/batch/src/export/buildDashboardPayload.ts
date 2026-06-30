@@ -41,7 +41,7 @@ const MLAB = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oc
 export function buildDashboardPayload(dataset: Dataset, params: FilterParams & { reportType?: string }): DashboardPayload {
   const filtered = applyFilters(dataset, params);
   const { executions, issues, uat } = filtered;
-  const A = cycleAgg(executions);
+  const execTotals = cycleAgg(executions);
 
   const resultDefs = [
     { code: 'PASS', label: 'Passed', key: 'pass' as const },
@@ -50,13 +50,13 @@ export function buildDashboardPayload(dataset: Dataset, params: FilterParams & {
     { code: 'FAIL', label: 'Failed', key: 'fail' as const },
     { code: 'NA', label: 'Not Applicable', key: 'na' as const },
   ];
-  const dTot = A.total || 1;
-  const resultMix = resultDefs.map((d) => ({
-    code: d.code,
-    label: d.label,
-    count: A[d.key],
-    pct: Math.round((A[d.key] / dTot) * 100),
-    color: resultColor(d.code),
+  const totalForPct = execTotals.total || 1;
+  const resultMix = resultDefs.map((def) => ({
+    code: def.code,
+    label: def.label,
+    count: execTotals[def.key],
+    pct: Math.round((execTotals[def.key] / totalForPct) * 100),
+    color: resultColor(def.code),
   }));
   const chartSeries = {
     resultMix: resultMix.map((r) => ({ name: r.label, value: r.count, color: r.color })),
@@ -73,25 +73,25 @@ export function buildDashboardPayload(dataset: Dataset, params: FilterParams & {
   }
   const byMonth = Object.keys(monthBuckets).sort().slice(-6)
     .map((ym) => {
-      const b = monthBuckets[ym];
-      const mi = parseInt(ym.slice(5, 7), 10) - 1;
+      const bucket = monthBuckets[ym];
+      const monthIndex = parseInt(ym.slice(5, 7), 10) - 1;
       return {
         ym,
-        label: `${MLAB[mi]} '${ym.slice(2, 4)}`,
-        pass: b.pass,
-        blocked: b.blocked,
-        fail: b.fail,
+        label: `${MLAB[monthIndex]} '${ym.slice(2, 4)}`,
+        pass: bucket.pass,
+        blocked: bucket.blocked,
+        fail: bucket.fail,
       };
     })
     .filter((m) => m.pass + m.blocked + m.fail > 0);
 
   const testerNames = [...new Set(executions.map((r) => r.tester).filter(Boolean))] as string[];
   const testers = testerNames.map((name) => {
-    const tr = executions.filter((r) => r.tester === name);
-    const pass = tr.filter((r) => r.result === 'PASS').length;
-    const fail = tr.filter((r) => r.result === 'FAIL').length;
-    const blocked = tr.filter((r) => r.result === 'BLOCKED').length;
-    const na = tr.filter((r) => r.result === 'NA').length;
+    const testerRows = executions.filter((r) => r.tester === name);
+    const pass = testerRows.filter((r) => r.result === 'PASS').length;
+    const fail = testerRows.filter((r) => r.result === 'FAIL').length;
+    const blocked = testerRows.filter((r) => r.result === 'BLOCKED').length;
+    const na = testerRows.filter((r) => r.result === 'NA').length;
     const executed = pass + fail + blocked + na;
     return {
       name,
@@ -106,20 +106,20 @@ export function buildDashboardPayload(dataset: Dataset, params: FilterParams & {
 
   const cycleKeys = [...new Set(executions.map((r) => r.cycleKey))];
   const cycles = cycleKeys.map((key) => {
-    const cr = executions.filter((r) => r.cycleKey === key);
-    const a = cycleAgg(cr);
+    const cycleRows = executions.filter((r) => r.cycleKey === key);
+    const cycleTotals = cycleAgg(cycleRows);
     return {
       key,
-      name: cr[0]?.cycleName || key,
-      total: a.total,
-      pass: a.pass,
-      fail: a.fail,
-      blocked: a.blocked,
-      ne: a.ne,
-      na: a.na,
-      passPct: a.pr,
-      coverage: a.cov,
-      status: cycleStatus(a),
+      name: cycleRows[0]?.cycleName || key,
+      total: cycleTotals.total,
+      pass: cycleTotals.pass,
+      fail: cycleTotals.fail,
+      blocked: cycleTotals.blocked,
+      ne: cycleTotals.ne,
+      na: cycleTotals.na,
+      passPct: cycleTotals.pr,
+      coverage: cycleTotals.cov,
+      status: cycleStatus(cycleTotals),
     };
   }).sort((a, b) => b.total - a.total);
   const cyclesByPassPctAsc = [...cycles].sort((a, b) => a.passPct - b.passPct);
@@ -214,9 +214,10 @@ export function buildDashboardPayload(dataset: Dataset, params: FilterParams & {
         priority: r.priority,
         status: r.status,
         submitter: r.submitter,
-        submittedAt: r.submittedAt,
+        submittedAt: r.submittedAt || '',
         updatedAt: r.updatedAt,
         cr: r.cr,
+        project: r.project,
       })),
     };
   }
@@ -231,11 +232,11 @@ export function buildDashboardPayload(dataset: Dataset, params: FilterParams & {
       projects,
     },
     overview: {
-      totalCases: A.total,
-      executed: A.exec,
-      passRate: A.exec ? Math.round((A.pass / A.exec) * 100) : 0,
-      failed: A.fail,
-      blocked: A.blocked,
+      totalCases: execTotals.total,
+      executed: execTotals.exec,
+      passRate: execTotals.exec ? Math.round((execTotals.pass / execTotals.exec) * 100) : 0,
+      failed: execTotals.fail,
+      blocked: execTotals.blocked,
       resultMix,
       byMonth,
       chartSeries,

@@ -1,11 +1,10 @@
-import fs from 'fs';
 import path from 'path';
-import * as XLSX from 'xlsx';
 import type { ExecutionRow, FileMeta } from '../types/dataset';
 import {
   findHeaderRow, rowToObject, mapExecutionResult, parseZephyrDate,
   projectFromKey, sanitizeText,
 } from '../utils/excel';
+import { readWorkbookRows } from '../utils/readWorkbook';
 
 const ZEPHYR_HEADERS = ['Test Cycle Key', 'Testcase/Teststep Execution Result'];
 
@@ -13,12 +12,11 @@ export function isZephyrFile(rows: unknown[][]): boolean {
   return findHeaderRow(rows, ZEPHYR_HEADERS) >= 0;
 }
 
-export function parseZephyr(filePath: string): { executions: ExecutionRow[]; file: FileMeta } {
-  const buffer = fs.readFileSync(filePath);
-  const wb = XLSX.read(buffer, { type: 'buffer' });
-  const sheetName = wb.SheetNames.find((n) => n === 'Data') || wb.SheetNames[0];
-  const rows = XLSX.utils.sheet_to_json<unknown[]>(wb.Sheets[sheetName], { header: 1, defval: '' });
-  const headerIdx = findHeaderRow(rows as unknown[][], ZEPHYR_HEADERS);
+export function parseZephyrFromRows(
+  rows: unknown[][],
+  fileName: string,
+): { executions: ExecutionRow[]; file: FileMeta } {
+  const headerIdx = findHeaderRow(rows, ZEPHYR_HEADERS);
   if (headerIdx < 0) throw new Error('Zephyr headers not found');
 
   const headers = (rows[headerIdx] as unknown[]).map((h) => sanitizeText(h));
@@ -49,11 +47,10 @@ export function parseZephyr(filePath: string): { executions: ExecutionRow[]; fil
     });
   }
 
-  const name = path.basename(filePath);
   return {
     executions,
     file: {
-      name,
+      name: fileName,
       ext: 'XLSX',
       project: executions[0]?.project || 'DLM',
       rows: executions.length,
@@ -62,4 +59,9 @@ export function parseZephyr(filePath: string): { executions: ExecutionRow[]; fil
       source: 'file',
     },
   };
+}
+
+export function parseZephyr(filePath: string): { executions: ExecutionRow[]; file: FileMeta } {
+  const { rows } = readWorkbookRows(filePath, ['Data']);
+  return parseZephyrFromRows(rows, path.basename(filePath));
 }
