@@ -71,98 +71,102 @@ export function AiReportUatSection({ uat: rawUat }: { uat: UatPayload }) {
   const pendingTotal = uat.openByStatus.reduce((a, s) => a + s.count, 0);
 
   return (
-    <div className="border border-qa-border p-5 bg-white pdf-avoid-break">
-      <div className="font-mono-qa text-[10px] tracking-wider uppercase text-qa-muted-light mb-4">
-        UAT Issues — Bugs Reported
-      </div>
+    <>
+      <div className="pdf-section border border-qa-border p-5 bg-white">
+        <div className="font-mono-qa text-[10px] tracking-wider uppercase text-qa-muted-light mb-4">
+          UAT Issues — Bugs Reported
+        </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
-        {[
-          { label: 'Total Reported', value: fmt(uat.total), color: QA.accent },
-          { label: 'Open / Pending', value: fmt(uat.open), color: QA.BLOCKED },
-          { label: 'Closed', value: fmt(uat.closed), color: QA.PASS },
-          { label: 'Urgent Open', value: fmt(uat.urgentOpen), color: QA.FAIL },
-        ].map((k) => (
-          <div key={k.label} className="border border-[#efece4] p-3 bg-[#faf8f2]">
-            <div className="font-mono-qa text-[9px] uppercase text-qa-muted-light mb-1">{k.label}</div>
-            <div className="font-spectral text-2xl font-bold" style={{ color: k.color }}>{k.value}</div>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
+          {[
+            { label: 'Total Reported', value: fmt(uat.total), color: QA.accent },
+            { label: 'Open / Pending', value: fmt(uat.open), color: QA.BLOCKED },
+            { label: 'Closed', value: fmt(uat.closed), color: QA.PASS },
+            { label: 'Urgent Open', value: fmt(uat.urgentOpen), color: QA.FAIL },
+          ].map((k) => (
+            <div key={k.label} className="border border-[#efece4] p-3 bg-[#faf8f2]">
+              <div className="font-mono-qa text-[9px] uppercase text-qa-muted-light mb-1">{k.label}</div>
+              <div className="font-spectral text-2xl font-bold" style={{ color: k.color }}>{k.value}</div>
+            </div>
+          ))}
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+          <div className="border border-[#efece4] p-4 bg-[#faf8f2] min-w-0">
+            <div className="text-[12.5px] font-semibold mb-3">Open vs Closed</div>
+            <PriorityDonut items={openClosedItems} />
           </div>
-        ))}
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mb-6">
-        <div className="border border-[#efece4] p-4 bg-[#faf8f2] min-w-0 pdf-avoid-break">
-          <div className="text-[12.5px] font-semibold mb-3">Open vs Closed</div>
-          <PriorityDonut items={openClosedItems} />
-        </div>
-        <div className="border border-[#efece4] p-4 bg-white min-w-0 pdf-avoid-break">
-          <div className="text-[12.5px] font-semibold mb-3">By Priority</div>
-          <PriorityDonut items={priorityItems} />
+          <div className="border border-[#efece4] p-4 bg-white min-w-0">
+            <div className="text-[12.5px] font-semibold mb-3">By Priority</div>
+            <PriorityDonut items={priorityItems} />
+          </div>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mb-6">
-        <div className="min-w-0 pdf-avoid-break">
-          <div className="text-[12.5px] font-semibold mb-1">Pending / Open by Status</div>
-          <div className="text-[11px] text-qa-muted mb-3">{fmt(pendingTotal)} in-flight issues</div>
-          {uat.openByStatus.length === 0 ? (
-            <div className="text-[12px] text-qa-muted-light">No open issues in scope.</div>
-          ) : (
-            uat.openByStatus.map((s) => (
-              <div key={s.status} className="mb-2.5">
-                <div className="flex justify-between text-[12px] mb-0.5 gap-2">
-                  <span className="truncate">{s.status}</span>
-                  <span className="font-mono-qa shrink-0">{s.count}</span>
+      <div className="pdf-section border border-qa-border p-5 bg-white">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mb-6">
+          <div className="min-w-0">
+            <div className="text-[12.5px] font-semibold mb-1">Pending / Open by Status</div>
+            <div className="text-[11px] text-qa-muted mb-3">{fmt(pendingTotal)} in-flight issues</div>
+            {uat.openByStatus.length === 0 ? (
+              <div className="text-[12px] text-qa-muted-light">No open issues in scope.</div>
+            ) : (
+              uat.openByStatus.map((s) => (
+                <div key={s.status} className="mb-2.5">
+                  <div className="flex justify-between text-[12px] mb-0.5 gap-2">
+                    <span className="truncate">{s.status}</span>
+                    <span className="font-mono-qa shrink-0">{s.count}</span>
+                  </div>
+                  <HorizBar pct={barPct(s.count, pendingMax)} color={QA.BLOCKED} />
                 </div>
-                <HorizBar pct={barPct(s.count, pendingMax)} color={QA.BLOCKED} />
-              </div>
-            ))
-          )}
-        </div>
-        <div className="min-w-0 pdf-avoid-break">
-          <div className="text-[12.5px] font-semibold mb-1">By Product Area</div>
-          <div className="text-[11px] text-qa-muted mb-3">Total issues · open count in label</div>
-          {uat.byAreaDetail.map((a) => (
-            <div key={a.area} className="mb-2.5">
-              <div className="flex justify-between text-[12px] mb-0.5 gap-2">
-                <span className="truncate">{a.area || '—'}</span>
-                <span className="font-mono-qa shrink-0 text-qa-muted">{a.total} · {a.open} open</span>
-              </div>
-              <HorizBar pct={barPct(a.total, areaMax)} color={QA.NA} />
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mb-6">
-        <div className="min-w-0 pdf-avoid-break">
-          <div className="text-[12.5px] font-semibold mb-3">All Issues by Status</div>
-          {uat.byStatus.map((s) => (
-            <div key={s.status} className="flex items-center gap-2 mb-2">
-              <span className="text-[12px] w-[110px] shrink-0 truncate">{s.status}</span>
-              <div className="flex-1 min-w-0"><HorizBar pct={barPct(s.count, statusMax)} color={QA.accent} /></div>
-              <span className="font-mono-qa text-[11px] text-qa-muted w-6 text-right">{s.count}</span>
-            </div>
-          ))}
-        </div>
-        <div className="min-w-0 pdf-avoid-break">
-          <div className="text-[12.5px] font-semibold mb-3">Reported by (Submitter)</div>
-          {uat.bySubmitter.slice(0, 8).map((s) => {
-            const max = uat.bySubmitter[0]?.count || 1;
-            return (
-              <div key={s.name} className="mb-2">
+              ))
+            )}
+          </div>
+          <div className="min-w-0">
+            <div className="text-[12.5px] font-semibold mb-1">By Product Area</div>
+            <div className="text-[11px] text-qa-muted mb-3">Total issues · open count in label</div>
+            {uat.byAreaDetail.map((a) => (
+              <div key={a.area} className="mb-2.5">
                 <div className="flex justify-between text-[12px] mb-0.5 gap-2">
-                  <span className="truncate">{s.name}</span>
-                  <span className="font-mono-qa shrink-0">{s.count} bugs</span>
+                  <span className="truncate">{a.area || '—'}</span>
+                  <span className="font-mono-qa shrink-0 text-qa-muted">{a.total} · {a.open} open</span>
                 </div>
-                <HorizBar pct={barPct(s.count, max)} color={QA.accent} />
+                <HorizBar pct={barPct(a.total, areaMax)} color={QA.NA} />
               </div>
-            );
-          })}
+            ))}
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+          <div className="min-w-0">
+            <div className="text-[12.5px] font-semibold mb-3">All Issues by Status</div>
+            {uat.byStatus.map((s) => (
+              <div key={s.status} className="flex items-center gap-2 mb-2">
+                <span className="text-[12px] w-[110px] shrink-0 truncate">{s.status}</span>
+                <div className="flex-1 min-w-0"><HorizBar pct={barPct(s.count, statusMax)} color={QA.accent} /></div>
+                <span className="font-mono-qa text-[11px] text-qa-muted w-6 text-right">{s.count}</span>
+              </div>
+            ))}
+          </div>
+          <div className="min-w-0">
+            <div className="text-[12.5px] font-semibold mb-3">Reported by (Submitter)</div>
+            {uat.bySubmitter.slice(0, 8).map((s) => {
+              const max = uat.bySubmitter[0]?.count || 1;
+              return (
+                <div key={s.name} className="mb-2">
+                  <div className="flex justify-between text-[12px] mb-0.5 gap-2">
+                    <span className="truncate">{s.name}</span>
+                    <span className="font-mono-qa shrink-0">{s.count} bugs</span>
+                  </div>
+                  <HorizBar pct={barPct(s.count, max)} color={QA.accent} />
+                </div>
+              );
+            })}
+          </div>
         </div>
       </div>
 
-      <div className="pdf-avoid-break">
+      <div className="pdf-section border border-qa-border p-5 bg-white">
         <div className="text-[12.5px] font-semibold mb-3">Issues by Change Request (CR)</div>
         <div className="overflow-x-auto">
           <table className="w-full text-[12px] border-collapse">
@@ -193,7 +197,7 @@ export function AiReportUatSection({ uat: rawUat }: { uat: UatPayload }) {
       </div>
 
       {uat.rows.length > 0 && (
-        <div className="mt-6 pdf-avoid-break">
+        <div className="pdf-section border border-qa-border p-5 bg-white">
           <div className="text-[12.5px] font-semibold mb-3">UAT Issue Detail (top {Math.min(uat.rows.length, 15)})</div>
           <div className="overflow-x-auto">
             <table className="w-full text-[11.5px] border-collapse">
@@ -230,6 +234,6 @@ export function AiReportUatSection({ uat: rawUat }: { uat: UatPayload }) {
           </div>
         </div>
       )}
-    </div>
+    </>
   );
 }

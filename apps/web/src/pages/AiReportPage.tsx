@@ -249,7 +249,7 @@ export function AiReportPage({ dashboard, kpiStyle, onGenerated }: AiReportPageP
                 </button>
 
                 <div ref={exportRef} className="qa-pdf-export bg-white">
-                  <div className="px-6 sm:px-8 pt-7 pb-5 border-b-2 border-qa-ink pdf-avoid-break">
+                  <div className="pdf-section px-6 sm:px-8 pt-7 pb-5 border-b-2 border-qa-ink">
                     <div className="font-mono-qa text-[10px] tracking-widest uppercase mb-2.5" style={{ color: QA.accent }}>
                       Weekly QA Narrative · {reportType.charAt(0).toUpperCase() + reportType.slice(1)}
                     </div>
@@ -263,16 +263,16 @@ export function AiReportPage({ dashboard, kpiStyle, onGenerated }: AiReportPageP
                     </div>
                   </div>
 
-                  <div className="px-6 sm:px-8 py-7">
-                    {chartData && (
-                      <div className="mb-10 pb-8 border-b border-qa-border pdf-avoid-break">
-                        <div className="font-mono-qa text-[10px] tracking-wider uppercase text-qa-muted-light mb-5">Metrics & Charts</div>
-                        <AiReportCharts dashboard={chartData} kpiStyle={kpiStyle} reportType={reportType} />
-                      </div>
-                    )}
+                  {chartData && (
+                    <div className="px-6 sm:px-8 py-7 border-b border-qa-border">
+                      <div className="font-mono-qa text-[10px] tracking-wider uppercase text-qa-muted-light mb-5">Metrics & Charts</div>
+                      <AiReportCharts dashboard={chartData} kpiStyle={kpiStyle} reportType={reportType} />
+                    </div>
+                  )}
 
+                  <div className="pdf-section px-6 sm:px-8 py-7">
                     {hasNarrative ? (
-                      <div className="prose prose-slate max-w-none prose-headings:font-spectral pdf-avoid-break">
+                      <div className="prose prose-slate max-w-none prose-headings:font-spectral">
                         <div className="font-mono-qa text-[10px] tracking-wider uppercase text-qa-muted-light mb-5">AI Narrative</div>
                         <ReactMarkdown remarkPlugins={[remarkGfm]}>{reportText}</ReactMarkdown>
                       </div>

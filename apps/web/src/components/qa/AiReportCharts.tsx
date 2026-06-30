@@ -28,7 +28,7 @@ export function AiReportCharts({ dashboard, kpiStyle, reportType }: AiReportChar
   return (
     <div className="flex flex-col gap-6">
       {showOverview && (
-        <>
+        <div className="pdf-section flex flex-col gap-5">
           <QaKpiGrid cols={5}>
             <QaKpiCard kpiStyle={kpiStyle} label="Total Test Cases" value={fmt(overview.totalCases)}
               sub={`${cycles.length} cycles in scope`} color={QA.accent} />
@@ -42,7 +42,7 @@ export function AiReportCharts({ dashboard, kpiStyle, reportType }: AiReportChar
               sub="need unblocking" color={QA.BLOCKED} />
           </QaKpiGrid>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-5 pdf-avoid-break">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
             <div className="border border-qa-border p-5 bg-[#faf8f2] min-w-0">
               <div className="font-mono-qa text-[10px] tracking-wider uppercase text-qa-muted-light mb-3">Execution Result Mix</div>
               <ResultDonut
@@ -54,11 +54,11 @@ export function AiReportCharts({ dashboard, kpiStyle, reportType }: AiReportChar
               <StackedMonthChart data={overview.byMonth} />
             </div>
           </div>
-        </>
+        </div>
       )}
 
       {showTesters && topTesters.length > 0 && (
-        <div className="border border-qa-border p-5 bg-white pdf-avoid-break">
+        <div className="pdf-section border border-qa-border p-5 bg-white">
           <div className="font-mono-qa text-[10px] tracking-wider uppercase text-qa-muted-light mb-3">Top Testers by Volume</div>
           <div className="flex flex-col gap-3">
             {topTesters.map((t) => (
@@ -78,7 +78,7 @@ export function AiReportCharts({ dashboard, kpiStyle, reportType }: AiReportChar
       )}
 
       {showCycles && atRiskCycles.length > 0 && (
-        <div className="border border-qa-border p-5 bg-white">
+        <div className="pdf-section border border-qa-border p-5 bg-white">
           <div className="font-mono-qa text-[10px] tracking-wider uppercase text-qa-muted-light mb-3">Cycle Health (lowest pass rate first)</div>
           <div className="overflow-x-auto">
             <table className="w-full text-[12.5px] border-collapse">
@@ -106,7 +106,7 @@ export function AiReportCharts({ dashboard, kpiStyle, reportType }: AiReportChar
       )}
 
       {showTrace && storyBug.story + storyBug.bug > 0 && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+        <div className="pdf-section grid grid-cols-1 md:grid-cols-2 gap-5">
           <div className="border border-qa-border p-5 bg-white">
             <div className="font-mono-qa text-[10px] tracking-wider uppercase text-qa-muted-light mb-3">Story vs Bug Split</div>
             {[
@@ -141,7 +141,7 @@ export function AiReportCharts({ dashboard, kpiStyle, reportType }: AiReportChar
       )}
 
       {showUat && !uat?.total && (
-        <div className="border border-qa-border p-5 bg-[#faf8f2] text-[13px] text-qa-muted pdf-avoid-break">
+        <div className="pdf-section border border-qa-border p-5 bg-[#faf8f2] text-[13px] text-qa-muted">
           No UAT issues in the selected date range. Widen the date range or check that an ODL UAT export is staged under Import Data.
         </div>
       )}
