@@ -191,11 +191,21 @@ export function buildDashboardPayload(dataset: Dataset, params: FilterParams & {
     const prCounts: Record<string, number> = {};
     const areaCounts: Record<string, number> = {};
     const submitterCounts: Record<string, number> = {};
+    const crCounts: Record<string, { total: number; open: number }> = {};
+    const areaDetail: Record<string, { total: number; open: number }> = {};
+    const openStCounts: Record<string, number> = {};
     uat.forEach((r) => {
       stCounts[r.status] = (stCounts[r.status] || 0) + 1;
       prCounts[r.priority] = (prCounts[r.priority] || 0) + 1;
       areaCounts[r.area] = (areaCounts[r.area] || 0) + 1;
       submitterCounts[r.submitter] = (submitterCounts[r.submitter] || 0) + 1;
+      if (!crCounts[r.cr]) crCounts[r.cr] = { total: 0, open: 0 };
+      crCounts[r.cr].total += 1;
+      if (r.open) crCounts[r.cr].open += 1;
+      if (!areaDetail[r.area]) areaDetail[r.area] = { total: 0, open: 0 };
+      areaDetail[r.area].total += 1;
+      if (r.open) areaDetail[r.area].open += 1;
+      if (r.open) openStCounts[r.status] = (openStCounts[r.status] || 0) + 1;
     });
     uatPayload = {
       total,
@@ -207,6 +217,15 @@ export function buildDashboardPayload(dataset: Dataset, params: FilterParams & {
       byPriority: Object.entries(prCounts).map(([priority, count]) => ({ priority, count })).sort((a, b) => b.count - a.count),
       byArea: Object.entries(areaCounts).map(([area, count]) => ({ area, count })).sort((a, b) => b.count - a.count).slice(0, 8),
       bySubmitter: Object.entries(submitterCounts).map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count),
+      byCr: Object.entries(crCounts)
+        .map(([cr, v]) => ({ cr, total: v.total, open: v.open, closed: v.total - v.open }))
+        .sort((a, b) => b.total - a.total),
+      byAreaDetail: Object.entries(areaDetail)
+        .map(([area, v]) => ({ area, total: v.total, open: v.open, closed: v.total - v.open }))
+        .sort((a, b) => b.total - a.total),
+      openByStatus: Object.entries(openStCounts)
+        .map(([status, count]) => ({ status, count }))
+        .sort((a, b) => b.count - a.count),
       rows: uat.map((r) => ({
         id: r.id,
         subject: r.subject,

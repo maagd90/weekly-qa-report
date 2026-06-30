@@ -225,6 +225,9 @@ export interface DashboardPayload {
     byPriority: { priority: string; count: number }[];
     byArea: { area: string; count: number }[];
     bySubmitter: { name: string; count: number }[];
+    byCr: { cr: string; total: number; open: number; closed: number }[];
+    byAreaDetail: { area: string; total: number; open: number; closed: number }[];
+    openByStatus: { status: string; count: number }[];
     rows: {
       id: string;
       subject: string;

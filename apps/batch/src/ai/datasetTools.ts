@@ -9,7 +9,7 @@ export const AI_TOOLS = [
   { name: 'get_story_bug_split', description: 'Story vs Bug counts (open/done) for filtered JIRA issues' },
   { name: 'get_defect_backlog', description: 'Open bugs by priority and assignee' },
   { name: 'get_traceability', description: 'Feature area traceability matrix (stories, bugs, completion)' },
-  { name: 'get_uat_summary', description: 'UAT defects from ODL issue log: total reported, open/closed, by submitter (reporter), status, priority, and area' },
+  { name: 'get_uat_summary', description: 'UAT defects: totals, open/closed, by CR (change request), area, submitter, pending/open status, and priority' },
 ] as const;
 
 export type ToolName = typeof AI_TOOLS[number]['name'];

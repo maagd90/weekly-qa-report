@@ -7,7 +7,7 @@ const DEFAULT_REPORT_MODEL = 'claude-sonnet-4-6';
 const SYSTEM = `You are a QA metrics report writer. You MUST call the provided tools to get real numbers.
 Never invent or estimate metrics. If a tool returns empty data, say "No data available for this period."
 Write clear markdown with headings. Include only facts from tool results.
-When UAT data is available, always include a dedicated "UAT Issues" section covering total defects reported, open vs closed, who reported the most bugs (by submitter), and breakdown by status/priority.`;
+When UAT data is available, always include a dedicated "UAT Issues" section covering total defects reported, open vs closed, issues per change request (CR), breakdown by product area, pending/open status counts, priority mix, and who reported the most bugs.`;
 
 function reportPrompt(reportType: ReportType, filter: FilterParams): string {
   const scope = `${filter.startDate || 'all'} to ${filter.endDate || 'all'}`;

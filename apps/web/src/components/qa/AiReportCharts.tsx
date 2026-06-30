@@ -6,6 +6,7 @@ import { QaKpiCard, QaKpiGrid } from './QaKpiCard';
 import { ResultDonut } from './ResultDonut';
 import { StackedMonthChart } from './StackedMonthChart';
 import { HorizBar, SegBar, testerSegSegments } from './SegBar';
+import { AiReportUatSection } from './AiReportUatSection';
 
 interface AiReportChartsProps {
   dashboard: DashboardPayload;
@@ -136,54 +137,7 @@ export function AiReportCharts({ dashboard, kpiStyle, reportType }: AiReportChar
       )}
 
       {showUat && uat && uat.total > 0 && (
-        <div className="border border-qa-border p-5 bg-white pdf-avoid-break">
-          <div className="font-mono-qa text-[10px] tracking-wider uppercase text-qa-muted-light mb-4">UAT Issues — Bugs Reported</div>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
-            {[
-              { label: 'Total Reported', value: fmt(uat.total), color: QA.accent },
-              { label: 'Open', value: fmt(uat.open), color: QA.BLOCKED },
-              { label: 'Closed', value: fmt(uat.closed), color: QA.PASS },
-              { label: 'Urgent Open', value: fmt(uat.urgentOpen), color: QA.FAIL },
-            ].map((k) => (
-              <div key={k.label} className="border border-[#efece4] p-3 bg-[#faf8f2]">
-                <div className="font-mono-qa text-[9px] uppercase text-qa-muted-light mb-1">{k.label}</div>
-                <div className="font-spectral text-2xl font-bold" style={{ color: k.color }}>{k.value}</div>
-              </div>
-            ))}
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-            <div className="min-w-0">
-              <div className="text-[12.5px] font-semibold mb-2">Reported by (submitter)</div>
-              {uat.bySubmitter.slice(0, 6).map((s) => {
-                const max = uat.bySubmitter[0]?.count || 1;
-                return (
-                  <div key={s.name} className="mb-2">
-                    <div className="flex justify-between text-[12px] mb-0.5">
-                      <span className="truncate pr-2">{s.name}</span>
-                      <span className="font-mono-qa shrink-0">{s.count} bugs</span>
-                    </div>
-                    <HorizBar pct={(s.count / max) * 100} color={QA.accent} />
-                  </div>
-                );
-              })}
-            </div>
-            <div className="min-w-0">
-              <div className="text-[12.5px] font-semibold mb-2">By status</div>
-              {uat.byStatus.slice(0, 6).map((s) => {
-                const max = uat.byStatus[0]?.count || 1;
-                return (
-                  <div key={s.status} className="mb-2">
-                    <div className="flex justify-between text-[12px] mb-0.5">
-                      <span className="truncate pr-2">{s.status}</span>
-                      <span className="font-mono-qa shrink-0">{s.count}</span>
-                    </div>
-                    <HorizBar pct={(s.count / max) * 100} color={QA.BLOCKED} />
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        </div>
+        <AiReportUatSection uat={uat} />
       )}
 
       {showUat && !uat?.total && (
