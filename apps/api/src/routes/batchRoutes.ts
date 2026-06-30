@@ -13,6 +13,7 @@ import {
   integrationsSummary,
   loadIntegrations,
 } from 'qa-dashboard-batch';
+import { generateReportPdf } from '../services/reportPdf';
 
 const router = Router();
 
@@ -152,6 +153,36 @@ router.get('/report', (_req: Request, res: Response) => {
   const markdown = fs.readFileSync(mdPath, 'utf8');
   const meta = fs.existsSync(metaPath) ? JSON.parse(fs.readFileSync(metaPath, 'utf8')) : {};
   res.json({ markdown, meta });
+});
+
+// POST /api/report/pdf — server-side Puppeteer render of /print/report
+router.post('/report/pdf', async (req: Request, res: Response) => {
+  const { startDate, endDate } = req.body as { startDate?: string; endDate?: string };
+
+  if (!startDate || !endDate) {
+    return res.status(400).json({ error: 'startDate and endDate are required' });
+  }
+
+  const cached = await ensureDataset();
+  if (!cached) {
+    return res.status(404).json({ error: 'No dashboard data. Generate a report first.' });
+  }
+
+  const payload = refilterDashboard(cached.dataset, { startDate, endDate });
+  if (!payload.overview.totalCases && !payload.uat?.total) {
+    return res.status(404).json({ error: 'No metrics for this date range.' });
+  }
+
+  try {
+    const pdfBuffer = await generateReportPdf(startDate, endDate);
+    const filename = `qa-report-${startDate}-to-${endDate}.pdf`;
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(pdfBuffer);
+  } catch (err) {
+    console.error('[api] POST /report/pdf failed:', (err as Error).message);
+    res.status(500).json({ error: `PDF generation failed: ${(err as Error).message}` });
+  }
 });
 
 // GET /api/integrations

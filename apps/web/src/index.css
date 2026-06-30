@@ -69,7 +69,7 @@
   table { break-inside: avoid; }
 }
 
-/* PDF export — fixed A4 content column (see downloadReportPdf.ts) */
+/* Legacy PDF capture styles (screen view); server PDF uses /print/report */
 .qa-pdf-root,
 .qa-pdf-export {
   box-sizing: border-box;
@@ -189,4 +189,22 @@
 .qa-pdf-export.qa-pdf-capturing .qa-one-page-report svg.w-\[140px\] {
   width: 96px !important;
   height: 96px !important;
+}
+
+/* Print route — Puppeteer renders /print/report at A4 width */
+@page {
+  size: A4;
+  margin: 10mm;
+}
+
+.qa-print-page {
+  width: 794px;
+  max-width: 794px;
+  margin: 0 auto;
+  background: #ffffff;
+  box-sizing: border-box;
+}
+
+html.qa-pdf-ready .qa-print-page {
+  visibility: visible;
 }

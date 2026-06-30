@@ -67,4 +67,26 @@ export const batchApi = {
 
   getIntegrations: () => api.get('/integrations').then((r) => r.data as IntegrationsStatus),
   testIntegrations: () => api.post('/integrations/test').then((r) => r.data),
+
+  downloadReportPdf: async ({ startDate, endDate }: { startDate: string; endDate: string }) => {
+    const response = await api.post(
+      '/report/pdf',
+      { startDate, endDate },
+      { responseType: 'blob', timeout: 60_000 },
+    );
+    const blob = response.data as Blob;
+    if (blob.type === 'application/json') {
+      const text = await blob.text();
+      const payload = JSON.parse(text) as { error?: string };
+      throw new Error(payload.error || 'PDF export failed');
+    }
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `qa-report-${startDate}-to-${endDate}.pdf`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  },
 };

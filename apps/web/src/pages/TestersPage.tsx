@@ -1,10 +1,8 @@
-import React, { useMemo } from 'react';
+import React from 'react';
 import type { DashboardPayload } from 'qa-dashboard-batch';
 import type { KpiStyle } from '../theme/qaTheme';
-import { QA, fmt, initials, passRateColor } from '../theme/qaTheme';
-import { QaPageShell, QaSection } from '../components/layout/QaPageShell';
-import { QaKpiCard, QaKpiGrid } from '../components/qa/QaKpiCard';
-import { SegBar, testerSegSegments } from '../components/qa/SegBar';
+import { QaPageShell } from '../components/layout/QaPageShell';
+import { TestersPerformanceSection } from '../components/qa/TestersPerformanceSection';
 
 interface TestersPageProps {
   dashboard: DashboardPayload;
@@ -12,85 +10,11 @@ interface TestersPageProps {
 }
 
 export function TestersPage({ dashboard, kpiStyle }: TestersPageProps) {
-  const { testers, overview } = dashboard;
-
-  const stats = useMemo(() => {
-    const totalExec = testers.reduce((a, b) => a + b.executed, 0) || 1;
-    const wAvg = Math.round(testers.reduce((a, b) => a + b.pass, 0) / totalExec * 100);
-    const topPerf = [...testers].filter((t) => t.executed >= 20).sort((a, b) => b.passPct - a.passPct)[0]
-      || testers[0]
-      || { passPct: 0, name: '—', executed: 0 };
-    return { wAvg, topPerf };
-  }, [testers]);
-
-  const neNote = overview.resultMix.find((r) => r.code === 'NE');
-  const neCount = neNote?.count ?? 0;
+  const { testers } = dashboard;
 
   return (
     <QaPageShell title="Tester Performance" subtitle={`by Executed By · ${testers.length} testers`}>
-      <QaKpiGrid cols={4}>
-        <QaKpiCard kpiStyle={kpiStyle} label="Testers" value={testers.length}
-          sub="contributing executions" color={QA.accent} />
-        <QaKpiCard kpiStyle={kpiStyle} label="Executions Logged" value={fmt(overview.executed)}
-          sub="across all cycles" color="#2F7D5A" />
-        <QaKpiCard kpiStyle={kpiStyle} label="Avg Pass Rate" value={`${stats.wAvg}%`}
-          sub="weighted by volume" color={QA.BLOCKED} />
-        <QaKpiCard kpiStyle={kpiStyle} label="Top Performer" value={`${stats.topPerf.passPct}%`}
-          sub={`${stats.topPerf.name.split(' ')[0]} · ${stats.topPerf.executed} exec`} color={QA.NA} />
-      </QaKpiGrid>
-
-      <QaSection
-        title="Execution by Tester"
-        noPadding
-        headerRight={
-          <div className="flex gap-4 flex-wrap">
-            {[
-              { label: 'Pass', color: QA.PASS },
-              { label: 'Blocked', color: QA.BLOCKED },
-              { label: 'Fail', color: QA.FAIL },
-              { label: 'N/A', color: QA.NA },
-            ].map((l) => (
-              <span key={l.label} className="flex items-center gap-1 text-[10.5px] text-qa-muted">
-                <span className="w-2.5 h-2.5" style={{ background: l.color }} />{l.label}
-              </span>
-            ))}
-          </div>
-        }
-      >
-        <div className="px-[22px] pb-[18px] pt-2">
-          {testers.map((t) => (
-            <div key={t.name} className="py-4 border-b border-[#f0ede5] last:border-b-0">
-              <div className="flex items-center gap-3.5 mb-2">
-                <div className="w-[34px] h-[34px] rounded-full bg-qa-ink text-[#F5F3ED] flex items-center justify-center font-spectral font-semibold text-[13px] shrink-0">
-                  {initials(t.name)}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="text-sm font-semibold">{t.name}</div>
-                  <div className="font-mono-qa text-[10.5px] text-qa-muted-light">
-                    {t.executed} executed · {t.pass} pass · {t.fail} fail · {t.blocked} blocked
-                  </div>
-                </div>
-                <div className="text-right">
-                  <div className="font-spectral font-bold text-[22px] leading-none" style={{ color: passRateColor(t.passPct) }}>
-                    {t.passPct}%
-                  </div>
-                  <div className="font-mono-qa text-[9.5px] text-qa-muted-light uppercase tracking-wide">pass rate</div>
-                </div>
-              </div>
-              <SegBar segments={testerSegSegments(t.pass, t.fail, t.blocked, t.na, t.executed)} />
-            </div>
-          ))}
-          {neCount > 0 && (
-            <div className="flex items-center gap-2.5 pt-3.5 text-xs text-qa-muted-light">
-              <span className="w-2.5 h-2.5 bg-[#B3AEA3] shrink-0" />
-              <span>{fmt(neCount)} cases Not Executed are excluded from tester totals above.</span>
-            </div>
-          )}
-          {!testers.length && (
-            <div className="py-6 text-center text-[13px] text-qa-muted-light">No tester executions match the current filters.</div>
-          )}
-        </div>
-      </QaSection>
+      <TestersPerformanceSection dashboard={dashboard} kpiStyle={kpiStyle} />
     </QaPageShell>
   );
 }

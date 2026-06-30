@@ -20,7 +20,7 @@ function reportPrompt(reportType: ReportType, filter: FilterParams): string {
   const focus: Record<ReportType, string> = {
     full: 'Query execution mix, UAT, testers, cycles, and defects, then distill into the summary.',
     executive: 'Query result mix, UAT summary, and tester stats, then distill into the summary.',
-    testers: 'Query tester stats and execution volume, then distill into the summary.',
+    testers: 'Call get_tester_stats only. Summarize tester performance: total tester count, who executed the most cases, weighted pass rate, lowest pass rate among testers with meaningful volume, and one actionable coaching or risk note. Use real names and numbers from tool results.',
     cycles: 'Query cycle health and coverage gaps, then distill into the summary.',
   };
   return `Generate a ${reportType} QA report for ${scope}. ${focus[reportType]} ${SUMMARY_FORMAT}`;

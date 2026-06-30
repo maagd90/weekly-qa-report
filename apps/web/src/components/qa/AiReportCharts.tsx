@@ -7,6 +7,7 @@ import { ResultDonut } from './ResultDonut';
 import { StackedMonthChart } from './StackedMonthChart';
 import { HorizBar, SegBar, testerSegSegments } from './SegBar';
 import { AiReportUatSection } from './AiReportUatSection';
+import { TestersPerformanceSection } from './TestersPerformanceSection';
 
 interface AiReportChartsProps {
   dashboard: DashboardPayload;
@@ -18,12 +19,19 @@ export function AiReportCharts({ dashboard, kpiStyle, reportType }: AiReportChar
   const { overview, testers, cycles, storyBug, defectBacklog, uat } = dashboard;
   const sbTot = storyBug.story + storyBug.bug || 1;
   const showOverview = reportType === 'full' || reportType === 'executive';
-  const showTesters = reportType === 'full' || reportType === 'testers';
+  const showTestersCompact = reportType === 'full';
+  const showTestersFull = reportType === 'testers';
   const showCycles = reportType === 'full' || reportType === 'cycles';
   const showTrace = reportType === 'full';
   const showUat = reportType === 'full' || reportType === 'executive';
   const topTesters = [...testers].sort((a, b) => b.executed - a.executed).slice(0, 6);
   const atRiskCycles = dashboard.cyclesByPassPctAsc.slice(0, 5);
+
+  if (showTestersFull) {
+    return (
+      <TestersPerformanceSection dashboard={dashboard} kpiStyle={kpiStyle} embedded />
+    );
+  }
 
   return (
     <div className="flex flex-col gap-6">
@@ -57,7 +65,7 @@ export function AiReportCharts({ dashboard, kpiStyle, reportType }: AiReportChar
         </div>
       )}
 
-      {showTesters && topTesters.length > 0 && (
+      {showTestersCompact && topTesters.length > 0 && (
         <div className="pdf-section border border-qa-border p-5 bg-white">
           <div className="font-mono-qa text-[10px] tracking-wider uppercase text-qa-muted-light mb-3">Top Testers by Volume</div>
           <div className="flex flex-col gap-3">

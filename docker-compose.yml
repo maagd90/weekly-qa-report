@@ -12,6 +12,8 @@ services:
       INPUT_DIR: /data/input
       OUTPUT_DIR: /data/output
       CONFIG_DIR: /data/config
+      PDF_PRINT_URL: http://dashboard-web/print/report
+      PUPPETEER_EXECUTABLE_PATH: /usr/bin/chromium
     volumes:
       - ./input:/data/input
       - ./output:/data/output
