@@ -1,10 +1,10 @@
+import html2pdf from 'html2pdf.js';
+
 /** Target width for A4 body text (~180mm printable area). */
 const PDF_CAPTURE_WIDTH_PX = 680;
 const PDF_MARGIN_MM = 12;
 
 export async function downloadReportPdf(element: HTMLElement, filename: string): Promise<void> {
-  const html2pdf = (await import('html2pdf.js')).default;
-
   element.classList.add('qa-pdf-capturing');
   element.scrollIntoView({ block: 'start', behavior: 'instant' as ScrollBehavior });
 
