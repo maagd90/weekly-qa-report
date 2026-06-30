@@ -2,6 +2,8 @@ import Anthropic from '@anthropic-ai/sdk';
 import type { Dataset, FilterParams, GenerateParams, ReportType } from '../types/dataset';
 import { AI_TOOLS, executeTool } from './datasetTools';
 
+const DEFAULT_REPORT_MODEL = 'claude-sonnet-4-6';
+
 const SYSTEM = `You are a QA metrics report writer. You MUST call the provided tools to get real numbers.
 Never invent or estimate metrics. If a tool returns empty data, say "No data available for this period."
 Write clear markdown with headings. Include only facts from tool results.`;
@@ -24,6 +26,7 @@ export async function generateReportFromDataset(
   filter: FilterParams,
 ): Promise<{ markdown: string; toolCalls: { toolName: string; rowCount: number }[] }> {
   const client = new Anthropic({ apiKey });
+  const model = process.env.ANTHROPIC_MODEL || DEFAULT_REPORT_MODEL;
   const toolCalls: { toolName: string; rowCount: number }[] = [];
 
   const tools = AI_TOOLS.map((t) => ({
@@ -39,7 +42,7 @@ export async function generateReportFromDataset(
   let markdown = '';
   for (let round = 0; round < 8; round++) {
     const response = await client.messages.create({
-      model: 'claude-sonnet-4-20250514',
+      model,
       max_tokens: 4096,
       system: SYSTEM,
       tools,
