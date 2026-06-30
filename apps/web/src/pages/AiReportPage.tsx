@@ -116,7 +116,7 @@ export function AiReportPage({ dashboard, kpiStyle, onGenerated }: AiReportPageP
     setDownloading(true);
     setError(null);
     try {
-      await batchApi.downloadReportPdf({ startDate, endDate });
+      await batchApi.downloadReportPdf({ startDate, endDate, reportType, kpiStyle });
     } catch (err) {
       setError(apiErrorMessage(err, 'PDF export failed'));
     } finally {

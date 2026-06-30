@@ -208,3 +208,8 @@
 html.qa-pdf-ready .qa-print-page {
   visibility: visible;
 }
+
+.qa-print-document .pdf-section {
+  break-inside: avoid-page;
+  page-break-inside: avoid;
+}

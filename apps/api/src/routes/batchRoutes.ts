@@ -157,11 +157,20 @@ router.get('/report', (_req: Request, res: Response) => {
 
 // POST /api/report/pdf — server-side Puppeteer render of /print/report
 router.post('/report/pdf', async (req: Request, res: Response) => {
-  const { startDate, endDate } = req.body as { startDate?: string; endDate?: string };
+  const { startDate, endDate, reportType, kpiStyle } = req.body as {
+    startDate?: string;
+    endDate?: string;
+    reportType?: string;
+    kpiStyle?: string;
+  };
 
   if (!startDate || !endDate) {
     return res.status(400).json({ error: 'startDate and endDate are required' });
   }
+
+  const validTypes = ['full', 'executive', 'testers', 'cycles'];
+  const type = validTypes.includes(reportType || '') ? reportType! : 'executive';
+  const kpi = kpiStyle || 'editorial';
 
   const cached = await ensureDataset();
   if (!cached) {
@@ -174,7 +183,7 @@ router.post('/report/pdf', async (req: Request, res: Response) => {
   }
 
   try {
-    const pdfBuffer = await generateReportPdf(startDate, endDate);
+    const pdfBuffer = await generateReportPdf(startDate, endDate, type, kpi);
     const filename = `qa-report-${startDate}-to-${endDate}.pdf`;
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);

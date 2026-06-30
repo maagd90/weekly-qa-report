@@ -1,20 +1,26 @@
 import React, { useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
+import type { ReportType } from 'qa-dashboard-batch';
 import { batchApi } from '../lib/api';
 import type { KpiStyle } from '../theme/qaTheme';
-import { AiReportOnePager } from '../components/qa/AiReportOnePager';
+import { ReportPrintContent } from '../components/qa/ReportPrintContent';
 
 const KPI_STYLES: KpiStyle[] = ['editorial', 'framed', 'minimal'];
+const REPORT_TYPES: ReportType[] = ['executive', 'full', 'testers', 'cycles'];
 
 export function ReportPrintPage() {
   const [params] = useSearchParams();
   const startDate = params.get('startDate') ?? '';
   const endDate = params.get('endDate') ?? '';
   const kpiParam = params.get('kpiStyle') ?? 'editorial';
+  const typeParam = params.get('reportType') ?? 'executive';
   const kpiStyle: KpiStyle = KPI_STYLES.includes(kpiParam as KpiStyle)
     ? (kpiParam as KpiStyle)
     : 'editorial';
+  const reportType: ReportType = REPORT_TYPES.includes(typeParam as ReportType)
+    ? (typeParam as ReportType)
+    : 'executive';
 
   const { data: dashboard, isLoading: loadingDashboard, isError: dashboardError } = useQuery({
     queryKey: ['print-dashboard', startDate, endDate],
@@ -41,7 +47,9 @@ export function ReportPrintPage() {
     let cancelled = false;
     async function markReady() {
       if (document.fonts?.ready) await document.fonts.ready;
-      await new Promise((resolve) => setTimeout(resolve, 350));
+      // Full reports need extra time for charts/SVG to paint
+      const delay = reportType === 'executive' ? 350 : 800;
+      await new Promise((resolve) => setTimeout(resolve, delay));
       if (!cancelled) document.documentElement.classList.add('qa-pdf-ready');
     }
     markReady();
@@ -49,7 +57,7 @@ export function ReportPrintPage() {
       cancelled = true;
       document.documentElement.classList.remove('qa-pdf-ready');
     };
-  }, [dashboard, startDate, endDate, reportFetched]);
+  }, [dashboard, startDate, endDate, reportFetched, reportType]);
 
   if (!startDate || !endDate) {
     return (
@@ -72,15 +80,13 @@ export function ReportPrintPage() {
   }
 
   return (
-    <div className="qa-print-page bg-white">
-      <AiReportOnePager
-        dashboard={dashboard}
-        kpiStyle={kpiStyle}
-        narrative={reportData?.markdown ?? ''}
-        startDate={startDate}
-        endDate={endDate}
-        compactNarrative
-      />
-    </div>
+    <ReportPrintContent
+      dashboard={dashboard}
+      kpiStyle={kpiStyle}
+      reportType={reportType}
+      narrative={reportData?.markdown ?? ''}
+      startDate={startDate}
+      endDate={endDate}
+    />
   );
 }

@@ -68,11 +68,21 @@ export const batchApi = {
   getIntegrations: () => api.get('/integrations').then((r) => r.data as IntegrationsStatus),
   testIntegrations: () => api.post('/integrations/test').then((r) => r.data),
 
-  downloadReportPdf: async ({ startDate, endDate }: { startDate: string; endDate: string }) => {
+  downloadReportPdf: async ({
+    startDate,
+    endDate,
+    reportType,
+    kpiStyle,
+  }: {
+    startDate: string;
+    endDate: string;
+    reportType: ReportType;
+    kpiStyle: string;
+  }) => {
     const response = await api.post(
       '/report/pdf',
-      { startDate, endDate },
-      { responseType: 'blob', timeout: 60_000 },
+      { startDate, endDate, reportType, kpiStyle },
+      { responseType: 'blob', timeout: 120_000 },
     );
     const blob = response.data as Blob;
     if (blob.type === 'application/json') {
