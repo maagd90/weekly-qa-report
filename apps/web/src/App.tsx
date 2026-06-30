@@ -114,7 +114,9 @@ function AppContent() {
           <UatPage dashboard={display} kpiStyle={ui.kpiStyle} />
         )}
         {activeTab === 'import' && <ImportStatusPage />}
-        {activeTab === 'ai' && <AiReportPage onGenerated={() => refetch()} />}
+        {activeTab === 'ai' && (
+          <AiReportPage dashboard={display} kpiStyle={ui.kpiStyle} onGenerated={() => refetch()} />
+        )}
         {activeTab === 'settings' && <SettingsPage />}
       </div>
 

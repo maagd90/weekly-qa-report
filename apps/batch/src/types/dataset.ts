@@ -107,6 +107,12 @@ export interface GenerateParams extends FilterParams {
   apiKey?: string;
 }
 
+export interface ReportMeta {
+  generatedAt: string;
+  params: GenerateParams;
+  toolCalls: { toolName: string; rowCount: number }[];
+}
+
 export interface GenerateResult {
   ok: boolean;
   filesParsed: number;
@@ -114,6 +120,7 @@ export interface GenerateResult {
   warnings: string[];
   paths: { dashboard: string; report: string; meta: string; raw: string };
   payload?: DashboardPayload;
+  report?: { markdown: string; meta: ReportMeta };
   error?: string;
 }
 

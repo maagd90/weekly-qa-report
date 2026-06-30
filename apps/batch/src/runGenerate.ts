@@ -76,19 +76,20 @@ export async function runGenerate(params: GenerateParams): Promise<GenerateResul
         issues: dataset.issues.length,
         uat: dataset.uat.length,
       },
-      warnings: [...dataset.meta.warnings, 'ANTHROPIC_API_KEY not set — report skipped'],
+      warnings: [...dataset.meta.warnings, 'ANTHROPIC_API_KEY not set — AI narrative skipped'],
       paths: { dashboard: dashboardPath, report: '', meta: '', raw: rawPath },
       payload,
     };
   }
 
   const report = await generateReportFromDataset(dataset, params, apiKey, filterParams);
-  fs.writeFileSync(reportPath, report.markdown);
-  fs.writeFileSync(metaPath, JSON.stringify({
+  const reportMeta = {
     generatedAt: new Date().toISOString(),
     params,
     toolCalls: report.toolCalls,
-  }, null, 2));
+  };
+  fs.writeFileSync(reportPath, report.markdown);
+  fs.writeFileSync(metaPath, JSON.stringify(reportMeta, null, 2));
 
   return {
     ok: true,
@@ -101,6 +102,7 @@ export async function runGenerate(params: GenerateParams): Promise<GenerateResul
     warnings: dataset.meta.warnings,
     paths: { dashboard: dashboardPath, report: reportPath, meta: metaPath, raw: rawPath },
     payload,
+    report: { markdown: report.markdown, meta: reportMeta },
   };
 }
 

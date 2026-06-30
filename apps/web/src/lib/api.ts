@@ -1,9 +1,9 @@
 import axios from 'axios';
-import type { DashboardPayload, FilterParams, ReportType, GenerateParams } from 'qa-dashboard-batch';
+import type { DashboardPayload, FilterParams, ReportType, GenerateParams, GenerateResult } from 'qa-dashboard-batch';
 
 const api = axios.create({ baseURL: '/api' });
 
-export type { DashboardPayload, FilterParams, ReportType, GenerateParams };
+export type { DashboardPayload, FilterParams, ReportType, GenerateParams, GenerateResult };
 
 export interface IntegrationsStatus {
   jira: { enabled: boolean; baseUrl: string; configured: boolean };
@@ -17,7 +17,7 @@ export interface IntegrationsStatus {
 export const batchApi = {
   getStatus: () => api.get('/status').then((r) => r.data as { apiKeyConfigured: boolean; jiraConfigured: boolean }),
 
-  generate: (params: GenerateParams) => api.post('/generate', params).then((r) => r.data),
+  generate: (params: GenerateParams) => api.post<GenerateResult>('/generate', params).then((r) => r.data),
 
   getDashboard: (filter?: Partial<FilterParams>) => {
     const params = filter ? {
