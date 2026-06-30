@@ -1,8 +1,27 @@
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
 
-const PDF_MARGIN_MM = 10;
+const PDF_MARGIN_MM = 8;
 const CAPTURE_SCALE = 2;
+
+function addCanvasFitOnePage(pdf: jsPDF, canvas: HTMLCanvasElement): void {
+  const pageWidth = pdf.internal.pageSize.getWidth();
+  const pageHeight = pdf.internal.pageSize.getHeight();
+  const printWidth = pageWidth - PDF_MARGIN_MM * 2;
+  const printHeight = pageHeight - PDF_MARGIN_MM * 2;
+
+  let imgWidth = printWidth;
+  let imgHeight = (canvas.height * printWidth) / canvas.width;
+
+  if (imgHeight > printHeight) {
+    imgHeight = printHeight;
+    imgWidth = (canvas.width * printHeight) / canvas.height;
+  }
+
+  const x = PDF_MARGIN_MM + (printWidth - imgWidth) / 2;
+  const y = PDF_MARGIN_MM;
+  pdf.addImage(canvas.toDataURL('image/jpeg', 0.92), 'JPEG', x, y, imgWidth, imgHeight);
+}
 
 function addCanvasToPdf(pdf: jsPDF, canvas: HTMLCanvasElement, newPageBefore: boolean): void {
   const pageWidth = pdf.internal.pageSize.getWidth();
@@ -47,7 +66,13 @@ async function captureSection(element: HTMLElement): Promise<HTMLCanvasElement> 
   });
 }
 
-export async function downloadReportPdf(root: HTMLElement, filename: string): Promise<void> {
+export async function downloadReportPdf(
+  root: HTMLElement,
+  filename: string,
+  options?: { singlePage?: boolean },
+): Promise<void> {
+  const singlePage = options?.singlePage ?? true;
+
   root.classList.add('qa-pdf-capturing');
   root.scrollIntoView({ block: 'start', behavior: 'instant' as ScrollBehavior });
 
@@ -57,14 +82,21 @@ export async function downloadReportPdf(root: HTMLElement, filename: string): Pr
   await new Promise((resolve) => setTimeout(resolve, 400));
 
   const sections = Array.from(root.querySelectorAll('.pdf-section')) as HTMLElement[];
-  const targets = sections.length > 0 ? sections : [root];
+  const target = sections.length === 1 ? sections[0] : root;
 
   const pdf = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait', compress: true });
 
   try {
-    for (let i = 0; i < targets.length; i++) {
-      const canvas = await captureSection(targets[i]);
-      addCanvasToPdf(pdf, canvas, i > 0);
+    const canvas = await captureSection(target);
+    if (singlePage) {
+      addCanvasFitOnePage(pdf, canvas);
+    } else if (sections.length > 0) {
+      for (let i = 0; i < sections.length; i++) {
+        const sectionCanvas = await captureSection(sections[i]);
+        addCanvasToPdf(pdf, sectionCanvas, i > 0);
+      }
+    } else {
+      addCanvasToPdf(pdf, canvas, false);
     }
     pdf.save(filename);
   } finally {

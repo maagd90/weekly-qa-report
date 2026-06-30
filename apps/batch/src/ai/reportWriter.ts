@@ -4,20 +4,76 @@ import { AI_TOOLS, executeTool } from './datasetTools';
 
 const DEFAULT_REPORT_MODEL = 'claude-sonnet-4-6';
 
+export const SUMMARY_MIN_CHARS = 250;
+export const SUMMARY_MAX_CHARS = 500;
+
+const SUMMARY_FORMAT = `Output ONLY a "## Summary" heading followed by the summary text (no other sections).
+The summary MUST be between ${SUMMARY_MIN_CHARS} and ${SUMMARY_MAX_CHARS} characters including spaces.
+Write 2–4 precise sentences: key metrics, main risk, UAT status if available, and one clear takeaway. No filler, no bullet lists, no tables.`;
+
 const SYSTEM = `You are a QA metrics report writer. You MUST call the provided tools to get real numbers.
-Never invent or estimate metrics. If a tool returns empty data, say "No data available for this period."
-Write clear markdown with headings. Include only facts from tool results.
-When UAT data is available, always include a dedicated "UAT Issues" section covering total defects reported, open vs closed, issues per change request (CR), breakdown by product area, pending/open status counts, priority mix, and who reported the most bugs.`;
+Never invent or estimate metrics. If a tool returns empty data, state that briefly using real wording.
+${SUMMARY_FORMAT}`;
 
 function reportPrompt(reportType: ReportType, filter: FilterParams): string {
   const scope = `${filter.startDate || 'all'} to ${filter.endDate || 'all'}`;
-  const typeGuide: Record<ReportType, string> = {
-    full: 'Write a full report: executive summary, execution overview, testers, cycles, story/bug split, traceability, defect backlog, and UAT issues (bugs reported during user acceptance testing).',
-    executive: 'Write a 1-page executive summary including UAT defect counts (total reported, open, closed) when available.',
-    testers: 'Focus on tester performance and execution volume.',
-    cycles: 'Focus on test cycle health, coverage gaps, and at-risk cycles.',
+  const focus: Record<ReportType, string> = {
+    full: 'Query execution mix, UAT, testers, cycles, and defects, then distill into the summary.',
+    executive: 'Query result mix, UAT summary, and tester stats, then distill into the summary.',
+    testers: 'Query tester stats and execution volume, then distill into the summary.',
+    cycles: 'Query cycle health and coverage gaps, then distill into the summary.',
   };
-  return `Generate a ${reportType} QA report for ${scope}. ${typeGuide[reportType]}`;
+  return `Generate a ${reportType} QA report for ${scope}. ${focus[reportType]} ${SUMMARY_FORMAT}`;
+}
+
+function plainTextLength(text: string): number {
+  return text
+    .replace(/^#+\s*[^\n]*\n?/gm, '')
+    .replace(/[*_`#[\]()>-]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .length;
+}
+
+function extractSummaryBody(markdown: string): string {
+  const match = markdown.match(/##\s*Summary\s*\n+([\s\S]*)/i);
+  if (match) return match[1].trim();
+  return markdown.replace(/^#+\s*[^\n]*\n?/gm, '').trim();
+}
+
+function truncateToMax(text: string, max: number): string {
+  const normalized = text.replace(/\s+/g, ' ').trim();
+  if (normalized.length <= max) return normalized;
+  const slice = normalized.slice(0, max);
+  const lastSpace = slice.lastIndexOf(' ');
+  const cut = lastSpace > SUMMARY_MIN_CHARS ? slice.slice(0, lastSpace) : slice;
+  return `${cut.replace(/[.,;:\s]+$/, '')}.`;
+}
+
+function padToMin(text: string, min: number): string {
+  const normalized = text.replace(/\s+/g, ' ').trim();
+  if (normalized.length >= min) return normalized;
+  const pad = ' Review charts for full metrics and trends in this period.';
+  const combined = `${normalized}${pad}`.replace(/\s+/g, ' ').trim();
+  if (combined.length >= min) return combined.slice(0, SUMMARY_MAX_CHARS);
+  return combined;
+}
+
+export function normalizeReportSummary(markdown: string): string {
+  let body = extractSummaryBody(markdown);
+  if (!body) body = 'No summary generated for this period.';
+
+  if (plainTextLength(body) > SUMMARY_MAX_CHARS) {
+    body = truncateToMax(body, SUMMARY_MAX_CHARS);
+  }
+  if (plainTextLength(body) < SUMMARY_MIN_CHARS) {
+    body = padToMin(body, SUMMARY_MIN_CHARS);
+    if (plainTextLength(body) > SUMMARY_MAX_CHARS) {
+      body = truncateToMax(body, SUMMARY_MAX_CHARS);
+    }
+  }
+
+  return `## Summary\n\n${body.trim()}`;
 }
 
 export async function generateReportFromDataset(
@@ -41,10 +97,10 @@ export async function generateReportFromDataset(
   ];
 
   let markdown = '';
-  for (let round = 0; round < 8; round++) {
+  for (let round = 0; round < 6; round++) {
     const response = await client.messages.create({
       model,
-      max_tokens: 4096,
+      max_tokens: 512,
       system: SYSTEM,
       tools,
       messages,
@@ -74,5 +130,6 @@ export async function generateReportFromDataset(
     messages.push({ role: 'user', content: toolResults });
   }
 
-  return { markdown: markdown || '# Report\n\nNo content generated.', toolCalls };
+  const raw = markdown.trim() || 'No content generated for this period.';
+  return { markdown: normalizeReportSummary(raw), toolCalls };
 }
