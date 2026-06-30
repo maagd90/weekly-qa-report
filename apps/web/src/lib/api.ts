@@ -3,6 +3,23 @@ import type { DashboardPayload, FilterParams, ReportType, GenerateParams, Genera
 
 const api = axios.create({ baseURL: '/api' });
 
+function apiErrorMessage(err: unknown, fallback: string): string {
+  if (axios.isAxiosError(err)) {
+    const data = err.response?.data as { error?: string; message?: string } | undefined;
+    if (data?.error) return data.error;
+    if (data?.message) return data.message;
+    if (err.response?.status === 504) {
+      return 'Report generation timed out at the gateway. Rebuild Docker (nginx timeout fix) or retry — Full reports can take 1–2 minutes.';
+    }
+    if (err.code === 'ECONNABORTED') {
+      return 'Report generation timed out. Full reports can take 1–2 minutes — please wait and try again.';
+    }
+    return err.message || fallback;
+  }
+  return err instanceof Error ? err.message : fallback;
+}
+
+export { apiErrorMessage };
 export type { DashboardPayload, FilterParams, ReportType, GenerateParams, GenerateResult };
 
 export interface IntegrationsStatus {
@@ -17,7 +34,8 @@ export interface IntegrationsStatus {
 export const batchApi = {
   getStatus: () => api.get('/status').then((r) => r.data as { apiKeyConfigured: boolean; jiraConfigured: boolean }),
 
-  generate: (params: GenerateParams) => api.post<GenerateResult>('/generate', params).then((r) => r.data),
+  generate: (params: GenerateParams) =>
+    api.post<GenerateResult>('/generate', params, { timeout: 300_000 }).then((r) => r.data),
 
   getDashboard: (filter?: Partial<FilterParams>) => {
     const params = filter ? {

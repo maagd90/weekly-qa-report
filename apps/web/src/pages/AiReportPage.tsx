@@ -5,7 +5,7 @@ import remarkGfm from 'remark-gfm';
 import clsx from 'clsx';
 import { Download } from 'lucide-react';
 import type { DashboardPayload } from 'qa-dashboard-batch';
-import { batchApi, type ReportType } from '../lib/api';
+import { batchApi, apiErrorMessage, type ReportType } from '../lib/api';
 import type { KpiStyle } from '../theme/qaTheme';
 import { QA } from '../theme/qaTheme';
 import { AiReportCharts } from '../components/qa/AiReportCharts';
@@ -71,16 +71,16 @@ export function AiReportPage({ dashboard, kpiStyle, onGenerated }: AiReportPageP
   const generateMutation = useMutation({
     mutationFn: () => batchApi.generate({ startDate, endDate, reportType }),
     onSuccess: (result) => {
-      if (result.error) {
-        setError(result.error);
-      } else if (!result.ok) {
+      const aiSkipped = result.warnings?.find((w: string) => w.includes('ANTHROPIC_API_KEY'));
+      const aiFailed = result.warnings?.find((w: string) => w.startsWith('AI narrative failed'));
+
+      if (!result.ok) {
         setError(result.error || 'Generation failed');
       } else {
         setError(null);
       }
 
-      const aiSkipped = result.warnings?.find((w: string) => w.includes('ANTHROPIC_API_KEY'));
-      setWarning(aiSkipped || null);
+      setWarning(aiSkipped || aiFailed || null);
 
       if (result.payload) setReportDashboard(result.payload);
       if (result.report?.markdown) {
@@ -94,7 +94,7 @@ export function AiReportPage({ dashboard, kpiStyle, onGenerated }: AiReportPageP
       queryClient.invalidateQueries({ queryKey: ['dashboard-init'] });
       onGenerated?.();
     },
-    onError: (err: Error) => setError(err.message),
+    onError: (err: unknown) => setError(apiErrorMessage(err, 'Report generation failed')),
   });
 
   const chartData = reportDashboard ?? dashboard ?? null;

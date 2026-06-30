@@ -120,6 +120,7 @@ router.post('/generate', async (req: Request, res: Response) => {
     }
     res.json(resultPayload);
   } catch (err) {
+    console.error('[api] POST /generate failed:', (err as Error).message);
     res.status(500).json({ error: (err as Error).message });
   }
 });
