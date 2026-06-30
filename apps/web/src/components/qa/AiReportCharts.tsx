@@ -40,15 +40,15 @@ export function AiReportCharts({ dashboard, kpiStyle, reportType }: AiReportChar
               sub="need unblocking" color={QA.BLOCKED} />
           </QaKpiGrid>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-            <div className="border border-qa-border p-5 bg-[#faf8f2]">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5 pdf-avoid-break">
+            <div className="border border-qa-border p-5 bg-[#faf8f2] min-w-0">
               <div className="font-mono-qa text-[10px] tracking-wider uppercase text-qa-muted-light mb-3">Execution Result Mix</div>
               <ResultDonut
                 items={overview.resultMix.map((r) => ({ code: r.code, label: r.label, count: r.count, pct: r.pct }))}
                 total={overview.totalCases}
               />
             </div>
-            <div className="border border-qa-border p-5 bg-white">
+            <div className="border border-qa-border p-5 bg-white min-w-0">
               <StackedMonthChart data={overview.byMonth} />
             </div>
           </div>
@@ -56,7 +56,7 @@ export function AiReportCharts({ dashboard, kpiStyle, reportType }: AiReportChar
       )}
 
       {showTesters && topTesters.length > 0 && (
-        <div className="border border-qa-border p-5 bg-white">
+        <div className="border border-qa-border p-5 bg-white pdf-avoid-break">
           <div className="font-mono-qa text-[10px] tracking-wider uppercase text-qa-muted-light mb-3">Top Testers by Volume</div>
           <div className="flex flex-col gap-3">
             {topTesters.map((t) => (

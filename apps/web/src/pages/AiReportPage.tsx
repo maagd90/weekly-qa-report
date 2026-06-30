@@ -236,13 +236,23 @@ export function AiReportPage({ dashboard, kpiStyle, onGenerated }: AiReportPageP
               </div>
             )}
             {isDone && (
-              <div className="p-0">
-                <div className="px-11 pt-7 pb-5 border-b-2 border-qa-ink flex flex-wrap items-start justify-between gap-4">
-                  <div>
+              <div className="p-0 relative">
+                <button
+                  type="button"
+                  onClick={handleDownloadPdf}
+                  disabled={downloading}
+                  className="absolute top-7 right-8 z-10 inline-flex items-center gap-2 px-4 py-2.5 border border-qa-ink bg-white text-qa-ink font-mono-qa text-[11px] font-semibold tracking-wide uppercase cursor-pointer disabled:opacity-50 shadow-sm"
+                >
+                  <Download size={14} />
+                  {downloading ? 'Exporting…' : 'Download PDF'}
+                </button>
+
+                <div ref={exportRef} className="qa-pdf-export bg-white">
+                  <div className="px-6 sm:px-8 pt-7 pb-5 border-b-2 border-qa-ink pdf-avoid-break">
                     <div className="font-mono-qa text-[10px] tracking-widest uppercase mb-2.5" style={{ color: QA.accent }}>
                       Weekly QA Narrative · {reportType.charAt(0).toUpperCase() + reportType.slice(1)}
                     </div>
-                    <h1 className="font-spectral font-extrabold text-[32px] leading-tight tracking-tight m-0 mb-3">
+                    <h1 className="font-spectral font-extrabold text-[32px] leading-tight tracking-tight m-0 mb-3 pr-36">
                       QA Report
                     </h1>
                     <div className="flex gap-4 font-mono-qa text-[10.5px] text-qa-muted-light uppercase tracking-wide flex-wrap">
@@ -251,35 +261,26 @@ export function AiReportPage({ dashboard, kpiStyle, onGenerated }: AiReportPageP
                       <span>DLM · Travel Studio</span>
                     </div>
                   </div>
-                  <button
-                    type="button"
-                    onClick={handleDownloadPdf}
-                    disabled={downloading}
-                    className="inline-flex items-center gap-2 px-4 py-2.5 border border-qa-ink bg-white text-qa-ink font-mono-qa text-[11px] font-semibold tracking-wide uppercase cursor-pointer disabled:opacity-50"
-                  >
-                    <Download size={14} />
-                    {downloading ? 'Exporting…' : 'Download PDF'}
-                  </button>
-                </div>
 
-                <div ref={exportRef} className="px-11 py-7 bg-white">
-                  {chartData && (
-                    <div className="mb-10 pb-8 border-b border-qa-border">
-                      <div className="font-mono-qa text-[10px] tracking-wider uppercase text-qa-muted-light mb-5">Metrics & Charts</div>
-                      <AiReportCharts dashboard={chartData} kpiStyle={kpiStyle} reportType={reportType} />
-                    </div>
-                  )}
+                  <div className="px-6 sm:px-8 py-7">
+                    {chartData && (
+                      <div className="mb-10 pb-8 border-b border-qa-border pdf-avoid-break">
+                        <div className="font-mono-qa text-[10px] tracking-wider uppercase text-qa-muted-light mb-5">Metrics & Charts</div>
+                        <AiReportCharts dashboard={chartData} kpiStyle={kpiStyle} reportType={reportType} />
+                      </div>
+                    )}
 
-                  {hasNarrative ? (
-                    <div className="prose prose-slate max-w-none prose-headings:font-spectral">
-                      <div className="font-mono-qa text-[10px] tracking-wider uppercase text-qa-muted-light mb-5">AI Narrative</div>
-                      <ReactMarkdown remarkPlugins={[remarkGfm]}>{reportText}</ReactMarkdown>
-                    </div>
-                  ) : (
-                    <p className="text-[13.5px] text-qa-muted m-0">
-                      Dashboard metrics refreshed for this date range. Add <code className="font-mono-qa text-xs">ANTHROPIC_API_KEY</code> to generate the AI narrative.
-                    </p>
-                  )}
+                    {hasNarrative ? (
+                      <div className="prose prose-slate max-w-none prose-headings:font-spectral pdf-avoid-break">
+                        <div className="font-mono-qa text-[10px] tracking-wider uppercase text-qa-muted-light mb-5">AI Narrative</div>
+                        <ReactMarkdown remarkPlugins={[remarkGfm]}>{reportText}</ReactMarkdown>
+                      </div>
+                    ) : (
+                      <p className="text-[13.5px] text-qa-muted m-0">
+                        Dashboard metrics refreshed for this date range. Add <code className="font-mono-qa text-xs">ANTHROPIC_API_KEY</code> to generate the AI narrative.
+                      </p>
+                    )}
+                  </div>
                 </div>
               </div>
             )}

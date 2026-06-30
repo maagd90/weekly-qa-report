@@ -68,3 +68,87 @@
   h1, h2, h3 { break-after: avoid; }
   table { break-inside: avoid; }
 }
+
+/* PDF export — fixed A4 content column (see downloadReportPdf.ts) */
+.qa-pdf-root,
+.qa-pdf-export {
+  box-sizing: border-box;
+  max-width: 100%;
+  overflow: visible;
+}
+
+.qa-pdf-root .qa-pdf-export-clone {
+  width: 100%;
+  padding: 8px 12px 16px;
+  box-sizing: border-box;
+}
+
+.qa-pdf-root .prose {
+  max-width: 100% !important;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.qa-pdf-root .prose pre,
+.qa-pdf-root .prose code {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.qa-pdf-root .prose table {
+  display: block;
+  width: 100% !important;
+  max-width: 100%;
+  overflow: hidden;
+  font-size: 11px;
+}
+
+.qa-pdf-root .prose th,
+.qa-pdf-root .prose td {
+  padding: 4px 6px !important;
+  word-break: break-word;
+}
+
+.qa-pdf-root .pdf-avoid-break {
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+
+.qa-pdf-root .grid.lg\:grid-cols-5,
+.qa-pdf-root .grid.sm\:grid-cols-2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  gap: 10px !important;
+}
+
+.qa-pdf-root .grid.md\:grid-cols-2 {
+  grid-template-columns: minmax(0, 1fr) !important;
+}
+
+.qa-pdf-root .font-spectral.text-\[34px\] {
+  font-size: 26px !important;
+}
+
+.qa-pdf-root .font-spectral.text-\[32px\] {
+  font-size: 24px !important;
+}
+
+.qa-pdf-root .flex.items-end.gap-\[26px\] {
+  gap: 6px !important;
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+}
+
+.qa-pdf-root .overflow-x-auto {
+  overflow: visible !important;
+}
+
+.qa-pdf-root table {
+  table-layout: fixed;
+  width: 100%;
+}
+
+.qa-pdf-root table td,
+.qa-pdf-root table th {
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
