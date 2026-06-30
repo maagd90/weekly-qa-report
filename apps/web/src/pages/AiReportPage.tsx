@@ -6,6 +6,7 @@ import clsx from 'clsx';
 import { Download } from 'lucide-react';
 import type { DashboardPayload } from 'qa-dashboard-batch';
 import { batchApi, apiErrorMessage, type ReportType } from '../lib/api';
+import { summaryBodyOnly } from '../lib/reportSummary';
 import type { KpiStyle } from '../theme/qaTheme';
 import { QA } from '../theme/qaTheme';
 import { AiReportCharts } from '../components/qa/AiReportCharts';
@@ -289,9 +290,9 @@ export function AiReportPage({ dashboard, kpiStyle, onGenerated }: AiReportPageP
 
                     <div className="px-6 sm:px-8 py-7">
                       {hasNarrative ? (
-                        <div className="prose prose-slate max-w-none prose-headings:font-spectral">
-                          <div className="font-mono-qa text-[10px] tracking-wider uppercase text-qa-muted-light mb-5">AI Narrative</div>
-                          <ReactMarkdown remarkPlugins={[remarkGfm]}>{reportText}</ReactMarkdown>
+                        <div className="prose prose-slate max-w-none prose-headings:font-spectral qa-report-summary-prose">
+                          <div className="font-mono-qa text-[10px] tracking-wider uppercase text-qa-muted-light mb-5">Executive Summary</div>
+                          <ReactMarkdown remarkPlugins={[remarkGfm]}>{summaryBodyOnly(reportText)}</ReactMarkdown>
                         </div>
                       ) : (
                         <p className="text-[13.5px] text-qa-muted m-0">

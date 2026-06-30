@@ -182,6 +182,38 @@
   margin: 0 0 4px;
 }
 
+/* VP-style executive summary bullets */
+.qa-report-summary-prose ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.qa-report-summary-prose li {
+  margin: 0 0 10px;
+  padding: 0 0 0 12px;
+  border-left: 2px solid #15605E;
+  font-size: 13px;
+  line-height: 1.55;
+  color: #3a3833;
+}
+
+.qa-report-summary-prose li strong {
+  color: #1C1B18;
+  font-weight: 600;
+}
+
+.qa-report-summary-prose p {
+  font-size: 13px;
+  line-height: 1.55;
+  margin: 0 0 8px;
+}
+
+.qa-one-page-prose.qa-report-summary-prose li {
+  font-size: 11px;
+  margin-bottom: 6px;
+}
+
 .qa-pdf-export.qa-pdf-capturing .qa-one-page-report .grid.grid-cols-2 {
   grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
 }

@@ -6,6 +6,7 @@ import type { KpiStyle } from '../../theme/qaTheme';
 import { QA } from '../../theme/qaTheme';
 import { AiReportCharts } from './AiReportCharts';
 import { AiReportOnePager } from './AiReportOnePager';
+import { summaryBodyOnly } from '../../lib/reportSummary';
 
 interface ReportPrintContentProps {
   dashboard: DashboardPayload;
@@ -77,11 +78,11 @@ export function ReportPrintContent({
 
       <div className="px-6 py-6">
         {narrative ? (
-          <div className="prose prose-slate max-w-none prose-headings:font-spectral prose-sm">
+          <div className="prose prose-slate max-w-none prose-headings:font-spectral prose-sm qa-report-summary-prose">
             <div className="font-mono-qa text-[10px] tracking-wider uppercase text-qa-muted-light mb-4 not-prose">
-              AI Summary
+              Executive Summary
             </div>
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>{narrative}</ReactMarkdown>
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>{summaryBodyOnly(narrative)}</ReactMarkdown>
           </div>
         ) : (
           <p className="text-[13px] text-qa-muted m-0">No AI summary for this report.</p>

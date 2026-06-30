@@ -7,6 +7,7 @@ import { QA, fmt, initials, passRateColor } from '../../theme/qaTheme';
 import { QaKpiCard, QaKpiGrid } from './QaKpiCard';
 import { ResultDonut } from './ResultDonut';
 import { SegBar, testerSegSegments } from './SegBar';
+import { summaryBodyOnly, trimSummaryForPrint } from '../../lib/reportSummary';
 
 interface AiReportOnePagerProps {
   dashboard: DashboardPayload;
@@ -15,29 +16,6 @@ interface AiReportOnePagerProps {
   startDate: string;
   endDate: string;
   compactNarrative?: boolean;
-}
-
-const SUMMARY_MIN = 250;
-const SUMMARY_MAX = 500;
-
-function plainLen(text: string): number {
-  return text.replace(/[*_`#[\]()>-]/g, '').replace(/\s+/g, ' ').trim().length;
-}
-
-function trimNarrative(markdown: string): string {
-  const body = markdown.replace(/^#+\s*Summary\s*\n?/i, '').trim() || markdown.trim();
-  let normalized = body.replace(/\s+/g, ' ').trim();
-
-  if (plainLen(normalized) < SUMMARY_MIN) {
-    normalized = `${normalized} Review charts for full metrics and trends in this period.`.replace(/\s+/g, ' ').trim();
-  }
-  if (plainLen(normalized) > SUMMARY_MAX) {
-    const slice = normalized.slice(0, SUMMARY_MAX);
-    const lastSpace = slice.lastIndexOf(' ');
-    normalized = `${(lastSpace > SUMMARY_MIN ? slice.slice(0, lastSpace) : slice).replace(/[.,;:\s]+$/, '')}.`;
-  }
-
-  return `## Summary\n\n${normalized}`;
 }
 
 export function AiReportOnePager({
@@ -51,7 +29,7 @@ export function AiReportOnePager({
   const { overview, testers, uat } = dashboard;
   const topTesters = [...testers].sort((a, b) => b.executed - a.executed).slice(0, 3);
   const topCrs = uat?.byCr?.slice(0, 3) ?? [];
-  const displayNarrative = compactNarrative ? trimNarrative(narrative) : narrative;
+  const displayNarrative = compactNarrative ? trimSummaryForPrint(narrative) : summaryBodyOnly(narrative);
 
   return (
     <div className="qa-one-page-report pdf-section bg-white">
@@ -159,8 +137,8 @@ export function AiReportOnePager({
 
       {displayNarrative && (
         <div className="px-5 py-3">
-          <div className="font-mono-qa text-[9px] tracking-wider uppercase text-qa-muted-light mb-2">Summary</div>
-          <div className="prose prose-slate prose-sm max-w-none qa-one-page-prose">
+          <div className="font-mono-qa text-[9px] tracking-wider uppercase text-qa-muted-light mb-2">Executive Summary</div>
+          <div className="prose prose-slate prose-sm max-w-none qa-report-summary-prose qa-one-page-prose">
             <ReactMarkdown remarkPlugins={[remarkGfm]}>{displayNarrative}</ReactMarkdown>
           </div>
         </div>
