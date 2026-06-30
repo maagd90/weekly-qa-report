@@ -77,6 +77,42 @@
   overflow: visible;
 }
 
+.qa-pdf-export.qa-pdf-capturing {
+  width: 680px !important;
+  max-width: 680px !important;
+  margin: 0 auto;
+  background: #ffffff !important;
+  box-sizing: border-box;
+}
+
+.qa-pdf-export.qa-pdf-capturing .grid.lg\:grid-cols-5,
+.qa-pdf-export.qa-pdf-capturing .grid.sm\:grid-cols-2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  gap: 10px !important;
+}
+
+.qa-pdf-export.qa-pdf-capturing .grid.md\:grid-cols-2 {
+  grid-template-columns: minmax(0, 1fr) !important;
+}
+
+.qa-pdf-export.qa-pdf-capturing .flex.items-end.gap-\[26px\] {
+  gap: 6px !important;
+}
+
+.qa-pdf-export.qa-pdf-capturing .prose {
+  max-width: 100% !important;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.qa-pdf-export.qa-pdf-capturing .prose table {
+  display: block;
+  width: 100% !important;
+  max-width: 100%;
+  overflow: hidden;
+  font-size: 11px;
+}
+
 .qa-pdf-root .qa-pdf-export-clone {
   width: 100%;
   padding: 8px 12px 16px;

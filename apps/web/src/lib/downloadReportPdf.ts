@@ -1,59 +1,54 @@
-/** Printable content width for A4 with 15mm side margins (~680px at 96dpi). */
-const PDF_CONTENT_WIDTH_PX = 680;
-const PDF_MARGIN_MM = 15;
+/** Target width for A4 body text (~180mm printable area). */
+const PDF_CAPTURE_WIDTH_PX = 680;
+const PDF_MARGIN_MM = 12;
 
 export async function downloadReportPdf(element: HTMLElement, filename: string): Promise<void> {
   const html2pdf = (await import('html2pdf.js')).default;
 
-  const wrapper = document.createElement('div');
-  wrapper.className = 'qa-pdf-root';
-  wrapper.setAttribute('aria-hidden', 'true');
-  Object.assign(wrapper.style, {
-    position: 'fixed',
-    left: '0',
-    top: '0',
-    width: `${PDF_CONTENT_WIDTH_PX}px`,
-    background: '#ffffff',
-    zIndex: '-9999',
-    pointerEvents: 'none',
-    overflow: 'visible',
-  });
-
-  const clone = element.cloneNode(true) as HTMLElement;
-  clone.classList.add('qa-pdf-export-clone');
-  wrapper.appendChild(clone);
-  document.body.appendChild(wrapper);
+  element.classList.add('qa-pdf-capturing');
+  element.scrollIntoView({ block: 'start', behavior: 'instant' as ScrollBehavior });
 
   if (document.fonts?.ready) {
     await document.fonts.ready;
   }
-  await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+  // Allow layout/fonts/charts to settle after width constraint is applied.
+  await new Promise((resolve) => setTimeout(resolve, 350));
+
+  const captureWidth = element.scrollWidth || PDF_CAPTURE_WIDTH_PX;
+  const captureHeight = element.scrollHeight;
 
   try {
     await html2pdf()
       .set({
         margin: PDF_MARGIN_MM,
         filename,
-        image: { type: 'jpeg', quality: 0.96 },
+        image: { type: 'jpeg', quality: 0.92 },
         html2canvas: {
           scale: 2,
           useCORS: true,
-          logging: false,
+          allowTaint: true,
           backgroundColor: '#ffffff',
-          width: PDF_CONTENT_WIDTH_PX,
-          windowWidth: PDF_CONTENT_WIDTH_PX,
+          logging: false,
           scrollX: 0,
-          scrollY: 0,
+          scrollY: -window.scrollY,
+          width: captureWidth,
+          height: captureHeight,
+          windowWidth: captureWidth,
+          onclone: (doc: Document) => {
+            const node = doc.querySelector('.qa-pdf-export') as HTMLElement | null;
+            if (node) {
+              node.style.width = `${PDF_CAPTURE_WIDTH_PX}px`;
+              node.style.maxWidth = `${PDF_CAPTURE_WIDTH_PX}px`;
+              node.style.background = '#ffffff';
+            }
+          },
         },
         jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait', compress: true },
-        pagebreak: {
-          mode: ['avoid-all', 'css', 'legacy'],
-          avoid: ['.pdf-avoid-break', 'tr', 'table', 'svg'],
-        },
+        pagebreak: { mode: ['css', 'legacy'] },
       })
-      .from(wrapper)
+      .from(element)
       .save();
   } finally {
-    document.body.removeChild(wrapper);
+    element.classList.remove('qa-pdf-capturing');
   }
 }
