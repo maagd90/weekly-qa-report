@@ -24,6 +24,7 @@ const AI_TOOLS = [
   'get_cycle_health',
   'get_story_bug_split',
   'get_defect_backlog',
+  'get_traceability',
   'get_uat_summary',
 ];
 

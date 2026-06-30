@@ -6,13 +6,14 @@ const DEFAULT_REPORT_MODEL = 'claude-sonnet-4-6';
 
 const SYSTEM = `You are a QA metrics report writer. You MUST call the provided tools to get real numbers.
 Never invent or estimate metrics. If a tool returns empty data, say "No data available for this period."
-Write clear markdown with headings. Include only facts from tool results.`;
+Write clear markdown with headings. Include only facts from tool results.
+When UAT data is available, always include a dedicated "UAT Issues" section covering total defects reported, open vs closed, who reported the most bugs (by submitter), and breakdown by status/priority.`;
 
 function reportPrompt(reportType: ReportType, filter: FilterParams): string {
   const scope = `${filter.startDate || 'all'} to ${filter.endDate || 'all'}`;
   const typeGuide: Record<ReportType, string> = {
-    full: 'Write a full report: executive summary, execution overview, testers, cycles, story/bug split, traceability, defect backlog.',
-    executive: 'Write a 1-page executive summary only.',
+    full: 'Write a full report: executive summary, execution overview, testers, cycles, story/bug split, traceability, defect backlog, and UAT issues (bugs reported during user acceptance testing).',
+    executive: 'Write a 1-page executive summary including UAT defect counts (total reported, open, closed) when available.',
     testers: 'Focus on tester performance and execution volume.',
     cycles: 'Focus on test cycle health, coverage gaps, and at-risk cycles.',
   };

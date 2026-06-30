@@ -20,6 +20,7 @@ export function AiReportCharts({ dashboard, kpiStyle, reportType }: AiReportChar
   const showTesters = reportType === 'full' || reportType === 'testers';
   const showCycles = reportType === 'full' || reportType === 'cycles';
   const showTrace = reportType === 'full';
+  const showUat = reportType === 'full' || reportType === 'executive';
   const topTesters = [...testers].sort((a, b) => b.executed - a.executed).slice(0, 6);
   const atRiskCycles = dashboard.cyclesByPassPctAsc.slice(0, 5);
 
@@ -134,23 +135,60 @@ export function AiReportCharts({ dashboard, kpiStyle, reportType }: AiReportChar
         </div>
       )}
 
-      {showOverview && uat && uat.total > 0 && (
-        <div className="border border-qa-border p-5 bg-white">
-          <div className="font-mono-qa text-[10px] tracking-wider uppercase text-qa-muted-light mb-3">UAT Summary</div>
-          <div className="grid grid-cols-3 gap-4 text-center">
-            <div>
-              <div className="font-spectral text-2xl font-bold">{fmt(uat.total)}</div>
-              <div className="text-[11px] text-qa-muted">Total</div>
+      {showUat && uat && uat.total > 0 && (
+        <div className="border border-qa-border p-5 bg-white pdf-avoid-break">
+          <div className="font-mono-qa text-[10px] tracking-wider uppercase text-qa-muted-light mb-4">UAT Issues — Bugs Reported</div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
+            {[
+              { label: 'Total Reported', value: fmt(uat.total), color: QA.accent },
+              { label: 'Open', value: fmt(uat.open), color: QA.BLOCKED },
+              { label: 'Closed', value: fmt(uat.closed), color: QA.PASS },
+              { label: 'Urgent Open', value: fmt(uat.urgentOpen), color: QA.FAIL },
+            ].map((k) => (
+              <div key={k.label} className="border border-[#efece4] p-3 bg-[#faf8f2]">
+                <div className="font-mono-qa text-[9px] uppercase text-qa-muted-light mb-1">{k.label}</div>
+                <div className="font-spectral text-2xl font-bold" style={{ color: k.color }}>{k.value}</div>
+              </div>
+            ))}
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+            <div className="min-w-0">
+              <div className="text-[12.5px] font-semibold mb-2">Reported by (submitter)</div>
+              {uat.bySubmitter.slice(0, 6).map((s) => {
+                const max = uat.bySubmitter[0]?.count || 1;
+                return (
+                  <div key={s.name} className="mb-2">
+                    <div className="flex justify-between text-[12px] mb-0.5">
+                      <span className="truncate pr-2">{s.name}</span>
+                      <span className="font-mono-qa shrink-0">{s.count} bugs</span>
+                    </div>
+                    <HorizBar pct={(s.count / max) * 100} color={QA.accent} />
+                  </div>
+                );
+              })}
             </div>
-            <div>
-              <div className="font-spectral text-2xl font-bold" style={{ color: QA.PASS }}>{fmt(uat.closed)}</div>
-              <div className="text-[11px] text-qa-muted">Closed</div>
-            </div>
-            <div>
-              <div className="font-spectral text-2xl font-bold" style={{ color: QA.FAIL }}>{fmt(uat.open)}</div>
-              <div className="text-[11px] text-qa-muted">Open</div>
+            <div className="min-w-0">
+              <div className="text-[12.5px] font-semibold mb-2">By status</div>
+              {uat.byStatus.slice(0, 6).map((s) => {
+                const max = uat.byStatus[0]?.count || 1;
+                return (
+                  <div key={s.status} className="mb-2">
+                    <div className="flex justify-between text-[12px] mb-0.5">
+                      <span className="truncate pr-2">{s.status}</span>
+                      <span className="font-mono-qa shrink-0">{s.count}</span>
+                    </div>
+                    <HorizBar pct={(s.count / max) * 100} color={QA.BLOCKED} />
+                  </div>
+                );
+              })}
             </div>
           </div>
+        </div>
+      )}
+
+      {showUat && !uat?.total && (
+        <div className="border border-qa-border p-5 bg-[#faf8f2] text-[13px] text-qa-muted pdf-avoid-break">
+          No UAT issues in the selected date range. Widen the date range or check that an ODL UAT export is staged under Import Data.
         </div>
       )}
     </div>
