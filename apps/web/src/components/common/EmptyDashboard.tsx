@@ -1,13 +1,25 @@
 import React from 'react';
-import { Play } from 'lucide-react';
+import { QA } from '../../theme/qaTheme';
 
-export function EmptyDashboard({ onGenerate }: { onGenerate: () => void }) {
+interface EmptyDashboardProps {
+  onGenerate: () => void;
+}
+
+export function EmptyDashboard({ onGenerate }: EmptyDashboardProps) {
   return (
-    <div className="flex flex-col items-center justify-center h-64 text-center p-8">
-      <p className="text-slate-500 font-medium">No dashboard generated yet</p>
-      <p className="text-sm text-slate-400 mt-1">Stage files in Import or configure integrations, then generate a report.</p>
-      <button onClick={onGenerate} className="mt-4 flex items-center gap-2 bg-violet-600 hover:bg-violet-700 text-white text-sm px-4 py-2 rounded-lg">
-        <Play size={14} /> Generate Report
+    <div className="max-w-qa mx-auto px-8 py-20 text-center">
+      <div className="font-spectral text-[64px] leading-none text-qa-border mb-4">¶</div>
+      <h2 className="font-spectral font-bold text-2xl m-0 mb-2">No dashboard data yet</h2>
+      <p className="text-[13.5px] text-qa-muted max-w-md mx-auto mb-6">
+        Stage Zephyr, JIRA, and ODL Excel files under Import Data, or configure live API integrations in Settings. Then generate a report to populate the dashboard.
+      </p>
+      <button
+        type="button"
+        onClick={onGenerate}
+        className="font-mono-qa text-xs font-semibold tracking-wider uppercase px-6 py-3 border-none cursor-pointer text-white"
+        style={{ background: QA.accent }}
+      >
+        Go to AI Report →
       </button>
     </div>
   );

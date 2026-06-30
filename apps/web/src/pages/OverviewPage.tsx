@@ -1,59 +1,123 @@
 import React from 'react';
-import { KpiCard } from '../components/common/KpiCard';
-import { StatusDonutChart } from '../components/charts/StatusDonutChart';
-import { ByMonthChart } from '../components/charts/ByMonthChart';
 import type { DashboardPayload } from 'qa-dashboard-batch';
+import type { KpiStyle } from '../theme/qaTheme';
+import { QA, fmt } from '../theme/qaTheme';
+import { QaPageShell, QaSection } from '../components/layout/QaPageShell';
+import { QaKpiCard, QaKpiGrid } from '../components/qa/QaKpiCard';
+import { ResultDonut } from '../components/qa/ResultDonut';
+import { StackedMonthChart } from '../components/qa/StackedMonthChart';
+import { HorizBar } from '../components/qa/SegBar';
 
 interface OverviewPageProps {
   dashboard: DashboardPayload;
+  kpiStyle: KpiStyle;
 }
 
-export function OverviewPage({ dashboard }: OverviewPageProps) {
+export function OverviewPage({ dashboard, kpiStyle }: OverviewPageProps) {
   const { overview, storyBug, defectBacklog } = dashboard;
+  const sbTot = storyBug.story + storyBug.bug || 1;
+  const filterActive = !!dashboard.scope.search || dashboard.meta.dataMin !== dashboard.scope.startDate;
+
+  const periodNote = dashboard.meta.dataMax
+    ? `all cycles · through ${dashboard.meta.dataMax.slice(0, 7)}`
+    : 'all cycles';
+
+  const flagMsg = storyBug.bugOpen > 0
+    ? `${storyBug.bugOpen} open bugs in scope — review defect backlog on Traceability tab.`
+    : 'Issue Type column detected and mapped → work_item_type.';
+  const flagColor = storyBug.bugOpen > 0 ? QA.FAIL : '#2f6a48';
 
   return (
-    <div className="p-6 space-y-6 max-w-7xl mx-auto">
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <KpiCard label="Total cases" value={overview.totalCases} />
-        <KpiCard label="Executed" value={overview.executed} />
-        <KpiCard label="Pass rate" value={`${overview.passRate}%`} color="green" />
-        <KpiCard label="Failed / Blocked" value={`${overview.failed} / ${overview.blocked}`} color="red" />
+    <QaPageShell title="Execution Overview" subtitle={periodNote}>
+      <QaKpiGrid cols={5}>
+        <QaKpiCard kpiStyle={kpiStyle} label="Total Test Cases" value={fmt(overview.totalCases)}
+          sub={filterActive ? 'in current scope' : `${dashboard.cycles.length} cycles`} color={QA.accent} />
+        <QaKpiCard kpiStyle={kpiStyle} label="Executed" value={fmt(overview.executed)}
+          sub={`${overview.executed && overview.totalCases ? Math.round((overview.executed / overview.totalCases) * 100) : 0}% coverage`} color={QA.PASS} />
+        <QaKpiCard kpiStyle={kpiStyle} label="Pass Rate" value={`${overview.passRate}%`}
+          sub="of executed cases" color="#2F7D5A" />
+        <QaKpiCard kpiStyle={kpiStyle} label="Failed" value={overview.failed}
+          sub={overview.executed ? `${Math.round((overview.failed / overview.executed) * 100)}% of executed` : '—'} color={QA.FAIL} />
+        <QaKpiCard kpiStyle={kpiStyle} label="Blocked" value={overview.blocked}
+          sub="need unblocking" color={QA.BLOCKED} />
+      </QaKpiGrid>
+
+      <div className="grid grid-cols-1 lg:grid-cols-[0.92fr_1.08fr] gap-[22px] mb-[22px]">
+        <QaSection title="Execution Result Mix" subtitle={`All ${fmt(overview.totalCases)} test cases by latest result`}>
+          <ResultDonut
+            items={overview.resultMix.map((r) => ({ code: r.code, label: r.label, count: r.count, pct: r.pct }))}
+            total={overview.totalCases}
+          />
+        </QaSection>
+        <QaSection>
+          <StackedMonthChart data={overview.byMonth} />
+        </QaSection>
       </div>
 
-      <div className="grid md:grid-cols-2 gap-6">
-        <div className="bg-white rounded-2xl border border-slate-200 p-5">
-          <h3 className="text-sm font-semibold text-slate-700 mb-4">Execution result mix</h3>
-          <StatusDonutChart data={overview.chartSeries.resultMix} />
-          <div className="mt-4 grid grid-cols-2 gap-2 text-xs">
-            {overview.resultMix.map((r) => (
-              <div key={r.code} className="flex justify-between bg-slate-50 rounded px-2 py-1">
-                <span>{r.label}</span>
-                <span className="font-medium">{r.count} ({r.pct}%)</span>
+      <QaSection>
+        <div className="flex flex-wrap gap-6">
+          <div className="max-w-[430px] flex-1 min-w-[240px]">
+            <h3 className="font-spectral font-semibold text-base m-0 mb-1">Work-Item Type — Story vs Bug</h3>
+            <p className="m-0 mb-3.5 text-[11.5px] text-qa-muted-light">
+              Issue Type column · JIRA ({fmt(storyBug.story + storyBug.bug)} issues in scope).
+            </p>
+            {storyBug.story + storyBug.bug === 0 ? (
+              <div className="py-5 text-[12.5px] text-qa-muted-light">No work items match the current filters.</div>
+            ) : (
+              <div className="flex flex-col gap-3.5">
+                {[
+                  { label: 'Story / Enhancement', color: QA.accent, count: storyBug.story, done: storyBug.storyDone, open: storyBug.storyOpen, closedLabel: 'done' },
+                  { label: 'Bug / Defect', color: QA.FAIL, count: storyBug.bug, done: storyBug.bugDone, open: storyBug.bugOpen, closedLabel: 'closed' },
+                ].map((r) => (
+                  <div key={r.label}>
+                    <div className="flex justify-between items-baseline mb-1">
+                      <span className="flex items-center gap-2 text-[13px] font-semibold">
+                        <span className="w-[11px] h-[11px]" style={{ background: r.color }} />
+                        {r.label}
+                      </span>
+                      <span className="font-mono-qa text-xs text-qa-muted">
+                        {fmt(r.count)} cases · {r.done} {r.closedLabel} · {r.open} open · {Math.round((r.count / sbTot) * 100)}%
+                      </span>
+                    </div>
+                    <HorizBar pct={(r.count / sbTot) * 100} color={r.color} />
+                  </div>
+                ))}
               </div>
-            ))}
+            )}
+          </div>
+          <div className="flex-1 min-w-[240px] border-l border-[#efece4] pl-6">
+            <div className="font-mono-qa text-[9.5px] tracking-wider uppercase text-qa-muted-light mb-3.5">Delivery status</div>
+            <div className="flex flex-col gap-4">
+              {[
+                { label: 'Stories', done: storyBug.storyDone, open: storyBug.storyOpen, total: storyBug.story || 1, doneColor: QA.accent, openColor: '#cbb89a' },
+                { label: 'Bugs', done: storyBug.bugDone, open: storyBug.bugOpen, total: storyBug.bug || 1, doneColor: QA.FAIL, openColor: '#e0b6ab' },
+              ].map((b) => (
+                <div key={b.label}>
+                  <div className="flex justify-between items-baseline mb-1">
+                    <span className="text-[12.5px] font-semibold" style={{ color: b.doneColor }}>{b.label}</span>
+                    <span className="font-mono-qa text-[11px] text-qa-muted">{b.done} done · {b.open} open</span>
+                  </div>
+                  <div className="flex h-3.5 bg-qa-track">
+                    <div style={{ width: `${(b.done / b.total) * 100}%`, background: b.doneColor, height: '100%' }} />
+                    <div style={{ width: `${(b.open / b.total) * 100}%`, background: b.openColor, height: '100%' }} />
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="flex gap-4 mt-3.5 pt-3 border-t border-[#efece4] text-[10.5px] text-qa-muted">
+              <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 bg-[#15605E]" />Done / Closed</span>
+              <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 bg-[#cbb89a]" />Open</span>
+            </div>
+            <div className="flex items-center gap-1.5 mt-3.5 text-[11px]" style={{ color: flagColor }}>
+              <span className="w-[7px] h-[7px] rounded-full shrink-0" style={{ background: flagColor }} />
+              <span>{flagMsg}</span>
+            </div>
+            {defectBacklog.openTotal > 0 && (
+              <p className="text-[11px] text-qa-muted mt-2 m-0">{defectBacklog.openTotal} open bugs · {defectBacklog.byPriority.find((p) => p.priority === 'Highest')?.open ?? 0} at Highest priority</p>
+            )}
           </div>
         </div>
-
-        <div className="bg-white rounded-2xl border border-slate-200 p-5 space-y-4">
-          <h3 className="text-sm font-semibold text-slate-700">Stories & bugs</h3>
-          <div className="grid grid-cols-2 gap-3 text-sm">
-            <div className="bg-blue-50 rounded-xl p-3"><div className="text-xs text-blue-600">Stories</div><div className="text-2xl font-bold">{storyBug.story}</div><div className="text-xs text-slate-500">{storyBug.storyOpen} open · {storyBug.storyDone} done</div></div>
-            <div className="bg-red-50 rounded-xl p-3"><div className="text-xs text-red-600">Bugs</div><div className="text-2xl font-bold">{storyBug.bug}</div><div className="text-xs text-slate-500">{storyBug.bugOpen} open · {storyBug.bugDone} done</div></div>
-          </div>
-          <h3 className="text-sm font-semibold text-slate-700 pt-2">Defect backlog</h3>
-          <p className="text-2xl font-bold text-slate-800">{defectBacklog.openTotal} open bugs</p>
-          <div className="space-y-1 text-xs max-h-32 overflow-y-auto">
-            {defectBacklog.topPriorities.map((p) => (
-              <div key={p.priority} className="flex justify-between"><span>{p.priority}</span><span>{p.open} open</span></div>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      <div className="bg-white rounded-2xl border border-slate-200 p-5">
-        <h3 className="text-sm font-semibold text-slate-700 mb-4">Execution by month</h3>
-        <ByMonthChart data={overview.byMonth} />
-      </div>
-    </div>
+      </QaSection>
+    </QaPageShell>
   );
 }

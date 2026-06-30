@@ -1,44 +1,150 @@
-import React from 'react';
-import { StatusBadge } from '../components/common/StatusBadge';
+import React, { useMemo } from 'react';
 import type { DashboardPayload } from 'qa-dashboard-batch';
+import type { KpiStyle } from '../theme/qaTheme';
+import { QA, fmt, coverageColor } from '../theme/qaTheme';
+import { QaPageShell, QaSection } from '../components/layout/QaPageShell';
+import { QaKpiCard, QaKpiGrid } from '../components/qa/QaKpiCard';
+import { HorizBar } from '../components/qa/SegBar';
+import { TraceBadge, QaTable, QaThead } from '../components/qa/QaBadge';
+import { PRIORITY_COLORS } from '../theme/qaTheme';
 
 interface TraceabilityPageProps {
   dashboard: DashboardPayload;
+  kpiStyle: KpiStyle;
 }
 
-export function TraceabilityPage({ dashboard }: TraceabilityPageProps) {
+export function TraceabilityPage({ dashboard, kpiStyle }: TraceabilityPageProps) {
+  const { traceability, storyBug, defectBacklog } = dashboard;
+
+  const traceKpis = useMemo(() => {
+    const verified = traceability.filter((t) => t.status === 'Verified').length;
+    const atRisk = traceability.filter((t) => t.status === 'At Risk').length;
+    const totStories = traceability.reduce((a, b) => a + b.stories, 0);
+    const totDone = traceability.reduce((a, b) => a + b.done, 0);
+    const avgCompletion = totStories ? Math.round((totDone / totStories) * 100) : 0;
+    return { verified, atRisk, avgCompletion, areas: traceability.length };
+  }, [traceability]);
+
+  const openMax = Math.max(1, ...defectBacklog.byPriority.map((p) => p.open));
+  const ownerMax = Math.max(1, ...defectBacklog.byOwner.map((o) => o.open));
+
   return (
-    <div className="p-6 max-w-7xl mx-auto space-y-6">
-      <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
-        <table className="w-full text-sm">
-          <thead className="bg-slate-50 text-left text-xs text-slate-500 uppercase">
-            <tr>
-              <th className="px-4 py-3">Feature area</th>
-              <th className="px-4 py-3 text-right">Stories</th>
-              <th className="px-4 py-3 text-right">Done</th>
-              <th className="px-4 py-3 text-right">Open</th>
-              <th className="px-4 py-3 text-right">Bugs</th>
-              <th className="px-4 py-3 text-right">Open bugs</th>
-              <th className="px-4 py-3 text-right">Completion</th>
-              <th className="px-4 py-3">Status</th>
-            </tr>
-          </thead>
+    <QaPageShell
+      title="Requirements Traceability Matrix"
+      subtitle="Story (Issue Type) → delivery & defect status"
+      intro="Every Story work item from the JIRA export, grouped by feature area, traced to its delivery status and any open Bug raised against it — so you can see, per requirement, whether it is verified, in progress, or at risk from open defects."
+    >
+      <QaKpiGrid cols={4}>
+        <QaKpiCard kpiStyle={kpiStyle} label="Story Requirements" value={fmt(storyBug.story)}
+          sub={`${traceKpis.areas} feature areas`} color={QA.accent} />
+        <QaKpiCard kpiStyle={kpiStyle} label="Verified" value={traceKpis.verified}
+          sub="all stories done, no open bugs" color="#2F7D5A" />
+        <QaKpiCard kpiStyle={kpiStyle} label="At Risk" value={traceKpis.atRisk}
+          sub="open defects against story" color={QA.FAIL} />
+        <QaKpiCard kpiStyle={kpiStyle} label="Avg Completion" value={`${traceKpis.avgCompletion}%`}
+          sub="stories delivered" color={QA.BLOCKED} />
+      </QaKpiGrid>
+
+      <QaSection title="Story Delivery by Feature Area" noPadding className="mb-[22px]"
+        headerRight={
+          <div className="flex gap-3.5 flex-wrap">
+            {[
+              { label: 'Verified', border: '#2f6a48', bg: '#e7f0e9' },
+              { label: 'In Progress', border: '#9a6a12', bg: '#f6efd9' },
+              { label: 'At Risk', border: '#a13d2c', bg: '#f6e4df' },
+            ].map((l) => (
+              <span key={l.label} className="flex items-center gap-1 text-[10.5px] text-qa-muted">
+                <span className="w-2.5 h-2.5 border" style={{ background: l.bg, borderColor: l.border }} />{l.label}
+              </span>
+            ))}
+          </div>
+        }
+      >
+        <QaTable>
+          <QaThead cols={[
+            { label: 'Feature Area', className: 'pl-[22px]' },
+            { label: 'Status' },
+            { label: 'Completion', className: 'w-[150px]' },
+            { label: 'Stories', align: 'right' },
+            { label: 'Done', align: 'right' },
+            { label: 'Open', align: 'right' },
+            { label: 'Bugs', align: 'right' },
+            { label: 'Open Bugs', align: 'right', className: 'pr-[22px]' },
+          ]} />
           <tbody>
-            {dashboard.traceability.map((r) => (
-              <tr key={r.area} className="border-t border-slate-100 hover:bg-slate-50">
-                <td className="px-4 py-2.5 font-medium">{r.area}</td>
-                <td className="px-4 py-2.5 text-right">{r.stories}</td>
-                <td className="px-4 py-2.5 text-right text-green-600">{r.done}</td>
-                <td className="px-4 py-2.5 text-right">{r.open}</td>
-                <td className="px-4 py-2.5 text-right">{r.bugs}</td>
-                <td className="px-4 py-2.5 text-right text-red-600">{r.openBugs}</td>
-                <td className="px-4 py-2.5 text-right font-semibold">{r.completion}%</td>
-                <td className="px-4 py-2.5"><StatusBadge status={r.status} /></td>
+            {traceability.map((r) => (
+              <tr key={r.area} className="border-t border-[#f0ede5]">
+                <td className="py-3 pl-[22px] font-semibold">{r.area}</td>
+                <td className="py-3 px-3"><TraceBadge status={r.status} /></td>
+                <td className="py-3 px-3">
+                  <div className="flex items-center gap-2">
+                    <div className="flex-1 h-[7px] bg-qa-track">
+                      <div style={{ width: `${r.completion}%`, height: '100%', background: r.completion >= 80 ? QA.PASS : r.completion >= 40 ? QA.BLOCKED : QA.FAIL }} />
+                    </div>
+                    <span className="font-mono-qa text-[11px] w-[34px] text-right" style={{ color: coverageColor(r.completion) }}>{r.completion}%</span>
+                  </div>
+                </td>
+                <td className="py-3 px-3 text-right font-mono-qa">{r.stories}</td>
+                <td className="py-3 px-3 text-right font-mono-qa text-[#2f6a48]">{r.done}</td>
+                <td className="py-3 px-3 text-right font-mono-qa" style={{ color: r.open > 0 ? '#9a6a12' : '#b3aea3' }}>{r.open}</td>
+                <td className="py-3 px-3 text-right font-mono-qa text-qa-muted">{r.bugs}</td>
+                <td className="py-3 pr-[22px] text-right font-mono-qa" style={{ color: r.openBugs > 0 ? '#a13d2c' : '#b3aea3' }}>{r.openBugs}</td>
               </tr>
             ))}
           </tbody>
-        </table>
-      </div>
-    </div>
+        </QaTable>
+        {!traceability.length && (
+          <div className="py-8 text-center text-[13px] text-qa-muted-light">No Story requirements match the current filters.</div>
+        )}
+      </QaSection>
+
+      <QaSection>
+        <div className="flex flex-wrap gap-6">
+          <div className="flex-1 min-w-[280px]">
+            <div className="flex items-baseline gap-2 mb-1">
+              <h3 className="font-spectral font-semibold text-base m-0">Open Defect Backlog</h3>
+              <span className="font-mono-qa text-[10px] text-qa-muted-light">Bug issues · not Done</span>
+            </div>
+            <p className="m-0 mb-4 text-[11.5px] text-qa-muted-light">
+              {defectBacklog.openTotal} bugs open in scope · {defectBacklog.byPriority.find((p) => p.priority === 'Highest')?.open ?? 0} at Highest priority
+            </p>
+            <div className="flex flex-col gap-3">
+              {defectBacklog.byPriority.map((b) => (
+                <div key={b.priority}>
+                  <div className="flex justify-between items-baseline mb-1">
+                    <span className="flex items-center gap-2 text-[13px] font-semibold">
+                      <span className="w-[11px] h-[11px]" style={{ background: PRIORITY_COLORS[b.priority] || QA.muted }} />
+                      {b.priority} priority
+                    </span>
+                    <span className="font-mono-qa text-xs text-qa-muted">{b.open} open / {b.total} total</span>
+                  </div>
+                  <HorizBar pct={(b.open / openMax) * 100} color={PRIORITY_COLORS[b.priority] || QA.muted} />
+                </div>
+              ))}
+            </div>
+            {defectBacklog.openTotal === 0 && (
+              <div className="py-4 text-[12.5px] text-qa-muted-light">No open defects in the current scope.</div>
+            )}
+          </div>
+          <div className="flex-1 min-w-[230px] border-l border-[#efece4] pl-6">
+            <div className="font-mono-qa text-[9.5px] tracking-wider uppercase text-qa-muted-light mb-3.5">Open bugs by owner</div>
+            <div className="flex flex-col gap-3">
+              {defectBacklog.byOwner.map((o) => (
+                <div key={o.name}>
+                  <div className="flex justify-between items-baseline mb-1">
+                    <span className="text-[13px] font-semibold">{o.name}</span>
+                    <span className="font-mono-qa text-xs text-qa-muted">{o.open}</span>
+                  </div>
+                  <HorizBar pct={(o.open / ownerMax) * 100} color={QA.FAIL} />
+                </div>
+              ))}
+            </div>
+            {defectBacklog.openTotal === 0 && (
+              <div className="py-4 text-[12.5px] text-qa-muted-light">—</div>
+            )}
+          </div>
+        </div>
+      </QaSection>
+    </QaPageShell>
   );
 }

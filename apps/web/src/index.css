@@ -3,9 +3,62 @@
 @tailwind utilities;
 
 @layer base {
-  body {
-    @apply bg-slate-50 text-slate-900 antialiased;
+  :root {
+    --qa-bg: #F5F3ED;
+    --qa-bg-outer: #EDEAE2;
+    --qa-ink: #1C1B18;
+    --qa-accent: #15605E;
+    --qa-muted: #78736A;
+    --qa-border: #e2ded4;
   }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+  }
+
+  body {
+    @apply antialiased;
+    background: var(--qa-bg-outer);
+    color: var(--qa-ink);
+    font-family: 'Public Sans', system-ui, sans-serif;
+  }
+
+  ::selection {
+    background: #1c1b18;
+    color: #f5f3ed;
+  }
+}
+
+.qa-scroll::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.qa-scroll::-webkit-scrollbar-thumb {
+  background: #cfcabd;
+  border: 3px solid #F5F3ED;
+}
+
+.qa-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.font-spectral {
+  font-family: 'Spectral', Georgia, serif;
+}
+
+.font-mono-qa {
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+}
+
+@keyframes qaPulse {
+  0%, 100% { opacity: 0.35; }
+  50% { opacity: 0.9; }
+}
+
+.qa-pulse {
+  animation: qaPulse 1.3s ease infinite;
 }
 
 @media print {
