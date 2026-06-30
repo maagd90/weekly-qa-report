@@ -9,10 +9,10 @@ import {
 import { batchApi, type ReportType } from '../lib/api';
 
 const REPORT_TYPES: { value: ReportType; label: string; desc: string }[] = [
-  { value: 'full', label: 'Full Report', desc: 'All sections: executive summary, resources, projects, bugs, risks' },
+  { value: 'full', label: 'Full Report', desc: 'Executive summary, execution overview, testers, cycles, traceability, defects' },
   { value: 'executive', label: 'Executive Summary', desc: 'High-level 1-page summary for leadership' },
-  { value: 'resources', label: 'Resources Only', desc: 'Focus on individual resource performance and CR assignments' },
-  { value: 'projects', label: 'Projects Only', desc: 'Focus on project health, risks, and blockers' },
+  { value: 'testers', label: 'Testers Only', desc: 'Focus on tester performance and execution volume' },
+  { value: 'cycles', label: 'Test Cycles Only', desc: 'Focus on cycle health, coverage gaps, and at-risk cycles' },
 ];
 
 interface ToolCallNotif {
@@ -32,7 +32,6 @@ export function AiReportPage({ onGenerated }: AiReportPageProps) {
   const [startDate, setStartDate] = useState(weekAgo);
   const [endDate, setEndDate] = useState(today);
   const [reportType, setReportType] = useState<ReportType>('full');
-  const [projectId, setProjectId] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [showSources, setShowSources] = useState(false);
 
@@ -44,17 +43,13 @@ export function AiReportPage({ onGenerated }: AiReportPageProps) {
   });
 
   const generateMutation = useMutation({
-    mutationFn: () => batchApi.generate({
-      startDate,
-      endDate,
-      reportType,
-      projectId: projectId || undefined,
-    }),
+    mutationFn: () => batchApi.generate({ startDate, endDate, reportType }),
     onSuccess: (result) => {
       if (!result.ok && result.error) setError(result.error);
       else setError(null);
       queryClient.invalidateQueries({ queryKey: ['report'] });
       queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard-init'] });
       onGenerated?.();
     },
     onError: (err: Error) => setError(err.message),
@@ -73,8 +68,6 @@ export function AiReportPage({ onGenerated }: AiReportPageProps) {
     }
   }, [reportData]);
 
-  const exportPDF = () => window.print();
-
   return (
     <div className="flex flex-col h-full min-h-0">
       <div className="bg-white border-b border-slate-200 px-6 py-4 print:hidden">
@@ -85,11 +78,11 @@ export function AiReportPage({ onGenerated }: AiReportPageProps) {
             </div>
             <div>
               <h2 className="text-base font-semibold text-slate-800">Generate Report</h2>
-              <p className="text-xs text-slate-500">Parses staged input files, writes dashboard JSON, and runs Claude with in-memory dataset tools.</p>
+              <p className="text-xs text-slate-500">Fetches APIs + parses staged files, writes dashboard JSON, runs Claude with DLM dataset tools.</p>
             </div>
             {!status?.apiKeyConfigured && (
-              <span className="ml-auto text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-1.5">
-                Set ANTHROPIC_API_KEY in .env
+              <span className="ml-auto text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-1.5">
+                No API key — dashboard only (no AI report)
               </span>
             )}
           </div>
@@ -112,20 +105,15 @@ export function AiReportPage({ onGenerated }: AiReportPageProps) {
                 {REPORT_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
               </select>
             </div>
-            <div className="flex items-center gap-2">
-              <label className="text-xs text-slate-500 font-medium">Project ID</label>
-              <input type="text" placeholder="optional" value={projectId} onChange={(e) => setProjectId(e.target.value)}
-                className="border border-slate-300 rounded-lg px-3 py-2 text-sm w-32" />
-            </div>
             <div className="flex gap-2 ml-auto">
               {reportText && (
-                <button onClick={exportPDF} className="flex items-center gap-1.5 text-sm border border-slate-300 px-3 py-2 rounded-lg">
+                <button onClick={() => window.print()} className="flex items-center gap-1.5 text-sm border border-slate-300 px-3 py-2 rounded-lg">
                   <Download size={14} /> Export PDF
                 </button>
               )}
               <button
                 onClick={() => generateMutation.mutate()}
-                disabled={!status?.apiKeyConfigured || generating}
+                disabled={generating}
                 className="flex items-center gap-2 bg-violet-600 hover:bg-violet-700 text-white text-sm px-5 py-2 rounded-lg disabled:opacity-50"
               >
                 {generating ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
@@ -134,9 +122,6 @@ export function AiReportPage({ onGenerated }: AiReportPageProps) {
             </div>
           </div>
           <p className="text-xs text-slate-400">{REPORT_TYPES.find((t) => t.value === reportType)?.desc}</p>
-          {generating && (
-            <p className="text-xs text-violet-600">Parsing input files and calling Claude — this may take 1–3 minutes.</p>
-          )}
         </div>
       </div>
 
@@ -168,14 +153,10 @@ export function AiReportPage({ onGenerated }: AiReportPageProps) {
           <div className="flex flex-col items-center justify-center h-full text-center p-12 text-slate-400">
             <Brain size={48} className="mb-4 text-slate-300" />
             <p className="text-base font-medium text-slate-500">No report yet</p>
-            <p className="text-sm mt-1">Stage files in Import, then generate with a date range.</p>
+            <p className="text-sm mt-1">Stage files or configure integrations, then generate with a date range.</p>
           </div>
         ) : (
           <div className="max-w-4xl mx-auto px-6 py-8">
-            <div className="hidden print:block mb-6">
-              <h1 className="text-2xl font-bold">QA Metrics Report</h1>
-              <p className="text-sm text-slate-500">{startDate} — {endDate}</p>
-            </div>
             <div className="prose prose-slate max-w-none">
               <ReactMarkdown remarkPlugins={[remarkGfm]}>{reportText}</ReactMarkdown>
             </div>

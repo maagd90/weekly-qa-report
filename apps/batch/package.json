@@ -6,7 +6,8 @@
   "types": "dist/index.d.ts",
   "scripts": {
     "build": "tsc",
-    "generate": "ts-node src/cli.ts"
+    "generate": "ts-node src/cli.ts",
+    "test": "npm run build && node dist/parse/__tests__/regression.test.js && node dist/export/__tests__/dashboard.test.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.106.0",

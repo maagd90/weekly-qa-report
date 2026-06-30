@@ -2,8 +2,17 @@ import { Router, Request, Response } from 'express';
 import multer from 'multer';
 import fs from 'fs';
 import path from 'path';
-import { runGenerate } from 'qa-dashboard-batch';
-import { saveMapping, listMappings } from 'qa-dashboard-batch';
+import {
+  runGenerate,
+  buildDataset,
+  computeFingerprint,
+  loadRawDataset,
+  loadFingerprint,
+  saveRawDataset,
+  refilterDashboard,
+  integrationsSummary,
+  loadIntegrations,
+} from 'qa-dashboard-batch';
 
 const router = Router();
 
@@ -14,10 +23,45 @@ const CONFIG_DIR = process.env.CONFIG_DIR || path.join(ROOT, 'config');
 
 fs.mkdirSync(INPUT_DIR, { recursive: true });
 fs.mkdirSync(OUTPUT_DIR, { recursive: true });
+fs.mkdirSync(CONFIG_DIR, { recursive: true });
+
+async function ensureDataset(): Promise<{ dataset: import('qa-dashboard-batch').Dataset; fingerprint: string } | null> {
+  const fingerprint = computeFingerprint(INPUT_DIR, CONFIG_DIR);
+  const cached = loadFingerprint(OUTPUT_DIR);
+  let dataset = loadRawDataset(OUTPUT_DIR);
+
+  if (dataset && cached === fingerprint) {
+    return { dataset, fingerprint };
+  }
+
+  try {
+    dataset = await buildDataset(INPUT_DIR, CONFIG_DIR);
+    if (!dataset.executions.length && !dataset.issues.length && !dataset.uat.length) {
+      return null;
+    }
+    saveRawDataset(OUTPUT_DIR, dataset, fingerprint);
+    return { dataset, fingerprint };
+  } catch {
+    return dataset ? { dataset, fingerprint: cached || fingerprint } : null;
+  }
+}
+
+function parseFilterParams(req: Request) {
+  return {
+    startDate: req.query.startDate as string | undefined,
+    endDate: req.query.endDate as string | undefined,
+    search: req.query.search as string | undefined,
+    result: (req.query.result as 'all' | 'PASS' | 'FAIL' | 'BLOCKED') || 'all',
+    project: req.query.project as string | undefined,
+  };
+}
 
 // GET /api/status
 router.get('/status', (_req: Request, res: Response) => {
-  res.json({ apiKeyConfigured: Boolean(process.env.ANTHROPIC_API_KEY) });
+  res.json({
+    apiKeyConfigured: Boolean(process.env.ANTHROPIC_API_KEY),
+    jiraConfigured: Boolean(process.env.JIRA_EMAIL && process.env.JIRA_API_TOKEN),
+  });
 });
 
 const storage = multer.diskStorage({
@@ -30,48 +74,60 @@ const upload = multer({
   limits: { fileSize: 20 * 1024 * 1024 },
 });
 
-// POST /api/generate — only runs batch when user requests report
+// POST /api/generate
 router.post('/generate', async (req: Request, res: Response) => {
-  const { startDate, endDate, reportType, projectId } = req.body as {
+  const { startDate, endDate, reportType, search, result, project } = req.body as {
     startDate?: string;
     endDate?: string;
     reportType?: string;
-    projectId?: string;
+    search?: string;
+    result?: string;
+    project?: string;
   };
 
   if (!startDate || !endDate) {
     return res.status(400).json({ error: 'startDate and endDate are required' });
   }
 
-  const validTypes = ['full', 'executive', 'resources', 'projects'];
+  const validTypes = ['full', 'executive', 'testers', 'cycles'];
   const type = validTypes.includes(reportType || '') ? reportType! : 'full';
 
   try {
-    const result = await runGenerate({
+    const resultPayload = await runGenerate({
       startDate,
       endDate,
-      reportType: type as 'full' | 'executive' | 'resources' | 'projects',
-      projectId,
+      reportType: type as 'full' | 'executive' | 'testers' | 'cycles',
+      search,
+      result: (result as 'all') || 'all',
+      project,
       inputDir: INPUT_DIR,
       outputDir: OUTPUT_DIR,
       configDir: CONFIG_DIR,
       apiKey: process.env.ANTHROPIC_API_KEY,
     });
 
-    if (!result.ok) {
-      return res.status(result.paths.dashboard ? 207 : 400).json(result);
+    if (!resultPayload.ok) {
+      return res.status(resultPayload.paths.dashboard ? 207 : 400).json(resultPayload);
     }
-    res.json(result);
+    res.json(resultPayload);
   } catch (err) {
     res.status(500).json({ error: (err as Error).message });
   }
 });
 
-// GET /api/dashboard
-router.get('/dashboard', (_req: Request, res: Response) => {
+// GET /api/dashboard — re-filter cached dataset with query params
+router.get('/dashboard', async (req: Request, res: Response) => {
+  const filter = parseFilterParams(req);
+  const cached = await ensureDataset();
+
+  if (cached) {
+    const payload = refilterDashboard(cached.dataset, filter);
+    return res.json(payload);
+  }
+
   const file = path.join(OUTPUT_DIR, 'dashboard-data.json');
   if (!fs.existsSync(file)) {
-    return res.status(404).json({ error: 'No dashboard generated yet. Click Generate Report.' });
+    return res.status(404).json({ error: 'No dashboard generated yet. Click Generate Report or configure integrations.' });
   }
   res.json(JSON.parse(fs.readFileSync(file, 'utf8')));
 });
@@ -88,7 +144,36 @@ router.get('/report', (_req: Request, res: Response) => {
   res.json({ markdown, meta });
 });
 
-// POST /api/upload — store only, no parsing
+// GET /api/integrations
+router.get('/integrations', (_req: Request, res: Response) => {
+  const summary = integrationsSummary(CONFIG_DIR);
+  const cfg = loadIntegrations(CONFIG_DIR);
+  res.json({
+    ...summary,
+    config: {
+      jira: { enabled: cfg.jira.enabled, projectKeys: cfg.jira.projectKeys, jql: cfg.jira.jql },
+      qmetry: { enabled: cfg.qmetry.enabled, projectKey: cfg.qmetry.projectKey, cycleIds: cfg.qmetry.cycleIds },
+    },
+  });
+});
+
+// POST /api/integrations/test
+router.post('/integrations/test', async (_req: Request, res: Response) => {
+  try {
+    const dataset = await buildDataset(INPUT_DIR, CONFIG_DIR);
+    res.json({
+      ok: true,
+      executions: dataset.executions.length,
+      issues: dataset.issues.length,
+      uat: dataset.uat.length,
+      warnings: dataset.meta.warnings,
+    });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: (err as Error).message });
+  }
+});
+
+// POST /api/upload
 router.post('/upload', upload.single('file'), (req: Request, res: Response) => {
   if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
   res.json({ ok: true, filename: req.file.filename, path: req.file.path, message: 'File staged. Run Generate Report to process.' });
@@ -112,24 +197,6 @@ router.delete('/input/:filename', (req: Request, res: Response) => {
   const filePath = path.join(INPUT_DIR, safe);
   if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'File not found' });
   fs.unlinkSync(filePath);
-  res.json({ ok: true });
-});
-
-// GET /api/mappings
-router.get('/mappings', (_req: Request, res: Response) => {
-  res.json(listMappings(CONFIG_DIR));
-});
-
-// POST /api/mappings
-router.post('/mappings', (req: Request, res: Response) => {
-  const { pattern, mapping, weekYear, weekNumber } = req.body as {
-    pattern: string;
-    mapping: Record<string, string>;
-    weekYear?: number;
-    weekNumber?: number;
-  };
-  if (!pattern || !mapping) return res.status(400).json({ error: 'pattern and mapping required' });
-  saveMapping(CONFIG_DIR, pattern, mapping, weekYear, weekNumber);
   res.json({ ok: true });
 });
 

@@ -1,47 +1,64 @@
 import React, { useState } from 'react';
 import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query';
-import { LayoutDashboard, FolderKanban, Upload, Brain, Settings, BarChart3 } from 'lucide-react';
+import {
+  LayoutDashboard, Users, RotateCcw, GitBranch, ClipboardList,
+  Upload, Brain, Settings,
+} from 'lucide-react';
 import clsx from 'clsx';
 import { GlobalFilters } from './components/filters/GlobalFilters';
-import { ResourcesPage } from './pages/ResourcesPage';
-import { ProjectStatusPage } from './pages/ProjectStatusPage';
+import { OverviewPage } from './pages/OverviewPage';
+import { TestersPage } from './pages/TestersPage';
+import { CyclesPage } from './pages/CyclesPage';
+import { TraceabilityPage } from './pages/TraceabilityPage';
+import { UatPage } from './pages/UatPage';
 import { ImportStatusPage } from './pages/ImportStatusPage';
 import { AiReportPage } from './pages/AiReportPage';
 import { SettingsPage } from './pages/SettingsPage';
-import { ChartPickerPanel, EmptyDashboard } from './components/common/ChartPickerPanel';
+import { EmptyDashboard } from './components/common/EmptyDashboard';
 import { useFilters } from './hooks/useFilters';
 import { batchApi } from './lib/api';
-import type { DashboardPayload } from './lib/dashboardCompute';
+import type { DashboardPayload } from 'qa-dashboard-batch';
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, staleTime: 30_000 } },
 });
 
-type Tab = 'resources' | 'projects' | 'import' | 'ai' | 'settings' | 'charts';
+type Tab = 'overview' | 'testers' | 'cycles' | 'traceability' | 'uat' | 'import' | 'ai' | 'settings';
 
 const TABS: { id: Tab; label: string; icon: React.ReactNode; hideFilters?: boolean }[] = [
-  { id: 'resources', label: 'Resources', icon: <LayoutDashboard size={16} /> },
-  { id: 'projects', label: 'Project Status', icon: <FolderKanban size={16} /> },
+  { id: 'overview', label: 'Overview', icon: <LayoutDashboard size={16} /> },
+  { id: 'testers', label: 'Testers', icon: <Users size={16} /> },
+  { id: 'cycles', label: 'Test Cycles', icon: <RotateCcw size={16} /> },
+  { id: 'traceability', label: 'Traceability', icon: <GitBranch size={16} /> },
+  { id: 'uat', label: 'UAT', icon: <ClipboardList size={16} /> },
   { id: 'import', label: 'Import Data', icon: <Upload size={16} />, hideFilters: true },
   { id: 'ai', label: 'AI Report', icon: <Brain size={16} />, hideFilters: true },
-  { id: 'charts', label: 'Charts', icon: <BarChart3 size={16} />, hideFilters: true },
   { id: 'settings', label: 'Settings', icon: <Settings size={16} />, hideFilters: true },
 ];
 
 function AppContent() {
-  const [activeTab, setActiveTab] = useState<Tab>('resources');
+  const [activeTab, setActiveTab] = useState<Tab>('overview');
 
-  const { data: dashboard, isLoading, refetch } = useQuery<DashboardPayload | null>({
-    queryKey: ['dashboard'],
-    queryFn: batchApi.getDashboard,
+  const { data: initialDashboard } = useQuery<DashboardPayload | null>({
+    queryKey: ['dashboard-init'],
+    queryFn: () => batchApi.getDashboard(),
     retry: false,
   });
 
-  const filters = useFilters(dashboard ?? undefined);
+  const filters = useFilters(initialDashboard ?? undefined);
+
+  const { data: dashboard, isLoading, refetch } = useQuery<DashboardPayload | null>({
+    queryKey: ['dashboard', filters.filterParams],
+    queryFn: () => batchApi.getDashboard(filters.filterParams),
+    retry: false,
+    enabled: !!initialDashboard,
+  });
+
+  const display = dashboard ?? initialDashboard;
   const currentTab = TABS.find((t) => t.id === activeTab)!;
-  const showFilters = !currentTab.hideFilters && !!dashboard;
-  const filterParams = filters.filterParams;
-  const hasDashboard = !!dashboard;
+  const showFilters = !currentTab.hideFilters;
+  const hasDashboard = !!display;
+  const showUat = !!display?.uat;
 
   const goGenerate = () => setActiveTab('ai');
 
@@ -54,13 +71,13 @@ function AppContent() {
               <LayoutDashboard size={20} className="text-white" />
             </div>
             <div>
-              <h1 className="text-lg font-bold text-slate-800">QA Dashboard</h1>
-              <p className="text-xs text-slate-400">File-based batch · no database</p>
+              <h1 className="text-lg font-bold text-slate-800">DLM QA Dashboard</h1>
+              <p className="text-xs text-slate-400">Zephyr · JIRA · ODL · API integrations</p>
             </div>
           </div>
         </div>
         <nav className="flex px-6 -mb-px gap-1 overflow-x-auto">
-          {TABS.map((tab) => (
+          {TABS.filter((t) => t.id !== 'uat' || showUat || !hasDashboard).map((tab) => (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
@@ -78,51 +95,38 @@ function AppContent() {
 
       {showFilters && (
         <GlobalFilters
-          years={filters.years}
-          weeks={filters.weeks}
-          selectedYear={filters.selectedYear}
-          selectedWeek={filters.selectedWeek}
-          onYearChange={filters.setSelectedYear}
-          onWeekChange={filters.setSelectedWeek}
-          mode={filters.mode}
-          onModeChange={filters.setMode}
           startDate={filters.startDate}
           endDate={filters.endDate}
           onStartDateChange={filters.setStartDate}
           onEndDateChange={filters.setEndDate}
-          generatedAt={filters.generatedAt}
+          search={filters.search}
+          onSearchChange={filters.setSearch}
+          result={filters.result}
+          onResultChange={filters.setResult}
+          project={filters.project}
+          onProjectChange={filters.setProject}
+          projects={filters.projects}
+          generatedAt={display?.meta.generatedAt}
         />
       )}
 
       <main className={clsx('flex-1', activeTab === 'ai' ? 'flex flex-col overflow-hidden min-h-0' : 'overflow-auto')}>
-        {isLoading && (activeTab === 'resources' || activeTab === 'projects') && (
-          <div className="flex items-center justify-center h-64 text-slate-400 text-sm">Loading dashboard…</div>
+        {isLoading && showFilters && hasDashboard && (
+          <div className="flex items-center justify-center h-64 text-slate-400 text-sm">Refreshing filters…</div>
         )}
 
-        {!isLoading && !hasDashboard && (activeTab === 'resources' || activeTab === 'projects') && (
+        {!isLoading && !hasDashboard && showFilters && (
           <EmptyDashboard onGenerate={goGenerate} />
         )}
 
-        {hasDashboard && activeTab === 'resources' && filterParams && (
-          <ResourcesPage dashboard={dashboard} filter={filterParams} year={filters.selectedYear ?? new Date().getFullYear()} />
-        )}
-        {hasDashboard && activeTab === 'projects' && filterParams && (
-          <ProjectStatusPage dashboard={dashboard} filter={filterParams} year={filters.selectedYear ?? new Date().getFullYear()} />
-        )}
+        {display && activeTab === 'overview' && <OverviewPage dashboard={display} />}
+        {display && activeTab === 'testers' && <TestersPage dashboard={display} />}
+        {display && activeTab === 'cycles' && <CyclesPage dashboard={display} />}
+        {display && activeTab === 'traceability' && <TraceabilityPage dashboard={display} />}
+        {display && activeTab === 'uat' && showUat && <UatPage dashboard={display} />}
         {activeTab === 'import' && <ImportStatusPage />}
         {activeTab === 'ai' && <AiReportPage onGenerated={() => refetch()} />}
-        {activeTab === 'charts' && (
-          <div className="p-6 max-w-2xl mx-auto">
-            <ChartPickerPanel />
-          </div>
-        )}
         {activeTab === 'settings' && <SettingsPage />}
-
-        {hasDashboard && (activeTab === 'resources' || activeTab === 'projects') && !filterParams && (
-          <div className="flex items-center justify-center h-64 text-slate-400 text-sm">
-            Select a year and week (or date range) to filter charts.
-          </div>
-        )}
       </main>
     </div>
   );

@@ -1,10 +1,10 @@
 import fs from 'fs';
 import path from 'path';
-import type { GenerateParams, GenerateResult } from './types/dataset';
-import { discoverInputFiles, parseFile } from './parsers/dispatcher';
-import { mergeDatasets } from './merge/mergeDatasets';
-import { buildDashboardPayload } from './export/dashboardJson';
+import type { DashboardPayload, GenerateParams, GenerateResult } from './types/dataset';
+import { buildDataset, computeFingerprint, saveRawDataset } from './cache/datasetCache';
+import { buildDashboardPayload } from './export/buildDashboardPayload';
 import { generateReportFromDataset } from './ai/reportWriter';
+import { discoverInputFiles } from './parse/dispatcher';
 
 function resolveRoot(): string {
   return path.resolve(__dirname, '../../..');
@@ -19,48 +19,70 @@ export async function runGenerate(params: GenerateParams): Promise<GenerateResul
   fs.mkdirSync(inputDir, { recursive: true });
   fs.mkdirSync(outputDir, { recursive: true });
 
-  const files = discoverInputFiles(inputDir);
-  if (files.length === 0) {
+  const filterParams = {
+    startDate: params.startDate,
+    endDate: params.endDate,
+    search: params.search,
+    result: params.result,
+    project: params.project,
+  };
+
+  let dataset;
+  try {
+    dataset = await buildDataset(inputDir, configDir);
+  } catch (err) {
     return {
       ok: false,
       filesParsed: 0,
       rowCounts: {},
-      warnings: ['No files found in input folder'],
-      paths: { dashboard: '', report: '', meta: '' },
-      error: 'No input files in ' + inputDir,
+      warnings: [],
+      paths: { dashboard: '', report: '', meta: '', raw: '' },
+      error: (err as Error).message,
     };
   }
 
-  const parts = [];
-  for (const file of files) {
-    parts.push(await parseFile(file, { configDir }));
+  const fileCount = discoverInputFiles(inputDir).length;
+  const totalRows = dataset.executions.length + dataset.issues.length + dataset.uat.length;
+
+  if (totalRows === 0) {
+    return {
+      ok: false,
+      filesParsed: fileCount,
+      rowCounts: {},
+      warnings: dataset.meta.warnings,
+      paths: { dashboard: '', report: '', meta: '', raw: '' },
+      error: 'No data from APIs or input files. Configure integrations.json or stage Excel files.',
+    };
   }
-  const dataset = mergeDatasets(parts);
+
+  const fingerprint = computeFingerprint(inputDir, configDir);
+  const rawPath = path.join(outputDir, 'raw-dataset.json');
+  saveRawDataset(outputDir, dataset, fingerprint);
 
   const dashboardPath = path.join(outputDir, 'dashboard-data.json');
   const reportPath = path.join(outputDir, 'report.md');
   const metaPath = path.join(outputDir, 'report-meta.json');
 
-  const payload = buildDashboardPayload(dataset, params);
+  const payload = buildDashboardPayload(dataset, filterParams);
   fs.writeFileSync(dashboardPath, JSON.stringify(payload, null, 2));
 
   const apiKey = params.apiKey || process.env.ANTHROPIC_API_KEY || '';
   if (!apiKey) {
     return {
-      ok: false,
-      filesParsed: files.length,
+      ok: true,
+      filesParsed: fileCount,
       rowCounts: {
-        resources: dataset.resources.length,
-        weeklyLog: dataset.weeklyLog.length,
-        projectStatus: dataset.projectStatusWeekly.length,
+        executions: dataset.executions.length,
+        issues: dataset.issues.length,
+        uat: dataset.uat.length,
       },
-      warnings: [...dataset.meta.warnings, 'ANTHROPIC_API_KEY not set — dashboard JSON written, report skipped'],
-      paths: { dashboard: dashboardPath, report: '', meta: '' },
-      error: 'ANTHROPIC_API_KEY required for AI report',
+      warnings: [...dataset.meta.warnings, 'ANTHROPIC_API_KEY not set — report skipped'],
+      paths: { dashboard: dashboardPath, report: '', meta: '', raw: rawPath },
+      payload,
     };
   }
 
-  const report = await generateReportFromDataset(dataset, params, apiKey);
+  const report = await generateReportFromDataset(dataset, params, apiKey, filterParams);
   fs.writeFileSync(reportPath, report.markdown);
   fs.writeFileSync(metaPath, JSON.stringify({
     generatedAt: new Date().toISOString(),
@@ -70,15 +92,21 @@ export async function runGenerate(params: GenerateParams): Promise<GenerateResul
 
   return {
     ok: true,
-    filesParsed: files.length,
+    filesParsed: fileCount,
     rowCounts: {
-      resources: dataset.resources.length,
-      projects: dataset.projects.length,
-      crs: dataset.crs.length,
-      weeklyLog: dataset.weeklyLog.length,
-      projectStatus: dataset.projectStatusWeekly.length,
+      executions: dataset.executions.length,
+      issues: dataset.issues.length,
+      uat: dataset.uat.length,
     },
     warnings: dataset.meta.warnings,
-    paths: { dashboard: dashboardPath, report: reportPath, meta: metaPath },
+    paths: { dashboard: dashboardPath, report: reportPath, meta: metaPath, raw: rawPath },
+    payload,
   };
+}
+
+export function refilterDashboard(
+  dataset: import('./types/dataset').Dataset,
+  filterParams: import('./types/dataset').FilterParams,
+): DashboardPayload {
+  return buildDashboardPayload(dataset, filterParams);
 }

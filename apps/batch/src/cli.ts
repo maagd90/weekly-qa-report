@@ -28,7 +28,7 @@ async function main() {
   const reportType = (args['report-type'] || args.reportType || 'full') as ReportType;
 
   if (!startDate || !endDate) {
-    console.error('Usage: npm run generate -- --start-date YYYY-MM-DD --end-date YYYY-MM-DD [--report-type full|executive|resources|projects]');
+    console.error('Usage: npm run generate -- --start-date YYYY-MM-DD --end-date YYYY-MM-DD [--report-type full|executive|testers|cycles]');
     process.exit(1);
   }
 
@@ -36,14 +36,13 @@ async function main() {
     startDate,
     endDate,
     reportType,
-    projectId: args['project-id'] || args.projectId,
-    inputDir: args.inputDir,
-    outputDir: args.outputDir,
+    search: args.search,
+    result: (args.result as 'all') || 'all',
+    project: args.project,
   });
 
-  if (!result.ok) {
+  if (!result.ok && !result.payload) {
     console.error('Generate failed:', result.error);
-    if (result.warnings.length) console.warn('Warnings:', result.warnings);
     process.exit(1);
   }
 

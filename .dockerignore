@@ -1,0 +1,13 @@
+node_modules
+**/node_modules
+**/dist
+.git
+.env
+input/*
+output/*
+*.md
+!README.md
+.cursor
+.DS_Store
+**/*.tsbuildinfo
+fixtures

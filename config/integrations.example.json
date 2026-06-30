@@ -1,0 +1,23 @@
+{
+  "jira": {
+    "enabled": false,
+    "baseUrl": "https://jiraagile.emirates.com",
+    "searchPath": "/rest/api/2/search",
+    "projectKeys": ["DLM"],
+    "jql": "project = DLM AND issuetype in (Story, Bug) ORDER BY updated DESC",
+    "pageSize": 100,
+    "statusDone": ["Done", "CLOSED", "Cancel", "Closed"]
+  },
+  "qmetry": {
+    "enabled": false,
+    "baseUrl": "https://jiraagile.emirates.com",
+    "apiPrefix": "/rest/qtm4j/ui/latest",
+    "projectKey": "DLM",
+    "testCyclesSearchPath": null,
+    "testCasesSearchPath": "/testcycles/{cycleId}/testcases/search",
+    "testCaseFields": "seqNo,key,versionNo,summary,priority,status,environment,executionResult,executionAssignee,executedOn,executedBy,lastModified,build",
+    "cycleIds": ["Qr0MHaDZtj"],
+    "pageSize": 50,
+    "maxPages": 200
+  }
+}

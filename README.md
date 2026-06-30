@@ -1,296 +1,169 @@
-# Weekly QA Metrics Dashboard
+# Weekly QA Metrics Dashboard — DLM
 
-A file-based reporting platform for QA teams. Stage exports in `input/`, generate a dashboard and AI report on demand, and explore interactive charts — **no database required**.
+File-based QA dashboard for the **DLM** project. Parses Zephyr exports, JIRA issues, and ODL UAT spreadsheets (or fetches live from JIRA/QMetry APIs), aggregates metrics, and serves a React UI with date-range filtering — **no database required**.
 
 ---
 
 ## Overview
 
-QA teams produce valuable data every week — test runs, bug counts, change request assignments, project risk assessments — but that data is often scattered across spreadsheets, JIRA exports, and PDFs.
-
-This dashboard parses staged files when you explicitly click **Generate Report**, merges them into an in-memory dataset, writes `output/dashboard-data.json` and a Claude narrative report, and serves both to a React UI with ISO-week or custom date-range filtering.
-
-**Design principle:** no background jobs, no auto-import, no SQLite. State lives in files (`input/`, `output/`, `config/mappings/`) and browser `localStorage` (chart preferences).
-
----
-
-## Key Features
-
-| Feature | Description |
+| Source | Data |
 |---|---|
-| **Resource Dashboard** | Per-resource test execution, bug reporting, and CR assignment breakdown |
-| **Project Status** | Weekly project health with completion %, risks, blockers, and accomplishments |
-| **Multi-Format Import** | Stage XLSX, CSV, TSV, JSON, PDF, and XML — parsing runs only at Generate |
-| **JIRA Column Mapping** | Auto-detect known JIRA headers or save maps in `config/mappings/` |
-| **Date Range Filtering** | Filter all views by ISO week or custom `startDate` / `endDate` |
-| **Generate on Demand** | Batch job writes `dashboard-data.json` + AI report in one action |
-| **Chart Picker** | Choose which charts to show; preferences persist in `localStorage` |
-| **Zero-Hallucination AI** | Claude queries an in-memory dataset via eight tools — no invented numbers |
+| **Zephyr / QMetry** | Test cycle executions (PASS/FAIL/BLOCKED/NE/NA) |
+| **JIRA** | Stories and Bugs |
+| **ODL** | UAT issues (optional) |
 
----
+Stage Excel files in `input/`, or enable `config/integrations.json` to pull from Emirates JIRA/QMetry. Click **Generate Report** to parse, cache `raw-dataset.json`, write `dashboard-data.json`, and optionally run a Claude AI report.
 
-## Trigger Model
-
-| Action | What happens |
-|---|---|
-| Drop file in `input/` or UI upload | File is **stored only** — no parsing, no AI |
-| User clicks **Generate Report** | Batch runs once: parse → merge → filter → write JSON + AI report |
-| User opens dashboard tabs | UI reads last `output/dashboard-data.json` (empty state if never generated) |
-| User picks charts | Client-side only — no batch |
+**Updated-date filtering:** rows updated within the selected date range appear even if created earlier.
 
 ---
 
 ## Architecture
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                     Browser (React + Vite)                       │
-│  Resources │ Project Status │ Import │ AI Report │ Charts │ ⚙   │
-└────────────────────────────┬────────────────────────────────────┘
-                             │ HTTP
-┌────────────────────────────▼────────────────────────────────────┐
-│                   Express API (thin file server)                 │
-│  POST /api/generate   GET /api/dashboard   GET /api/report      │
-│  POST /api/upload     GET /api/input/files  GET/POST /mappings  │
-└────────────────────────────┬────────────────────────────────────┘
-                             │ runGenerate()
-┌────────────────────────────▼────────────────────────────────────┐
-│                      apps/batch pipeline                         │
-│  discover input/* → parse (xlsx/csv/json/pdf/xml) → merge       │
-│  → buildDashboardPayload() → write output/dashboard-data.json   │
-│  → Claude + 8 dataset tools → output/report.md                  │
-└──────────────┬──────────────────────────────┬───────────────────┘
-               │                              │
-        ┌──────▼──────┐                ┌──────▼──────┐
-        │  input/     │                │  Claude API │
-        │  output/    │                │ (tool-use)  │
-        │  config/    │                └─────────────┘
-        └─────────────┘
-```
-
-### Batch Pipeline Flow
-
-```mermaid
-flowchart TD
-  User["Generate Report\nstartDate, endDate, reportType"]
-  Input["input/ folder"]
-  User --> Batch
-  Input --> Batch
-  subgraph Batch [apps/batch]
-    Parse["Parse all files"]
-    Merge["Merge Dataset"]
-    Export["Write dashboard-data.json"]
-    AI["Claude + dataset tools"]
-    Report["Write report.md"]
-    Parse --> Merge --> Export
-    Merge --> AI --> Report
-  end
-  Export --> Output["output/"]
-  Report --> Output
-  Output --> UI["React charts + report view"]
-```
-
-### AI Zero-Hallucination Flow
+**All dashboard metrics are computed on the backend.** The React UI is display-only — it calls `GET /api/dashboard` with filter query params and renders the JSON. See [docs/AGGREGATION.md](docs/AGGREGATION.md) for parity with the prototype `renderVals` logic.
 
 ```
-Generate Report request
-        │
-        ▼
-  Claude receives system prompt + 8 in-memory dataset tool definitions
-        │
-        ├─► get_resource_summary()   → filter weeklyLog → real rows
-        ├─► get_project_status()     → filter projectStatus → real rows
-        ├─► get_risk_summary()       → filter risks/blockers → real rows
-        └─► writes report using ONLY returned data
-        │
-        ▼
-  report.md written to output/ (UI loads on next fetch)
+input/ + integrations → parse → raw-dataset.json → applyFilters → buildDashboardPayload → JSON
+                                                                                              ↓
+                                                                                    React (render only)
 ```
 
-Claude never invents numbers. If a tool returns empty data, the report states *"No data available for this period."*
-
----
-
-## Technology Stack
-
-### Backend & Batch
-
-| Technology | Role |
-|---|---|
-| **Node.js + Express** | Thin REST API — trigger batch, serve files |
-| **TypeScript** | Type safety across batch, API, and web |
-| **xlsx** | Excel and CSV parsing |
-| **pdf-parse** | PDF text extraction |
-| **multer** | Multipart file upload to `input/` |
-| **@anthropic-ai/sdk** | Claude API with tool-use for reports |
-
-### Frontend
-
-| Technology | Role |
-|---|---|
-| **React 18** | UI component framework |
-| **Vite** | Dev server and production bundler |
-| **Tailwind CSS** | Utility-first styling |
-| **Recharts** | Bar, line, and donut charts |
-| **@tanstack/react-query** | Server state and caching |
-| **react-markdown + remark-gfm** | AI report rendering |
-
-### Infrastructure
-
-| Technology | Role |
-|---|---|
-| **Docker + Docker Compose** | Containerised deployment |
-| **Nginx** | Static frontend with API proxy |
-
----
-
-## Project Structure
-
-```
-dashboard/
-├── input/                  # Staged exports (gitignored)
-├── output/                 # Last generate run (gitignored)
-├── config/
-│   ├── mappings/           # Saved JIRA column maps (gitignored)
-│   └── charts.default.json
-├── scripts/
-│   └── generate-report.bat # Windows CLI helper
-├── templates/
-│   └── team-metrics-template.xlsx
-├── apps/
-│   ├── batch/              # Parsers, merge, dataset tools, CLI
-│   │   └── src/
-│   │       ├── parsers/    # xlsx, csv, json, pdf, xml dispatcher
-│   │       ├── jira/       # Detection, mapping, normalize
-│   │       ├── export/     # dashboard-data.json builder
-│   │       └── ai/         # datasetTools + reportWriter
-│   ├── api/                # Express routes → runGenerate()
-│   └── web/                # React UI
-├── docker-compose.yml
-└── .env.example
-```
-
----
-
-## Data Model
-
-The Excel template contains five sheets normalized into a single `Dataset`:
-
-| Sheet / Entity | Purpose |
-|---|---|
-| `Resources` | Team members — ID, name, team, role |
-| `Projects` | Active projects — ID, name, manager, dates, status |
-| `CRs` | Change requests linked to projects |
-| `Weekly_Log` | One row per resource × CR × week — test cases, bugs, hours |
-| `Project_Status_Weekly` | One row per project × week — completion %, risks, blockers |
-
-JIRA and other exports are mapped to this schema before dashboard and AI steps.
-
----
-
-## Getting Started
-
-### Prerequisites
-
-- Node.js 20+
-- npm 10+
-
-### Local Development
+## Quick start
 
 ```bash
-# 1. Install dependencies
-npm install
-
-# 2. Configure environment
-cp .env.example .env
-# Edit .env — set ANTHROPIC_API_KEY
-
-# 3. Start API + frontend
-npm run dev
+chmod +x run.sh
+./run.sh setup
+cp fixtures/input/*.xlsx input/   # optional sample data
+./run.sh dev                      # local: UI http://localhost:5173
 ```
-
-| Service | URL |
-|---|---|
-| API | http://localhost:3001 |
-| UI | http://localhost:5173 |
-
-### Workflow
-
-1. **Stage files** — copy exports to `input/` or use the **Import Data** tab (upload stores only).
-2. **Generate** — **AI Report** tab → set date range and report type → **Generate Report** (may take 1–3 min).
-3. **Explore** — **Resources** and **Project Status** tabs read the last generated JSON.
-4. **Charts** tab — toggle visible charts (saved in browser).
-
-### CLI (headless)
-
-```bash
-npm run generate -- \
-  --start-date 2026-06-21 \
-  --end-date 2026-06-26 \
-  --report-type full
-```
-
-Report types: `full` | `executive` | `resources` | `projects`
-
-Windows: `scripts/generate-report.bat`
 
 ### Docker
+
+```bash
+./run.sh setup
+cp fixtures/input/*.xlsx input/
+./run.sh docker                   # UI http://localhost:3000, API http://localhost:3001
+./run.sh docker down              # stop
+./run.sh docker logs              # follow logs
+```
+
+Or use Docker Compose directly:
 
 ```bash
 docker compose up --build -d
 ```
 
-Mounts `./input`, `./output`, and `./config`. Set `ANTHROPIC_API_KEY` in `.env`.
+### Manual (without run.sh)
 
-App: http://localhost:3000
+```bash
+npm install
+cp .env.example .env
+cp config/integrations.example.json config/integrations.json
+cp fixtures/input/*.xlsx input/
+npm run dev
+```
+
+Generate from CLI:
+
+```bash
+./run.sh generate 2026-06-24 2026-06-30 full
+# or
+npm run generate -- --start-date 2026-06-24 --end-date 2026-06-30 --report-type full
+```
+
+Run regression tests:
+
+```bash
+npm test
+```
 
 ---
 
-## Supported Input Formats
+## Dashboard tabs
 
-| Format | Extensions | Handler |
-|---|---|---|
-| Excel | `.xlsx`, `.xls` | Template sheets or JIRA-style sheets |
-| CSV / TSV | `.csv`, `.tsv` | Native CSV parser; JIRA auto-map |
-| JSON | `.json` | Template schema or JIRA REST export |
-| PDF | `.pdf` | Text extraction + heuristic tables |
-| XML | `.xml` | JIRA RSS/XML export |
-
-When columns don't match the template, auto-detect JIRA headers or save a mapping under **Import → JIRA column mapping**.
+| Tab | Content |
+|---|---|
+| **Overview** | Result mix, pass rate, story/bug split, defect backlog |
+| **Testers** | Per-tester execution stats |
+| **Test Cycles** | Cycle health, coverage, pass % |
+| **Traceability** | Feature area matrix (stories, bugs, completion) |
+| **UAT** | ODL UAT issues (shown when ODL data loaded) |
+| **Import Data** | Upload Excel to `input/` |
+| **AI Report** | Generate Claude narrative with 6 dataset tools |
+| **Settings** | Integration status, env hints |
 
 ---
 
-## API Reference
+## Integrations
+
+Copy `config/integrations.example.json` → `config/integrations.json` and set:
+
+```json
+{
+  "jira": { "enabled": true, "projectKeys": ["DLM"] },
+  "qmetry": { "enabled": true, "cycleIds": ["Qr0MHaDZtj"] }
+}
+```
+
+Credentials in `.env`:
+
+```
+JIRA_EMAIL=you@emirates.com
+JIRA_API_TOKEN=...
+ANTHROPIC_API_KEY=sk-ant-...   # optional — dashboard works without it
+```
+
+- **JIRA:** `POST /rest/api/2/search` on `jiraagile.emirates.com`
+- **QMetry:** `GET /rest/qtm4j/ui/latest/testcycles/{cycleId}/testcases/search`
+
+---
+
+## API endpoints
 
 | Method | Path | Description |
 |---|---|---|
-| `POST` | `/api/generate` | Run batch (`startDate`, `endDate`, `reportType`, optional `projectId`) |
-| `GET` | `/api/dashboard` | Last `dashboard-data.json` or 404 |
-| `GET` | `/api/report` | Last `report.md` + `report-meta.json` or 404 |
-| `GET` | `/api/status` | `{ apiKeyConfigured: boolean }` |
-| `POST` | `/api/upload` | Stage file to `input/` (no parsing) |
+| `GET` | `/api/dashboard?startDate&endDate&search&result&project` | Re-filter cached dataset |
+| `POST` | `/api/generate` | Parse/fetch, write JSON + AI report |
+| `GET` | `/api/integrations` | Integration config summary |
+| `POST` | `/api/integrations/test` | Test API fetch |
+| `POST` | `/api/upload` | Stage file to `input/` |
 | `GET` | `/api/input/files` | List staged files |
-| `DELETE` | `/api/input/:filename` | Remove staged file |
-| `GET` | `/api/mappings` | List saved column maps |
-| `POST` | `/api/mappings` | Save column map for a filename pattern |
 
 ---
 
-## Configuration
+## Regression totals (fixture files)
 
-| Variable | Default | Description |
+| Source | Rows | Key metrics |
 |---|---|---|
-| `PORT` | `3001` | API server port |
-| `ANTHROPIC_API_KEY` | _(required for AI)_ | Claude API key for report generation |
-| `INPUT_DIR` | `./input` | Staged export folder |
-| `OUTPUT_DIR` | `./output` | Generated dashboard + report |
-| `CONFIG_DIR` | `./config` | Mapping configs |
-| `PROJECT_ROOT` | _(auto)_ | Repo root for path resolution |
-
-The API key is read from `.env` only — not stored in a database or Settings UI.
+| Zephyr | 2210 | PASS 1319, NE 715, BLOCKED 109, FAIL 46, NA 21 |
+| JIRA | 779 | Story 582, Bug 197; 63 open bugs |
+| ODL | 74 | 43 closed, 31 open |
 
 ---
 
-## License
+## Project structure
 
-MIT
+```
+apps/batch/     Parse, merge, aggregate, AI tools
+apps/api/       Express file server
+apps/web/       React dashboard UI
+config/         integrations.json
+input/          Staged Excel exports
+output/         dashboard-data.json, raw-dataset.json, report.md
+fixtures/input/ Sample regression files
+```
+
+---
+
+## AI report tools
+
+Claude calls six tools against the filtered in-memory dataset:
+
+1. `get_result_mix` — execution result distribution
+2. `get_tester_stats` — per-tester stats
+3. `get_cycle_health` — cycle pass rates
+4. `get_story_bug_split` — story vs bug counts
+5. `get_defect_backlog` — open bugs by priority/owner
+6. `get_traceability` — feature area matrix
+
+No invented metrics — if a tool returns empty data, the report says so.
