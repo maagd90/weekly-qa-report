@@ -55,7 +55,7 @@ Conventional, imperative style, e.g.:
 ```
 feat: add UAT closure-rate card to overview
 fix: correct April window date filter
-docs: document corporate proxy setup
+docs: document AI report model config
 ```
 
 ## Reporting issues

@@ -52,7 +52,7 @@ No API keys are needed for the core dashboard — only for AI summaries. Full de
 5. [Configuration](#configuration)
 6. [Running locally](#running-locally)
 7. [Running with Docker](#running-with-docker)
-8. [AI reports & corporate proxy](#ai-reports--corporate-proxy)
+8. [AI reports](#ai-reports)
 9. [PDF export](#pdf-export)
 10. [Data sources](#data-sources)
 11. [Using the dashboard](#using-the-dashboard)
@@ -165,8 +165,6 @@ cp .env.example .env
 | `JIRA_EMAIL` | Live API | Email for JIRA/QMetry Basic auth. |
 | `JIRA_API_TOKEN` | Live API | JIRA personal access token. |
 | `QMETRY_BASIC_AUTH` | No | Pre-encoded `Basic <base64>` header (alternative to email+token). |
-| `HTTPS_PROXY` / `ANTHROPIC_PROXY_URL` | Office network | Proxy for the outbound Anthropic call. See [AI reports & corporate proxy](#ai-reports--corporate-proxy). |
-| `NODE_EXTRA_CA_CERTS` | TLS-inspecting proxy | Path to your corporate CA bundle. |
 | `PUPPETEER_EXECUTABLE_PATH` | PDF (local) | Path to a Chrome/Chromium binary. Docker sets this. |
 | `PDF_PRINT_URL` | PDF (local) | URL of the web app's `/print/report` route. Docker sets this. |
 | `INPUT_DIR` / `OUTPUT_DIR` / `CONFIG_DIR` / `PROJECT_ROOT` | No | Path overrides. |
@@ -336,7 +334,7 @@ Changes to `config/integrations.json` or files in `input/` are visible inside th
 
 ---
 
-## AI reports & corporate proxy
+## AI reports
 
 The **AI Report** tab drafts an executive summary with Claude. Set `ANTHROPIC_API_KEY` in `.env`; the model
 comes from `config/report.json` (override with `ANTHROPIC_MODEL`):
@@ -345,22 +343,8 @@ comes from `config/report.json` (override with `ANTHROPIC_MODEL`):
 { "model": "claude-sonnet-4-6", "maxTokens": 768 }
 ```
 
-**On an office / VPN network**, the outbound call to `api.anthropic.com` is usually blocked unless it goes
-through a corporate proxy. If Generate AI Report fails with `Connection error`, set your proxy in `.env`:
-
-```bash
-HTTPS_PROXY=http://proxy.corp.example.com:8080
-# with auth:
-# HTTPS_PROXY=http://user:pass@proxy.corp.example.com:8080
-```
-
-Only the Anthropic call is routed through the proxy — internal JIRA/QMetry calls stay direct. If it then
-fails with a certificate error (`SELF_SIGNED_CERT_IN_CHAIN`), your proxy inspects TLS; point Node at the
-corporate CA instead of disabling verification:
-
-```bash
-NODE_EXTRA_CA_CERTS=C:\path\to\corporate-ca.pem
-```
+Use **Settings → Test Anthropic connection** to verify your API key and network reachability to
+`api.anthropic.com`. Step-by-step logs appear in the UI and the API console.
 
 ---
 
@@ -476,8 +460,7 @@ The AI report gives Claude six read-only dataset tools so numbers are never inve
 
 | Problem | Fix |
 |---|---|
-| **AI report: `Connection error`** | On an office network, set `HTTPS_PROXY` in `.env` (see [proxy](#ai-reports--corporate-proxy)). |
-| **AI report: certificate error** | TLS-inspecting proxy — set `NODE_EXTRA_CA_CERTS` to your corporate CA. |
+| **AI report: `Connection error`** | Verify internet access to `api.anthropic.com` and use **Settings → Test Anthropic connection**. |
 | **AI report: 401 / auth error** | `ANTHROPIC_API_KEY` is missing, invalid, or revoked — rotate and update `.env`. |
 | **PDF export fails locally** | Set `PUPPETEER_EXECUTABLE_PATH` and `PDF_PRINT_URL` (see [PDF export](#pdf-export)). |
 | **Empty dashboard** | Stage files in `input/` or enable integrations, then **Generate Report**. |
@@ -493,7 +476,7 @@ The AI report gives Claude six read-only dataset tools so numbers are never inve
 
 - **Never commit secrets.** `.env`, `config/integrations.json`, and `fixtures/input/` are gitignored. Only
   `*.example` templates are tracked.
-- **Secrets live in the environment**, not in source — API keys, tokens, and proxy credentials go in `.env`.
+- **Secrets live in the environment**, not in source — API keys and tokens go in `.env`.
 - **If a secret is ever exposed** (committed, pasted, logged), treat it as compromised and **rotate it**
   immediately — revoke and reissue the key/token. Scrubbing history does not un-leak it.
 - **Use placeholders in docs and examples** — no real hostnames, emails, or IDs in tracked files.

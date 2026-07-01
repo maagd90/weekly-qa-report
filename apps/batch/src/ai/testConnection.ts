@@ -1,32 +1,28 @@
 import { createAnthropicClient } from './anthropicClient';
-import { getAnthropicProxyInfo } from './proxy';
+import { createAnthropicLogger } from './anthropicLog';
 import { loadReportConfig } from '../config/loadReportConfig';
 
 export interface AnthropicTestResult {
   ok: boolean;
   model?: string;
-  proxyUsed: boolean;
-  proxyUrl?: string;
+  route: 'direct';
   elapsedMs?: number;
   error?: string;
+  logs?: string[];
 }
 
 const TEST_TIMEOUT_MS = 25_000;
 
-function formatError(err: unknown, proxyUsed: boolean, model: string): string {
+function formatError(err: unknown, model: string): string {
   const raw = (err as Error).message || String(err);
   const lower = raw.toLowerCase();
   let hint = '';
   if (/timed out|timeout|aborted|abort/.test(lower)) {
-    hint = proxyUsed
-      ? ' — request timed out via proxy; verify HTTPS_PROXY host/port and that the proxy allows api.anthropic.com.'
-      : ' — request timed out; check network access to api.anthropic.com or set HTTPS_PROXY in .env.';
+    hint = ' — request timed out; check network access to api.anthropic.com.';
   } else if (/connection error|fetch failed|econnrefused|etimedout|enotfound|eai_again|socket|connect/.test(lower)) {
-    hint = proxyUsed
-      ? ' — proxy is set but the connection failed; check the HTTPS_PROXY host/port.'
-      : ' — could not reach api.anthropic.com; on an office network set HTTPS_PROXY in .env.';
+    hint = ' — could not reach api.anthropic.com; verify internet access and firewall rules.';
   } else if (/self.signed|unable to verify|cert/.test(lower)) {
-    hint = ' — TLS-inspecting proxy; set NODE_EXTRA_CA_CERTS to your corporate CA .pem.';
+    hint = ' — TLS certificate verification failed.';
   } else if (/401|authentication|invalid x-api-key|unauthorized/.test(lower)) {
     hint = ' — the API key is missing, invalid, or revoked. Rotate it and update .env.';
   } else if (/not_found_error|model|400|bad request/.test(lower)) {
@@ -36,65 +32,77 @@ function formatError(err: unknown, proxyUsed: boolean, model: string): string {
 }
 
 /**
- * Live connectivity check for the Anthropic API. Makes a minimal 1-token call
- * through the configured proxy (if any), which validates key + proxy + model +
- * TLS all at once. Returns a structured result rather than throwing.
+ * Live connectivity check for the Anthropic API. Makes a minimal 1-token direct
+ * call to api.anthropic.com and returns a structured result with step-by-step logs.
  */
 export async function testAnthropicConnection(
   apiKey: string,
   configDir: string,
 ): Promise<AnthropicTestResult> {
   const started = Date.now();
-  const proxyInfo = getAnthropicProxyInfo();
-  const proxyUsed = proxyInfo.configured;
+  const { log, lines } = createAnthropicLogger('anthropic');
 
-  console.log(
-    `[anthropic] connectivity test starting — proxy: ${proxyUsed ? proxyInfo.masked : 'none (direct)'}`,
-  );
+  log('connectivity test started', `configDir=${configDir}`);
+  log('route', 'direct (no proxy)');
 
   if (!apiKey) {
-    const result: AnthropicTestResult = {
+    log('API key check', 'missing — set ANTHROPIC_API_KEY in .env');
+    return {
       ok: false,
-      proxyUsed,
-      proxyUrl: proxyInfo.masked,
+      route: 'direct',
       elapsedMs: Date.now() - started,
       error: 'ANTHROPIC_API_KEY is not set in .env',
+      logs: lines,
     };
-    console.log('[anthropic] connectivity test failed:', result.error);
-    return result;
   }
 
-  const model = loadReportConfig(configDir).model;
+  log('API key check', `present (${apiKey.slice(0, 12)}…, length=${apiKey.length})`);
+
+  const reportCfg = loadReportConfig(configDir);
+  const model = reportCfg.model;
+  log('report config loaded', `model=${model} maxTokens=${reportCfg.maxTokens}`);
 
   try {
-    const client = createAnthropicClient(apiKey, TEST_TIMEOUT_MS);
-    await client.messages.create({
+    const client = createAnthropicClient(apiKey, TEST_TIMEOUT_MS, log);
+    log(
+      'calling Anthropic API',
+      `POST /v1/messages model=${model} max_tokens=1`,
+    );
+
+    const response = await client.messages.create({
       model,
       max_tokens: 1,
       messages: [{ role: 'user', content: 'ping' }],
     });
-    const result: AnthropicTestResult = {
+
+    log(
+      'Anthropic API response received',
+      `id=${response.id} type=${response.type} stop_reason=${response.stop_reason ?? 'n/a'} ` +
+      `input_tokens=${response.usage?.input_tokens ?? '?'} output_tokens=${response.usage?.output_tokens ?? '?'}`,
+    );
+
+    const elapsedMs = Date.now() - started;
+    log('connectivity test succeeded', `${elapsedMs}ms direct`);
+
+    return {
       ok: true,
       model,
-      proxyUsed,
-      proxyUrl: proxyInfo.masked,
-      elapsedMs: Date.now() - started,
+      route: 'direct',
+      elapsedMs,
+      logs: lines,
     };
-    console.log(
-      `[anthropic] connectivity test ok — model ${model}, ${result.elapsedMs}ms${proxyUsed ? ', via proxy' : ', direct'}`,
-    );
-    return result;
   } catch (err) {
-    const error = formatError(err, proxyUsed, model);
-    const result: AnthropicTestResult = {
+    const error = formatError(err, model);
+    log('Anthropic API error', (err as Error).message || String(err));
+    log('connectivity test failed', error);
+
+    return {
       ok: false,
       model,
-      proxyUsed,
-      proxyUrl: proxyInfo.masked,
+      route: 'direct',
       elapsedMs: Date.now() - started,
       error,
+      logs: lines,
     };
-    console.warn('[anthropic] connectivity test failed:', error);
-    return result;
   }
 }

@@ -17,6 +17,15 @@ export function SettingsPage() {
 
   const anthropicTest = useMutation({
     mutationFn: batchApi.testAnthropic,
+    onMutate: () => {
+      console.log('[settings] Test Anthropic connection — button clicked, request starting');
+    },
+    onSuccess: (data) => {
+      console.log('[settings] Test Anthropic connection — success', data);
+    },
+    onError: (err) => {
+      console.error('[settings] Test Anthropic connection — error', err);
+    },
   });
   const anthropicResult = anthropicTest.data;
   const anthropicError = anthropicTest.isError
@@ -77,7 +86,10 @@ QMETRY_BASIC_AUTH=Basic xxxxx`}</pre>
           <pre className="bg-qa-ink text-[#F5F3ED] text-sm font-mono-qa p-4 overflow-x-auto m-0">ANTHROPIC_API_KEY=sk-ant-api03-...</pre>
           <button
             type="button"
-            onClick={() => anthropicTest.mutate()}
+            onClick={() => {
+              console.log('[settings] Test Anthropic connection — invoking mutation');
+              anthropicTest.mutate();
+            }}
             disabled={anthropicTest.isPending}
             className="mt-3 font-mono-qa text-xs font-semibold tracking-wider uppercase px-4 py-2.5 border-none cursor-pointer text-white disabled:opacity-50"
             style={{ background: QA.accent }}
@@ -87,9 +99,14 @@ QMETRY_BASIC_AUTH=Basic xxxxx`}</pre>
           {anthropicResult && (
             <div className={`mt-3 p-3 text-[13px] border ${anthropicResult.ok ? 'border-[#cfe0d4] bg-[#eef4ef] text-[#2f6a48]' : 'border-[#ecccc2] bg-[#f8ece8] text-[#a13d2c]'}`}>
               {anthropicResult.ok
-                ? `Connected — model ${anthropicResult.model}${anthropicResult.proxyUsed ? ` (via proxy${anthropicResult.proxyUrl ? `: ${anthropicResult.proxyUrl}` : ''})` : ' (direct)'}${anthropicResult.elapsedMs != null ? ` · ${anthropicResult.elapsedMs}ms` : ''}`
+                ? `Connected — model ${anthropicResult.model} (direct)${anthropicResult.elapsedMs != null ? ` · ${anthropicResult.elapsedMs}ms` : ''}`
                 : anthropicResult.error}
             </div>
+          )}
+          {anthropicResult?.logs && anthropicResult.logs.length > 0 && (
+            <pre className="mt-3 bg-[#faf8f2] text-[10px] font-mono-qa p-3 overflow-x-auto border border-qa-border m-0 max-h-48 overflow-y-auto whitespace-pre-wrap">
+              {anthropicResult.logs.join('\n')}
+            </pre>
           )}
           {anthropicError && !anthropicResult && (
             <div className="mt-3 p-3 text-[13px] border border-[#ecccc2] bg-[#f8ece8] text-[#a13d2c]">

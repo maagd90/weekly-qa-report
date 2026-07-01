@@ -1,14 +1,14 @@
 import Anthropic from '@anthropic-ai/sdk';
-import { getAnthropicFetchOptions } from './proxy';
+import type { AnthropicLogFn } from './anthropicLog';
 
-export function createAnthropicClient(apiKey: string, timeoutMs: number): Anthropic {
-  const fetchOptions = getAnthropicFetchOptions({
-    connectTimeoutMs: Math.min(15_000, timeoutMs),
-    bodyTimeoutMs: timeoutMs,
-  });
-  return new Anthropic({
-    apiKey,
-    timeout: timeoutMs,
-    ...(fetchOptions ? { fetchOptions } : {}),
-  });
+export function createAnthropicClient(
+  apiKey: string,
+  timeoutMs: number,
+  log?: AnthropicLogFn,
+): Anthropic {
+  log?.(
+    'creating Anthropic SDK client',
+    `route=direct timeout=${timeoutMs}ms baseURL=https://api.anthropic.com/v1/messages`,
+  );
+  return new Anthropic({ apiKey, timeout: timeoutMs });
 }
