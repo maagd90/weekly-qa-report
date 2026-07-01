@@ -1,8 +1,9 @@
 import Anthropic from '@anthropic-ai/sdk';
+import path from 'path';
 import type { Dataset, FilterParams, GenerateParams, ReportType } from '../types/dataset';
+import { loadReportConfig } from '../config/loadReportConfig';
 import { AI_TOOLS, executeTool } from './datasetTools';
-
-const DEFAULT_REPORT_MODEL = 'claude-sonnet-4-6';
+import { getAnthropicFetchOptions } from './proxy';
 
 export const SUMMARY_MIN_CHARS = 280;
 export const SUMMARY_MAX_CHARS = 720;
@@ -112,14 +113,24 @@ export function normalizeReportSummary(markdown: string): string {
   return `## Summary\n\n${body.trim()}`;
 }
 
+function resolveConfigDir(params: GenerateParams): string {
+  const root = path.resolve(__dirname, '../../..');
+  return params.configDir || process.env.CONFIG_DIR || path.join(root, 'config');
+}
+
 export async function generateReportFromDataset(
   dataset: Dataset,
   params: GenerateParams,
   apiKey: string,
   filter: FilterParams,
 ): Promise<{ markdown: string; toolCalls: { toolName: string; rowCount: number }[] }> {
-  const client = new Anthropic({ apiKey });
-  const model = process.env.ANTHROPIC_MODEL || DEFAULT_REPORT_MODEL;
+  const reportCfg = loadReportConfig(resolveConfigDir(params));
+  const fetchOptions = getAnthropicFetchOptions();
+  const client = new Anthropic({
+    apiKey,
+    ...(fetchOptions ? { fetchOptions } : {}),
+  });
+  const model = reportCfg.model;
   const toolCalls: { toolName: string; rowCount: number }[] = [];
 
   const tools = AI_TOOLS.map((t) => ({
@@ -136,7 +147,7 @@ export async function generateReportFromDataset(
   for (let round = 0; round < 6; round++) {
     const response = await client.messages.create({
       model,
-      max_tokens: 768,
+      max_tokens: reportCfg.maxTokens,
       system: SYSTEM,
       tools,
       messages,
