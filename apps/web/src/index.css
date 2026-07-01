@@ -3,9 +3,62 @@
 @tailwind utilities;
 
 @layer base {
-  body {
-    @apply bg-slate-50 text-slate-900 antialiased;
+  :root {
+    --qa-bg: #F5F3ED;
+    --qa-bg-outer: #EDEAE2;
+    --qa-ink: #1C1B18;
+    --qa-accent: #15605E;
+    --qa-muted: #78736A;
+    --qa-border: #e2ded4;
   }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+  }
+
+  body {
+    @apply antialiased;
+    background: var(--qa-bg-outer);
+    color: var(--qa-ink);
+    font-family: 'Public Sans', system-ui, sans-serif;
+  }
+
+  ::selection {
+    background: #1c1b18;
+    color: #f5f3ed;
+  }
+}
+
+.qa-scroll::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.qa-scroll::-webkit-scrollbar-thumb {
+  background: #cfcabd;
+  border: 3px solid #F5F3ED;
+}
+
+.qa-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.font-spectral {
+  font-family: 'Spectral', Georgia, serif;
+}
+
+.font-mono-qa {
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+}
+
+@keyframes qaPulse {
+  0%, 100% { opacity: 0.35; }
+  50% { opacity: 0.9; }
+}
+
+.qa-pulse {
+  animation: qaPulse 1.3s ease infinite;
 }
 
 @media print {
@@ -14,4 +67,181 @@
   .prose { max-width: 100% !important; }
   h1, h2, h3 { break-after: avoid; }
   table { break-inside: avoid; }
+}
+
+/* Legacy PDF capture styles (screen view); server PDF uses /print/report */
+.qa-pdf-root,
+.qa-pdf-export {
+  box-sizing: border-box;
+  max-width: 100%;
+  overflow: visible;
+}
+
+.qa-pdf-export.qa-pdf-capturing {
+  width: 680px !important;
+  max-width: 680px !important;
+  margin: 0 auto;
+  background: #ffffff !important;
+  box-sizing: border-box;
+}
+
+.qa-pdf-export.qa-pdf-capturing .pdf-section {
+  break-inside: auto;
+  page-break-inside: auto;
+  margin-bottom: 8px;
+}
+
+.qa-pdf-export.qa-pdf-capturing .grid.lg\:grid-cols-5,
+.qa-pdf-export.qa-pdf-capturing .grid.sm\:grid-cols-2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  gap: 10px !important;
+}
+
+.qa-pdf-export.qa-pdf-capturing .grid.md\:grid-cols-2 {
+  grid-template-columns: minmax(0, 1fr) !important;
+}
+
+.qa-pdf-export.qa-pdf-capturing .flex.items-end.gap-\[26px\] {
+  gap: 6px !important;
+}
+
+.qa-pdf-export.qa-pdf-capturing .prose {
+  max-width: 100% !important;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.qa-pdf-export.qa-pdf-capturing .prose table {
+  display: block;
+  width: 100% !important;
+  max-width: 100%;
+  overflow: hidden;
+  font-size: 11px;
+}
+
+.qa-pdf-export.qa-pdf-capturing .prose {
+  max-width: 100% !important;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.qa-pdf-export.qa-pdf-capturing .prose table {
+  display: block;
+  width: 100% !important;
+  max-width: 100%;
+  overflow: hidden;
+  font-size: 11px;
+}
+
+.qa-pdf-export.qa-pdf-capturing .grid.lg\:grid-cols-5,
+.qa-pdf-export.qa-pdf-capturing .grid.sm\:grid-cols-2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  gap: 10px !important;
+}
+
+.qa-pdf-export.qa-pdf-capturing .grid.md\:grid-cols-2 {
+  grid-template-columns: minmax(0, 1fr) !important;
+}
+
+.qa-pdf-export.qa-pdf-capturing .flex.items-end.gap-\[26px\] {
+  gap: 6px !important;
+}
+
+.qa-pdf-export.qa-pdf-capturing .overflow-x-auto {
+  overflow: visible !important;
+}
+
+.qa-pdf-export.qa-pdf-capturing table {
+  table-layout: fixed;
+  width: 100%;
+}
+
+.qa-pdf-export.qa-pdf-capturing table td,
+.qa-pdf-export.qa-pdf-capturing table th {
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+/* One-page report — compact KPIs and prose for A4 */
+.qa-one-page-report .font-spectral.text-\[34px\] {
+  font-size: 22px !important;
+}
+
+.qa-one-page-prose {
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.qa-one-page-prose h2 {
+  font-size: 12px;
+  margin: 0 0 6px;
+}
+
+.qa-one-page-prose p,
+.qa-one-page-prose li {
+  margin: 0 0 4px;
+}
+
+/* VP-style executive summary bullets */
+.qa-report-summary-prose ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.qa-report-summary-prose li {
+  margin: 0 0 10px;
+  padding: 0 0 0 12px;
+  border-left: 2px solid #15605E;
+  font-size: 13px;
+  line-height: 1.55;
+  color: #3a3833;
+}
+
+.qa-report-summary-prose li strong {
+  color: #1C1B18;
+  font-weight: 600;
+}
+
+.qa-report-summary-prose p {
+  font-size: 13px;
+  line-height: 1.55;
+  margin: 0 0 8px;
+}
+
+.qa-one-page-prose.qa-report-summary-prose li {
+  font-size: 11px;
+  margin-bottom: 6px;
+}
+
+.qa-pdf-export.qa-pdf-capturing .qa-one-page-report .grid.grid-cols-2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+}
+
+.qa-pdf-export.qa-pdf-capturing .qa-one-page-report svg.w-\[140px\] {
+  width: 96px !important;
+  height: 96px !important;
+}
+
+/* Print route — Puppeteer renders /print/report at A4 width */
+@page {
+  size: A4;
+  margin: 10mm;
+}
+
+.qa-print-page {
+  width: 794px;
+  max-width: 794px;
+  margin: 0 auto;
+  background: #ffffff;
+  box-sizing: border-box;
+}
+
+html.qa-pdf-ready .qa-print-page {
+  visibility: visible;
+}
+
+.qa-print-document .pdf-section {
+  break-inside: avoid-page;
+  page-break-inside: avoid;
 }

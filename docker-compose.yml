@@ -1,31 +1,40 @@
-version: "3.9"
-
 services:
   dashboard-api:
     build:
       context: .
       dockerfile: apps/api/Dockerfile
+    container_name: dlm-dashboard-api
     restart: unless-stopped
     env_file:
       - .env
     environment:
-      - PORT=3001
-      - INPUT_DIR=/data/input
-      - OUTPUT_DIR=/data/output
-      - CONFIG_DIR=/data/config
+      PORT: "3001"
+      INPUT_DIR: /data/input
+      OUTPUT_DIR: /data/output
+      CONFIG_DIR: /data/config
+      PDF_PRINT_URL: http://dashboard-web/print/report
+      PUPPETEER_EXECUTABLE_PATH: /usr/bin/chromium
     volumes:
       - ./input:/data/input
       - ./output:/data/output
       - ./config:/data/config
     ports:
       - "3001:3001"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3001/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
 
   dashboard-web:
     build:
       context: .
       dockerfile: apps/web/Dockerfile
+    container_name: dlm-dashboard-web
     restart: unless-stopped
     ports:
       - "3000:80"
     depends_on:
-      - dashboard-api
+      dashboard-api:
+        condition: service_healthy

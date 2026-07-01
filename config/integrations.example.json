@@ -1,0 +1,26 @@
+{
+  "jira": {
+    "enabled": false,
+    "baseUrl": "https://your-jira-host.example.com",
+    "searchPath": "/rest/api/2/search",
+    "projectKeys": ["DLM"],
+    "jql": "project = DLM AND issuetype in (Story, Bug) ORDER BY updated DESC",
+    "pageSize": 100,
+    "statusDone": ["Done", "CLOSED", "Cancel"]
+  },
+  "qmetry": {
+    "enabled": false,
+    "baseUrl": "https://your-jira-host.example.com",
+    "apiPrefix": "/rest/qtm4j/ui/latest",
+    "projectKey": "DLM",
+    "projectId": null,
+    "testCyclesSearchPath": "/projects/{projectId}/testcycles/search",
+    "testCasesSearchPath": "/testcycles/{cycleId}/testcases/search",
+    "testCasesSearchBody": { "filter": { "filter": { "folderId": -1 } } },
+    "usePostSearch": true,
+    "testCaseFields": "seqNo,key,versionNo,summary,priority,status,environment,executionResult,executionAssignee,executedOn,executedBy,lastModified,build",
+    "cycleIds": ["REPLACE_WITH_CYCLE_ID"],
+    "pageSize": 50,
+    "maxPages": 200
+  }
+}

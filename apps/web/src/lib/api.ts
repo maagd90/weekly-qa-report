@@ -1,61 +1,102 @@
 import axios from 'axios';
+import type { DashboardPayload, FilterParams, ReportType, GenerateParams, GenerateResult } from 'qa-dashboard-batch';
 
 const api = axios.create({ baseURL: '/api' });
 
-export type ReportType = 'full' | 'executive' | 'resources' | 'projects';
+function apiErrorMessage(err: unknown, fallback: string): string {
+  if (axios.isAxiosError(err)) {
+    const data = err.response?.data as { error?: string; message?: string } | undefined;
+    if (data?.error) return data.error;
+    if (data?.message) return data.message;
+    if (err.response?.status === 504) {
+      return 'Report generation timed out at the gateway. Rebuild Docker (nginx timeout fix) or retry — Full reports can take 1–2 minutes.';
+    }
+    if (err.code === 'ECONNABORTED') {
+      return 'Report generation timed out. Full reports can take 1–2 minutes — please wait and try again.';
+    }
+    return err.message || fallback;
+  }
+  return err instanceof Error ? err.message : fallback;
+}
 
-export interface GenerateParams {
-  startDate: string;
-  endDate: string;
-  reportType: ReportType;
-  projectId?: string;
+export { apiErrorMessage };
+export type { DashboardPayload, FilterParams, ReportType, GenerateParams, GenerateResult };
+
+export interface IntegrationsStatus {
+  jira: { enabled: boolean; baseUrl: string; configured: boolean };
+  qmetry: { enabled: boolean; baseUrl: string; configured: boolean; cycleIds: number };
+  config: {
+    jira: { enabled: boolean; projectKeys: string[]; jql: string };
+    qmetry: { enabled: boolean; projectKey: string; cycleIds: string[] };
+  };
 }
 
 export const batchApi = {
-  getStatus: () => api.get('/status').then((r) => r.data as { apiKeyConfigured: boolean }),
-  generate: (params: GenerateParams) => api.post('/generate', params).then((r) => r.data),
-  getDashboard: () => api.get('/dashboard').then((r) => r.data).catch((err) => {
-    if (axios.isAxiosError(err) && err.response?.status === 404) return null;
-    throw err;
-  }),
+  getStatus: () => api.get('/status').then((r) => r.data as { apiKeyConfigured: boolean; jiraConfigured: boolean }),
+
+  generate: (params: GenerateParams) =>
+    api.post<GenerateResult>('/generate', params, { timeout: 300_000 }).then((r) => r.data),
+
+  getDashboard: (filter?: Partial<FilterParams>) => {
+    const params = filter ? {
+      startDate: filter.startDate,
+      endDate: filter.endDate,
+      search: filter.search,
+      result: filter.result,
+      project: filter.project,
+    } : undefined;
+    return api.get('/dashboard', { params }).then((r) => r.data as DashboardPayload).catch((err) => {
+      if (axios.isAxiosError(err) && err.response?.status === 404) return null;
+      throw err;
+    });
+  },
+
   getReport: () => api.get('/report').then((r) => r.data).catch((err) => {
     if (axios.isAxiosError(err) && err.response?.status === 404) return null;
     throw err;
   }),
+
   upload: (file: File) => {
     const form = new FormData();
     form.append('file', file);
     return api.post('/upload', form, { headers: { 'Content-Type': 'multipart/form-data' } }).then((r) => r.data);
   },
-  listInputFiles: () => api.get('/input/files').then((r) => r.data),
+
+  listInputFiles: () => api.get('/input/files').then((r) => r.data as { name: string; size: number; modifiedAt: string }[]),
   deleteInputFile: (filename: string) => api.delete(`/input/${encodeURIComponent(filename)}`).then((r) => r.data),
-  listMappings: () => api.get('/mappings').then((r) => r.data),
-  saveMapping: (payload: { pattern: string; mapping: Record<string, string>; weekYear?: number; weekNumber?: number }) =>
-    api.post('/mappings', payload).then((r) => r.data),
-};
 
-export type FilterParams =
-  | { year: number; week: number; startDate?: never; endDate?: never }
-  | { startDate: string; endDate: string; year?: never; week?: never };
+  getIntegrations: () => api.get('/integrations').then((r) => r.data as IntegrationsStatus),
+  testIntegrations: () => api.post('/integrations/test').then((r) => r.data),
 
-export const CHART_IDS = [
-  'execution-by-resource',
-  'bugs-by-resource',
-  'weekly-trends',
-  'status-distribution',
-  'completion-by-project',
-  'bugs-by-project',
-  'completion-trends',
-] as const;
-
-export type ChartId = typeof CHART_IDS[number];
-
-export const DEFAULT_CHART_PREFERENCES: Record<ChartId, boolean> = {
-  'execution-by-resource': true,
-  'bugs-by-resource': true,
-  'weekly-trends': true,
-  'status-distribution': true,
-  'completion-by-project': true,
-  'bugs-by-project': true,
-  'completion-trends': true,
+  downloadReportPdf: async ({
+    startDate,
+    endDate,
+    reportType,
+    kpiStyle,
+  }: {
+    startDate: string;
+    endDate: string;
+    reportType: ReportType;
+    kpiStyle: string;
+  }) => {
+    const response = await api.post(
+      '/report/pdf',
+      { startDate, endDate, reportType, kpiStyle },
+      { responseType: 'blob', timeout: 120_000 },
+    );
+    const blob = response.data as Blob;
+    if (blob.type === 'application/json') {
+      const text = await blob.text();
+      const payload = JSON.parse(text) as { error?: string };
+      throw new Error(payload.error || 'PDF export failed');
+    }
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `qa-report-${startDate}-to-${endDate}.pdf`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  },
 };

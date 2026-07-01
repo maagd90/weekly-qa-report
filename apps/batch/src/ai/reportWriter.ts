@@ -1,93 +1,171 @@
 import Anthropic from '@anthropic-ai/sdk';
-import type { Dataset, GenerateParams } from '../types/dataset';
-import { AI_TOOLS, executeTool, type ToolInput } from './datasetTools';
+import type { Dataset, FilterParams, GenerateParams, ReportType } from '../types/dataset';
+import { AI_TOOLS, executeTool } from './datasetTools';
 
-export interface ToolCallRecord {
-  toolName: string;
-  input: ToolInput;
-  result: unknown;
-  rowCount: number;
+const DEFAULT_REPORT_MODEL = 'claude-sonnet-4-6';
+
+export const SUMMARY_MIN_CHARS = 280;
+export const SUMMARY_MAX_CHARS = 720;
+
+const SUMMARY_FORMAT = `Output ONLY a "## Summary" heading followed by the summary body (no other sections).
+The summary body MUST be between ${SUMMARY_MIN_CHARS} and ${SUMMARY_MAX_CHARS} characters (plain text, excluding markdown markers).
+Format as 4–5 bullet points using markdown "- " lines. Each bullet MUST start with a bold label and colon, e.g. "- **Execution quality:** …"
+Write for a VP audience: outcome-first, confident tone, no run-on sentences, no filler ("logged", "holds", "raised" stacks).
+Cover: execution/pass rate, highest-risk cycle, defect backlog ownership, UAT closure posture, and one clear recommendation.
+Use exact numbers from tools. Do not invent metrics.`;
+
+const SYSTEM = `You are a senior QA director drafting a weekly brief for the VP of Engineering.
+You MUST call the provided tools to get real numbers — never invent or estimate metrics.
+If a tool returns empty data, state that briefly in one bullet.
+${SUMMARY_FORMAT}`;
+
+function reportPrompt(reportType: ReportType, filter: FilterParams): string {
+  const scope = `${filter.startDate || 'all'} to ${filter.endDate || 'all'}`;
+  const focus: Record<ReportType, string> = {
+    full: 'Query execution mix, cycle health, defect backlog, and UAT summary. Frame release readiness and top risks for executive review.',
+    executive: 'Query result mix, UAT summary, and cycle health. Lead with whether the period is release-ready.',
+    testers: 'Call get_tester_stats. Bullets on team coverage, volume leader, pass-rate spread, and one coaching or capacity note. Use real names.',
+    cycles: 'Call get_cycle_health. Bullets on at-risk cycles, coverage gaps, pass-rate outliers, and recommended focus.',
+  };
+  return `Generate a ${reportType} QA report for ${scope}. ${focus[reportType]} ${SUMMARY_FORMAT}`;
 }
 
-export interface ReportOutput {
-  markdown: string;
-  toolCalls: ToolCallRecord[];
+function plainTextLength(text: string): number {
+  return text
+    .replace(/^#+\s*[^\n]*\n?/gm, '')
+    .replace(/\*\*/g, '')
+    .replace(/[*_`#[\]()>-]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .length;
 }
 
-const SYSTEM_PROMPT = `You are a QA Metrics Report Generator for a software team.
+function plainTextLen(text: string): number {
+  return plainTextLength(text);
+}
 
-CRITICAL RULES — follow these without exception:
-1. You MUST call the provided tools to retrieve ALL data before writing any section.
-2. Every number, percentage, name, date, and status in your report MUST come directly from a tool result. Do NOT invent, estimate, or infer any value.
-3. If a tool returns empty data for a metric, write exactly: "No data available for this period."
-4. Quote risks, blockers, and accomplishments verbatim from the tool results — do not paraphrase.
-5. After gathering data, write a professional report in Markdown.
+function extractSummaryBody(markdown: string): string {
+  const match = markdown.match(/##\s*Summary\s*\n+([\s\S]*)/i);
+  if (match) return match[1].trim();
+  return markdown.replace(/^#+\s*[^\n]*\n?/gm, '').trim();
+}
 
-REPORT STRUCTURE:
-## Executive Summary
-## Resource Performance
-## CR Assignments
-## Project Health
-## Bug Analysis
-## Risks & Blockers
-## Recommendations
-## Data Sources`;
+function extractBullets(body: string): string[] {
+  return body
+    .split('\n')
+    .map((l) => l.trim())
+    .filter((l) => /^[-*]\s+/.test(l));
+}
 
-function buildUserPrompt(params: GenerateParams): string {
-  let prompt = `Generate a ${params.reportType === 'full' ? 'complete' : params.reportType} QA metrics report for ${params.startDate} to ${params.endDate}.`;
-  if (params.projectId) prompt += ` Focus on project ID: ${params.projectId}.`;
-  prompt += ' Use tools first, then write the report.';
-  return prompt;
+function truncateParagraph(text: string, max: number): string {
+  const normalized = text.replace(/\s+/g, ' ').trim();
+  if (normalized.length <= max) return normalized;
+  const slice = normalized.slice(0, max);
+  const lastSpace = slice.lastIndexOf(' ');
+  const cut = lastSpace > SUMMARY_MIN_CHARS ? slice.slice(0, lastSpace) : slice;
+  return `${cut.replace(/[.,;:\s]+$/, '')}.`;
+}
+
+function truncateBullets(bullets: string[], maxChars: number): string {
+  const kept: string[] = [];
+  for (const bullet of bullets) {
+    const candidate = kept.length ? `${kept.join('\n')}\n${bullet}` : bullet;
+    if (plainTextLen(candidate) > maxChars && kept.length >= 3) break;
+    kept.push(bullet);
+  }
+  if (kept.length) return kept.join('\n');
+  return truncateParagraph(bullets[0] ?? '', maxChars);
+}
+
+function padToMin(body: string, min: number): string {
+  const bullets = extractBullets(body);
+  if (bullets.length) {
+    const extra = '- **Detail:** See attached metrics for full period breakdown.';
+    const combined = `${body.trim()}\n${extra}`;
+    if (plainTextLen(combined) >= min) return combined;
+  }
+  const normalized = body.replace(/\s+/g, ' ').trim();
+  if (normalized.length >= min) return normalized;
+  return `${normalized}\n\n- **Note:** Refer to the dashboard charts for complete metrics in this period.`.trim();
+}
+
+export function normalizeReportSummary(markdown: string): string {
+  let body = extractSummaryBody(markdown);
+  if (!body) body = '- **Status:** No summary generated for this period.';
+
+  const bullets = extractBullets(body);
+  if (bullets.length >= 2) {
+    body = truncateBullets(bullets, SUMMARY_MAX_CHARS);
+  } else if (plainTextLen(body) > SUMMARY_MAX_CHARS) {
+    body = truncateParagraph(body, SUMMARY_MAX_CHARS);
+  }
+
+  if (plainTextLen(body) < SUMMARY_MIN_CHARS) {
+    body = padToMin(body, SUMMARY_MIN_CHARS);
+    if (plainTextLen(body) > SUMMARY_MAX_CHARS) {
+      body = extractBullets(body).length >= 2
+        ? truncateBullets(extractBullets(body), SUMMARY_MAX_CHARS)
+        : truncateParagraph(body, SUMMARY_MAX_CHARS);
+    }
+  }
+
+  return `## Summary\n\n${body.trim()}`;
 }
 
 export async function generateReportFromDataset(
   dataset: Dataset,
   params: GenerateParams,
   apiKey: string,
-  onProgress?: (event: { type: string; text?: string; toolName?: string; rowCount?: number }) => void
-): Promise<ReportOutput> {
+  filter: FilterParams,
+): Promise<{ markdown: string; toolCalls: { toolName: string; rowCount: number }[] }> {
   const client = new Anthropic({ apiKey });
-  const toolCalls: ToolCallRecord[] = [];
-  let fullReport = '';
-  const messages: Anthropic.MessageParam[] = [{ role: 'user', content: buildUserPrompt(params) }];
+  const model = process.env.ANTHROPIC_MODEL || DEFAULT_REPORT_MODEL;
+  const toolCalls: { toolName: string; rowCount: number }[] = [];
 
-  const defaultToolInput: ToolInput = {
-    startDate: params.startDate,
-    endDate: params.endDate,
-    projectId: params.projectId,
-  };
+  const tools = AI_TOOLS.map((t) => ({
+    name: t.name,
+    description: t.description,
+    input_schema: { type: 'object' as const, properties: {}, required: [] as string[] },
+  }));
 
-  for (let i = 0; i < 15; i++) {
+  const messages: Anthropic.MessageParam[] = [
+    { role: 'user', content: reportPrompt(params.reportType, filter) },
+  ];
+
+  let markdown = '';
+  for (let round = 0; round < 6; round++) {
     const response = await client.messages.create({
-      model: 'claude-sonnet-4-5',
-      max_tokens: 8192,
-      system: SYSTEM_PROMPT,
-      tools: AI_TOOLS,
+      model,
+      max_tokens: 768,
+      system: SYSTEM,
+      tools,
       messages,
     });
 
-    for (const block of response.content) {
-      if (block.type === 'text' && block.text) {
-        fullReport += block.text;
-        onProgress?.({ type: 'delta', text: block.text });
+    const toolUseBlocks = response.content.filter((b): b is Anthropic.ToolUseBlock => b.type === 'tool_use');
+    if (!toolUseBlocks.length) {
+      for (const block of response.content) {
+        if (block.type === 'text') markdown += block.text;
       }
+      break;
     }
 
-    if (response.stop_reason !== 'tool_use') break;
-
-    const toolResults: Anthropic.ToolResultBlockParam[] = [];
-    for (const block of response.content) {
-      if (block.type !== 'tool_use') continue;
-      const toolInput = { ...defaultToolInput, ...(block.input as ToolInput) };
-      const toolResult = executeTool(block.name, toolInput, dataset);
-      const rowCount = Array.isArray(toolResult) ? toolResult.length : 1;
-      toolCalls.push({ toolName: block.name, input: toolInput, result: toolResult, rowCount });
-      onProgress?.({ type: 'tool_call', toolName: block.name, rowCount });
-      toolResults.push({ type: 'tool_result', tool_use_id: block.id, content: JSON.stringify(toolResult) });
-    }
     messages.push({ role: 'assistant', content: response.content });
+    const toolResults: Anthropic.ToolResultBlockParam[] = [];
+
+    for (const tu of toolUseBlocks) {
+      const result = executeTool(tu.name, dataset, filter);
+      const rowCount = Array.isArray(result) ? result.length : 1;
+      toolCalls.push({ toolName: tu.name, rowCount });
+      toolResults.push({
+        type: 'tool_result',
+        tool_use_id: tu.id,
+        content: JSON.stringify(result),
+      });
+    }
     messages.push({ role: 'user', content: toolResults });
   }
 
-  return { markdown: fullReport, toolCalls };
+  const raw = markdown.trim() || 'No content generated for this period.';
+  return { markdown: normalizeReportSummary(raw), toolCalls };
 }

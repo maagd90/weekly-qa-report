@@ -1,129 +1,126 @@
 import React, { useState } from 'react';
 import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query';
-import { LayoutDashboard, FolderKanban, Upload, Brain, Settings, BarChart3 } from 'lucide-react';
 import clsx from 'clsx';
-import { GlobalFilters } from './components/filters/GlobalFilters';
-import { ResourcesPage } from './pages/ResourcesPage';
-import { ProjectStatusPage } from './pages/ProjectStatusPage';
+import { QaMasthead } from './components/layout/QaMasthead';
+import { QaTabNav, buildTabs } from './components/layout/QaTabNav';
+import { QaFilterBar } from './components/layout/QaFilterBar';
+import { QaFooter } from './components/layout/QaFooter';
+import { OverviewPage } from './pages/OverviewPage';
+import { TestersPage } from './pages/TestersPage';
+import { CyclesPage } from './pages/CyclesPage';
+import { TraceabilityPage } from './pages/TraceabilityPage';
+import { UatPage } from './pages/UatPage';
 import { ImportStatusPage } from './pages/ImportStatusPage';
 import { AiReportPage } from './pages/AiReportPage';
 import { SettingsPage } from './pages/SettingsPage';
-import { ChartPickerPanel, EmptyDashboard } from './components/common/ChartPickerPanel';
+import { EmptyDashboard } from './components/common/EmptyDashboard';
 import { useFilters } from './hooks/useFilters';
+import { useUiPreferences } from './hooks/useUiPreferences';
 import { batchApi } from './lib/api';
-import type { DashboardPayload } from './lib/dashboardCompute';
+import type { DashboardPayload } from 'qa-dashboard-batch';
+import type { QaTab } from './theme/qaTheme';
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, staleTime: 30_000 } },
 });
 
-type Tab = 'resources' | 'projects' | 'import' | 'ai' | 'settings' | 'charts';
-
-const TABS: { id: Tab; label: string; icon: React.ReactNode; hideFilters?: boolean }[] = [
-  { id: 'resources', label: 'Resources', icon: <LayoutDashboard size={16} /> },
-  { id: 'projects', label: 'Project Status', icon: <FolderKanban size={16} /> },
-  { id: 'import', label: 'Import Data', icon: <Upload size={16} />, hideFilters: true },
-  { id: 'ai', label: 'AI Report', icon: <Brain size={16} />, hideFilters: true },
-  { id: 'charts', label: 'Charts', icon: <BarChart3 size={16} />, hideFilters: true },
-  { id: 'settings', label: 'Settings', icon: <Settings size={16} />, hideFilters: true },
-];
-
 function AppContent() {
-  const [activeTab, setActiveTab] = useState<Tab>('resources');
+  const [activeTab, setActiveTab] = useState<QaTab>('overview');
+  const ui = useUiPreferences();
 
-  const { data: dashboard, isLoading, refetch } = useQuery<DashboardPayload | null>({
-    queryKey: ['dashboard'],
-    queryFn: batchApi.getDashboard,
+  const { data: initialDashboard } = useQuery<DashboardPayload | null>({
+    queryKey: ['dashboard-init'],
+    queryFn: () => batchApi.getDashboard(),
     retry: false,
   });
 
-  const filters = useFilters(dashboard ?? undefined);
-  const currentTab = TABS.find((t) => t.id === activeTab)!;
-  const showFilters = !currentTab.hideFilters && !!dashboard;
-  const filterParams = filters.filterParams;
-  const hasDashboard = !!dashboard;
+  const filters = useFilters(initialDashboard ?? undefined);
+
+  const { data: dashboard, isLoading, refetch } = useQuery<DashboardPayload | null>({
+    queryKey: ['dashboard', filters.filterParams],
+    queryFn: () => batchApi.getDashboard(filters.filterParams),
+    retry: false,
+    enabled: !!initialDashboard,
+  });
+
+  const display = dashboard ?? initialDashboard;
+  const showUat = !!display?.uat;
+  const tabs = buildTabs(showUat);
+  const currentTab = tabs.find((t) => t.id === activeTab) ?? tabs[0];
+  const showFilters = !currentTab.hideFilters;
+  const hasDashboard = !!display;
+
+  const handleTabChange = (tab: QaTab) => {
+    setActiveTab(tab);
+    ui.clearSelectedCycle();
+  };
 
   const goGenerate = () => setActiveTab('ai');
 
   return (
-    <div className="min-h-screen bg-slate-100 flex flex-col">
-      <header className="bg-white border-b border-slate-200 shadow-sm print:hidden">
-        <div className="px-6 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="bg-blue-600 rounded-xl p-2">
-              <LayoutDashboard size={20} className="text-white" />
-            </div>
-            <div>
-              <h1 className="text-lg font-bold text-slate-800">QA Dashboard</h1>
-              <p className="text-xs text-slate-400">File-based batch · no database</p>
-            </div>
-          </div>
-        </div>
-        <nav className="flex px-6 -mb-px gap-1 overflow-x-auto">
-          {TABS.map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={clsx(
-                'flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap',
-                activeTab === tab.id ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-500 hover:text-slate-700'
-              )}
-            >
-              {tab.icon}
-              <span className="hidden sm:inline">{tab.label}</span>
-            </button>
-          ))}
-        </nav>
-      </header>
+    <div className="min-h-screen bg-qa-bg text-qa-ink flex flex-col qa-scroll">
+      <QaMasthead dashboard={display} />
+      <QaTabNav tabs={tabs} activeTab={activeTab} onTabChange={handleTabChange} />
 
       {showFilters && (
-        <GlobalFilters
-          years={filters.years}
-          weeks={filters.weeks}
-          selectedYear={filters.selectedYear}
-          selectedWeek={filters.selectedWeek}
-          onYearChange={filters.setSelectedYear}
-          onWeekChange={filters.setSelectedWeek}
-          mode={filters.mode}
-          onModeChange={filters.setMode}
+        <QaFilterBar
           startDate={filters.startDate}
           endDate={filters.endDate}
           onStartDateChange={filters.setStartDate}
           onEndDateChange={filters.setEndDate}
-          generatedAt={filters.generatedAt}
+          search={filters.search}
+          onSearchChange={filters.setSearch}
+          result={filters.result}
+          onResultChange={filters.setResult}
+          project={filters.project}
+          onProjectChange={filters.setProject}
+          projects={filters.projects}
+          kpiStyle={ui.kpiStyle}
+          onKpiStyleChange={ui.setKpiStyle}
+          dataMin={display?.meta.dataMin}
+          dataMax={display?.meta.dataMax}
         />
       )}
 
-      <main className={clsx('flex-1', activeTab === 'ai' ? 'flex flex-col overflow-hidden min-h-0' : 'overflow-auto')}>
-        {isLoading && (activeTab === 'resources' || activeTab === 'projects') && (
-          <div className="flex items-center justify-center h-64 text-slate-400 text-sm">Loading dashboard…</div>
+      <div className={clsx('flex-1', activeTab === 'ai' ? 'flex flex-col overflow-hidden min-h-0' : 'overflow-auto')}>
+        {isLoading && showFilters && hasDashboard && (
+          <div className="flex items-center justify-center h-64 font-mono-qa text-sm text-qa-muted-light">
+            Refreshing filters…
+          </div>
         )}
 
-        {!isLoading && !hasDashboard && (activeTab === 'resources' || activeTab === 'projects') && (
+        {!isLoading && !hasDashboard && showFilters && (
           <EmptyDashboard onGenerate={goGenerate} />
         )}
 
-        {hasDashboard && activeTab === 'resources' && filterParams && (
-          <ResourcesPage dashboard={dashboard} filter={filterParams} year={filters.selectedYear ?? new Date().getFullYear()} />
+        {display && activeTab === 'overview' && (
+          <OverviewPage dashboard={display} kpiStyle={ui.kpiStyle} />
         )}
-        {hasDashboard && activeTab === 'projects' && filterParams && (
-          <ProjectStatusPage dashboard={dashboard} filter={filterParams} year={filters.selectedYear ?? new Date().getFullYear()} />
+        {display && activeTab === 'testers' && (
+          <TestersPage dashboard={display} kpiStyle={ui.kpiStyle} />
+        )}
+        {display && activeTab === 'cycles' && (
+          <CyclesPage
+            dashboard={display}
+            kpiStyle={ui.kpiStyle}
+            selectedCycle={ui.selectedCycle}
+            onSelectCycle={ui.setSelectedCycle}
+          />
+        )}
+        {display && activeTab === 'trace' && (
+          <TraceabilityPage dashboard={display} kpiStyle={ui.kpiStyle} />
+        )}
+        {display && activeTab === 'uat' && showUat && (
+          <UatPage dashboard={display} kpiStyle={ui.kpiStyle} />
         )}
         {activeTab === 'import' && <ImportStatusPage />}
-        {activeTab === 'ai' && <AiReportPage onGenerated={() => refetch()} />}
-        {activeTab === 'charts' && (
-          <div className="p-6 max-w-2xl mx-auto">
-            <ChartPickerPanel />
-          </div>
+        {activeTab === 'ai' && (
+          <AiReportPage dashboard={display} kpiStyle={ui.kpiStyle} onGenerated={() => refetch()} />
         )}
         {activeTab === 'settings' && <SettingsPage />}
+      </div>
 
-        {hasDashboard && (activeTab === 'resources' || activeTab === 'projects') && !filterParams && (
-          <div className="flex items-center justify-center h-64 text-slate-400 text-sm">
-            Select a year and week (or date range) to filter charts.
-          </div>
-        )}
-      </main>
+      <QaFooter />
     </div>
   );
 }

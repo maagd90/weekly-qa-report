@@ -4,13 +4,30 @@ export default {
   theme: {
     extend: {
       colors: {
-        brand: {
-          50: '#eff6ff',
-          100: '#dbeafe',
-          500: '#3b82f6',
-          600: '#2563eb',
-          700: '#1d4ed8',
+        qa: {
+          bg: '#F5F3ED',
+          outer: '#EDEAE2',
+          ink: '#1C1B18',
+          accent: '#15605E',
+          muted: '#78736A',
+          'muted-light': '#9c978c',
+          border: '#e2ded4',
+          'border-mid': '#d8d3c7',
+          track: '#f0ede5',
+          pass: '#2F7D5A',
+          fail: '#C24533',
+          blocked: '#C2891E',
+          ne: '#B3AEA3',
+          na: '#6E89A6',
         },
+      },
+      fontFamily: {
+        spectral: ['Spectral', 'Georgia', 'serif'],
+        sans: ['Public Sans', 'system-ui', 'sans-serif'],
+        mono: ['IBM Plex Mono', 'ui-monospace', 'monospace'],
+      },
+      maxWidth: {
+        qa: '1280px',
       },
     },
   },
