@@ -1,6 +1,6 @@
 import React from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
-import { batchApi } from '../lib/api';
+import { batchApi, apiErrorMessage } from '../lib/api';
 import { QaPageShell, QaSection } from '../components/layout/QaPageShell';
 import { QA } from '../theme/qaTheme';
 
@@ -19,6 +19,9 @@ export function SettingsPage() {
     mutationFn: batchApi.testAnthropic,
   });
   const anthropicResult = anthropicTest.data;
+  const anthropicError = anthropicTest.isError
+    ? apiErrorMessage(anthropicTest.error, 'Anthropic connectivity test failed')
+    : undefined;
 
   const testResult = testMutation.data as {
     ok?: boolean; executions?: number; issues?: number; uat?: number; error?: string;
@@ -84,8 +87,13 @@ QMETRY_BASIC_AUTH=Basic xxxxx`}</pre>
           {anthropicResult && (
             <div className={`mt-3 p-3 text-[13px] border ${anthropicResult.ok ? 'border-[#cfe0d4] bg-[#eef4ef] text-[#2f6a48]' : 'border-[#ecccc2] bg-[#f8ece8] text-[#a13d2c]'}`}>
               {anthropicResult.ok
-                ? `Connected — model ${anthropicResult.model}${anthropicResult.proxyUsed ? ' (via proxy)' : ''}`
+                ? `Connected — model ${anthropicResult.model}${anthropicResult.proxyUsed ? ` (via proxy${anthropicResult.proxyUrl ? `: ${anthropicResult.proxyUrl}` : ''})` : ' (direct)'}${anthropicResult.elapsedMs != null ? ` · ${anthropicResult.elapsedMs}ms` : ''}`
                 : anthropicResult.error}
+            </div>
+          )}
+          {anthropicError && !anthropicResult && (
+            <div className="mt-3 p-3 text-[13px] border border-[#ecccc2] bg-[#f8ece8] text-[#a13d2c]">
+              {anthropicError}
             </div>
           )}
         </QaSection>

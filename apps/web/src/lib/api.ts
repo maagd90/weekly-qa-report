@@ -35,8 +35,11 @@ export const batchApi = {
   getStatus: () => api.get('/status').then((r) => r.data as { apiKeyConfigured: boolean; jiraConfigured: boolean }),
 
   testAnthropic: () =>
-    api.get('/anthropic/test', { timeout: 60_000 })
-      .then((r) => r.data as { ok: boolean; model?: string; proxyUsed: boolean; error?: string }),
+    api.get('/anthropic/test', { timeout: 35_000 })
+      .then((r) => r.data as { ok: boolean; model?: string; proxyUsed: boolean; proxyUrl?: string; elapsedMs?: number; error?: string })
+      .catch((err) => {
+        throw new Error(apiErrorMessage(err, 'Anthropic connectivity test failed'));
+      }),
 
   generate: (params: GenerateParams) =>
     api.post<GenerateResult>('/generate', params, { timeout: 300_000 }).then((r) => r.data),

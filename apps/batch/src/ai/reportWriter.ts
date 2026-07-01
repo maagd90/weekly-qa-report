@@ -3,7 +3,7 @@ import path from 'path';
 import type { Dataset, FilterParams, GenerateParams, ReportType } from '../types/dataset';
 import { loadReportConfig } from '../config/loadReportConfig';
 import { AI_TOOLS, executeTool } from './datasetTools';
-import { getAnthropicFetchOptions } from './proxy';
+import { createAnthropicClient } from './anthropicClient';
 
 export const SUMMARY_MIN_CHARS = 280;
 export const SUMMARY_MAX_CHARS = 720;
@@ -125,11 +125,7 @@ export async function generateReportFromDataset(
   filter: FilterParams,
 ): Promise<{ markdown: string; toolCalls: { toolName: string; rowCount: number }[] }> {
   const reportCfg = loadReportConfig(resolveConfigDir(params));
-  const fetchOptions = getAnthropicFetchOptions();
-  const client = new Anthropic({
-    apiKey,
-    ...(fetchOptions ? { fetchOptions } : {}),
-  });
+  const client = createAnthropicClient(apiKey, 120_000);
   const model = reportCfg.model;
   const toolCalls: { toolName: string; rowCount: number }[] = [];
 

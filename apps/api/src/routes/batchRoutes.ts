@@ -69,8 +69,16 @@ router.get('/status', (_req: Request, res: Response) => {
 
 // GET /api/anthropic/test — live Anthropic connectivity check (key + proxy + model)
 router.get('/anthropic/test', async (_req: Request, res: Response) => {
-  const result = await testAnthropicConnection(process.env.ANTHROPIC_API_KEY || '', CONFIG_DIR);
-  res.json(result);
+  console.log('[api] GET /api/anthropic/test');
+  try {
+    const result = await testAnthropicConnection(process.env.ANTHROPIC_API_KEY || '', CONFIG_DIR);
+    console.log(`[api] GET /api/anthropic/test — ok=${result.ok} elapsed=${result.elapsedMs ?? '?'}ms`);
+    res.json(result);
+  } catch (err) {
+    const message = (err as Error).message || String(err);
+    console.error('[api] GET /api/anthropic/test — unexpected error:', message);
+    res.status(500).json({ ok: false, proxyUsed: false, error: message });
+  }
 });
 
 const storage = multer.diskStorage({
