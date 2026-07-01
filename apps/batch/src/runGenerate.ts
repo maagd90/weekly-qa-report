@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import { loadReportConfig } from './config/loadReportConfig';
 import type { DashboardPayload, GenerateParams, GenerateResult } from './types/dataset';
 import { buildDataset, computeFingerprint, saveRawDataset } from './cache/datasetCache';
 import { buildDashboardPayload } from './export/buildDashboardPayload';
@@ -108,9 +109,12 @@ export async function runGenerate(params: GenerateParams): Promise<GenerateResul
   } catch (err) {
     const msg = (err as Error).message;
     const isConn = /connection error|fetch failed|ECONNREFUSED|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|network|socket/i.test(msg);
-    const hint = isConn && !process.env.HTTPS_PROXY && !process.env.ANTHROPIC_PROXY_URL
-      ? ' — could not reach api.anthropic.com. On the office network set HTTPS_PROXY (or ANTHROPIC_PROXY_URL) in .env, e.g. http://proxy.corp:8080'
-      : '';
+    const proxyCfg = loadReportConfig(configDir).proxy;
+    const hint = isConn && !proxyCfg.enabled
+      ? ' — could not reach api.anthropic.com. On the office network set proxy.enabled=true and proxy.url in config/report.json.'
+      : isConn && proxyCfg.enabled
+        ? ' — proxy is enabled but the connection failed; check proxy.url in config/report.json or ANTHROPIC_PROXY_URL in .env.'
+        : '';
     return {
       ok: true,
       filesParsed: fileCount,

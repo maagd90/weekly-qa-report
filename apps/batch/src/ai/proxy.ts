@@ -1,19 +1,19 @@
 import { ProxyAgent } from 'undici';
+import { loadReportConfig } from '../config/loadReportConfig';
+import type { AnthropicLogFn } from './anthropicLog';
 
 const DEFAULT_CONNECT_TIMEOUT_MS = 15_000;
 const DEFAULT_BODY_TIMEOUT_MS = 120_000;
 
 /**
- * Corporate networks require outbound HTTPS to go through an HTTP(S) proxy.
- * Node's global fetch (used by the Anthropic SDK) does not read proxy env vars,
- * so a direct call to api.anthropic.com fails with "Connection error".
+ * Anthropic outbound proxy — opt-in via config/report.json only.
  *
- * Returns fetchOptions carrying an undici ProxyAgent dispatcher, or undefined
- * when no proxy is set (direct connection). Apply ONLY to the Anthropic client
- * so internal JIRA/QMetry calls stay direct.
+ * When proxy.enabled is false (default), all Anthropic calls go direct to
+ * api.anthropic.com — same as before the proxy feature existed.
  *
- * Env (first non-empty wins): ANTHROPIC_PROXY_URL, HTTPS_PROXY, HTTP_PROXY.
- * Set ANTHROPIC_PROXY_DISABLE=1 to force a direct connection even if HTTPS_PROXY is set.
+ * When proxy.enabled is true, URL is taken from (in order):
+ *   proxy.url in report.json → ANTHROPIC_PROXY_URL → HTTPS_PROXY in .env
+ *
  * Proxy auth: embed in URL -> http://user:pass@proxy.corp:8080
  */
 export function maskProxyUrl(url: string): string {
@@ -38,50 +38,91 @@ function isPlaceholderProxy(url: string): boolean {
   return /proxy\.corp\.example|your-proxy|REPLACE_WITH/i.test(url);
 }
 
-/** Resolved proxy URL for Anthropic, or undefined for direct connection. */
-export function getAnthropicProxyUrl(): string | undefined {
-  if (/^(1|true|yes)$/i.test((process.env.ANTHROPIC_PROXY_DISABLE || '').trim())) {
-    return undefined;
-  }
+export interface AnthropicProxyResolution {
+  configEnabled: boolean;
+  active: boolean;
+  maskedUrl?: string;
+  /** Internal — not sent to clients */
+  url?: string;
+}
 
-  const raw = (
+function resolveProxyUrlFromEnv(): string {
+  return (
     process.env.ANTHROPIC_PROXY_URL ||
     process.env.HTTPS_PROXY ||
     process.env.https_proxy ||
-    process.env.HTTP_PROXY ||
-    process.env.http_proxy ||
     ''
   ).trim();
+}
 
-  if (!raw) return undefined;
+/** Resolve proxy settings from config/report.json (opt-in). */
+export function resolveAnthropicProxy(
+  configDir: string,
+  log?: AnthropicLogFn,
+): AnthropicProxyResolution {
+  const { proxy } = loadReportConfig(configDir);
+
+  if (!proxy.enabled) {
+    log?.('proxy disabled', 'config/report.json proxy.enabled=false — using direct connection');
+    return { configEnabled: false, active: false };
+  }
+
+  log?.('proxy enabled in config', 'config/report.json proxy.enabled=true');
+
+  const raw = (proxy.url || resolveProxyUrlFromEnv()).trim();
+  if (!raw) {
+    log?.(
+      'proxy URL missing',
+      'set proxy.url in config/report.json or ANTHROPIC_PROXY_URL / HTTPS_PROXY in .env — falling back to direct',
+    );
+    return { configEnabled: true, active: false };
+  }
 
   const normalized = normalizeProxyUrl(raw);
   if (isPlaceholderProxy(normalized)) {
-    console.warn('[anthropic] Ignoring placeholder proxy URL in .env');
-    return undefined;
+    log?.('proxy URL ignored', 'placeholder value detected — falling back to direct');
+    return { configEnabled: true, active: false };
   }
 
   try {
     // eslint-disable-next-line no-new
     new URL(normalized);
-    return normalized;
+    const masked = maskProxyUrl(normalized);
+    log?.('proxy route active', masked);
+    return { configEnabled: true, active: true, maskedUrl: masked, url: normalized };
   } catch {
-    console.warn('[anthropic] Ignoring invalid proxy URL:', maskProxyUrl(normalized));
-    return undefined;
+    log?.('proxy URL invalid', `${maskProxyUrl(normalized)} — falling back to direct`);
+    return { configEnabled: true, active: false };
   }
 }
 
-export function getAnthropicProxyInfo(): { configured: boolean; masked?: string } {
-  const url = getAnthropicProxyUrl();
-  return url ? { configured: true, masked: maskProxyUrl(url) } : { configured: false };
+export function getAnthropicProxyInfo(configDir: string, log?: AnthropicLogFn): AnthropicProxyResolution {
+  return resolveAnthropicProxy(configDir, log);
 }
 
-export function getAnthropicFetchOptions(opts?: {
-  connectTimeoutMs?: number;
-  bodyTimeoutMs?: number;
-}): { dispatcher: ProxyAgent } | undefined {
-  const proxyUrl = getAnthropicProxyUrl();
+function getActiveProxyUrl(
+  configDir: string,
+  log?: AnthropicLogFn,
+  resolution?: AnthropicProxyResolution,
+): string | undefined {
+  const resolved = resolution ?? resolveAnthropicProxy(configDir, log);
+  if (!resolved.active || !resolved.url) return undefined;
+  return resolved.url;
+}
+
+export function getAnthropicFetchOptions(
+  configDir: string,
+  opts?: { connectTimeoutMs?: number; bodyTimeoutMs?: number },
+  log?: AnthropicLogFn,
+  resolution?: AnthropicProxyResolution,
+): { dispatcher: ProxyAgent } | undefined {
+  const proxyUrl = getActiveProxyUrl(configDir, log, resolution);
   if (!proxyUrl) return undefined;
+
+  log?.(
+    'creating ProxyAgent',
+    `connectTimeout=${opts?.connectTimeoutMs ?? DEFAULT_CONNECT_TIMEOUT_MS}ms bodyTimeout=${opts?.bodyTimeoutMs ?? DEFAULT_BODY_TIMEOUT_MS}ms`,
+  );
 
   return {
     dispatcher: new ProxyAgent({

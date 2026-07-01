@@ -34,12 +34,37 @@ export interface IntegrationsStatus {
 export const batchApi = {
   getStatus: () => api.get('/status').then((r) => r.data as { apiKeyConfigured: boolean; jiraConfigured: boolean }),
 
-  testAnthropic: () =>
-    api.get('/anthropic/test', { timeout: 35_000 })
-      .then((r) => r.data as { ok: boolean; model?: string; proxyUsed: boolean; proxyUrl?: string; elapsedMs?: number; error?: string })
+  testAnthropic: () => {
+    console.log('[web] batchApi.testAnthropic — sending GET /api/anthropic/test');
+    const started = Date.now();
+    return api.get('/anthropic/test', { timeout: 35_000 })
+      .then((r) => {
+        const data = r.data as {
+          ok: boolean;
+          model?: string;
+          proxyUsed: boolean;
+          proxyEnabled?: boolean;
+          proxyUrl?: string;
+          route?: 'direct' | 'proxy';
+          elapsedMs?: number;
+          error?: string;
+          logs?: string[];
+        };
+        console.log(
+          `[web] batchApi.testAnthropic — response ok=${data.ok} route=${data.route ?? '?'} elapsed=${Date.now() - started}ms`,
+        );
+        if (data.logs?.length) {
+          console.group('[web] Anthropic test server logs');
+          for (const line of data.logs) console.log(line);
+          console.groupEnd();
+        }
+        return data;
+      })
       .catch((err) => {
+        console.error('[web] batchApi.testAnthropic — request failed:', err);
         throw new Error(apiErrorMessage(err, 'Anthropic connectivity test failed'));
-      }),
+      });
+  },
 
   generate: (params: GenerateParams) =>
     api.post<GenerateResult>('/generate', params, { timeout: 300_000 }).then((r) => r.data),

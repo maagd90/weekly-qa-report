@@ -124,8 +124,9 @@ export async function generateReportFromDataset(
   apiKey: string,
   filter: FilterParams,
 ): Promise<{ markdown: string; toolCalls: { toolName: string; rowCount: number }[] }> {
-  const reportCfg = loadReportConfig(resolveConfigDir(params));
-  const client = createAnthropicClient(apiKey, 120_000);
+  const configDir = resolveConfigDir(params);
+  const reportCfg = loadReportConfig(configDir);
+  const client = createAnthropicClient(apiKey, 120_000, configDir);
   const model = reportCfg.model;
   const toolCalls: { toolName: string; rowCount: number }[] = [];
 

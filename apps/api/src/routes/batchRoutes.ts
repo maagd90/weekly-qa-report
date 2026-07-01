@@ -69,10 +69,18 @@ router.get('/status', (_req: Request, res: Response) => {
 
 // GET /api/anthropic/test — live Anthropic connectivity check (key + proxy + model)
 router.get('/anthropic/test', async (_req: Request, res: Response) => {
-  console.log('[api] GET /api/anthropic/test');
+  console.log('[api] GET /api/anthropic/test — request received from Settings UI');
+  console.log(`[api] config dir: ${CONFIG_DIR}`);
+  console.log(`[api] ANTHROPIC_API_KEY: ${process.env.ANTHROPIC_API_KEY ? 'set' : 'missing'}`);
   try {
     const result = await testAnthropicConnection(process.env.ANTHROPIC_API_KEY || '', CONFIG_DIR);
-    console.log(`[api] GET /api/anthropic/test — ok=${result.ok} elapsed=${result.elapsedMs ?? '?'}ms`);
+    console.log(
+      `[api] GET /api/anthropic/test — finished ok=${result.ok} route=${result.route ?? '?'} elapsed=${result.elapsedMs ?? '?'}ms`,
+    );
+    if (result.logs?.length) {
+      console.log('[api] anthropic test log trail:');
+      for (const line of result.logs) console.log(`  ${line}`);
+    }
     res.json(result);
   } catch (err) {
     const message = (err as Error).message || String(err);
