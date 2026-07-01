@@ -15,6 +15,11 @@ export function SettingsPage() {
     onSuccess: () => refetch(),
   });
 
+  const anthropicTest = useMutation({
+    mutationFn: batchApi.testAnthropic,
+  });
+  const anthropicResult = anthropicTest.data;
+
   const testResult = testMutation.data as {
     ok?: boolean; executions?: number; issues?: number; uat?: number; error?: string;
   } | undefined;
@@ -67,6 +72,22 @@ QMETRY_BASIC_AUTH=Basic xxxxx`}</pre>
         <QaSection title="Claude API Key">
           <p className="text-[13px] text-qa-muted m-0 mb-3">Set in .env for AI Report generation.</p>
           <pre className="bg-qa-ink text-[#F5F3ED] text-sm font-mono-qa p-4 overflow-x-auto m-0">ANTHROPIC_API_KEY=sk-ant-api03-...</pre>
+          <button
+            type="button"
+            onClick={() => anthropicTest.mutate()}
+            disabled={anthropicTest.isPending}
+            className="mt-3 font-mono-qa text-xs font-semibold tracking-wider uppercase px-4 py-2.5 border-none cursor-pointer text-white disabled:opacity-50"
+            style={{ background: QA.accent }}
+          >
+            {anthropicTest.isPending ? 'Testing…' : 'Test Anthropic connection'}
+          </button>
+          {anthropicResult && (
+            <div className={`mt-3 p-3 text-[13px] border ${anthropicResult.ok ? 'border-[#cfe0d4] bg-[#eef4ef] text-[#2f6a48]' : 'border-[#ecccc2] bg-[#f8ece8] text-[#a13d2c]'}`}>
+              {anthropicResult.ok
+                ? `Connected — model ${anthropicResult.model}${anthropicResult.proxyUsed ? ' (via proxy)' : ''}`
+                : anthropicResult.error}
+            </div>
+          )}
         </QaSection>
 
         <QaSection title="Folder paths">

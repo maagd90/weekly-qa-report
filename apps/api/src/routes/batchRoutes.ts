@@ -12,6 +12,7 @@ import {
   refilterDashboard,
   integrationsSummary,
   loadIntegrations,
+  testAnthropicConnection,
 } from 'qa-dashboard-batch';
 import { generateReportPdf } from '../services/reportPdf';
 
@@ -64,6 +65,12 @@ router.get('/status', (_req: Request, res: Response) => {
     apiKeyConfigured: Boolean(process.env.ANTHROPIC_API_KEY),
     jiraConfigured: Boolean(process.env.JIRA_EMAIL && process.env.JIRA_API_TOKEN),
   });
+});
+
+// GET /api/anthropic/test — live Anthropic connectivity check (key + proxy + model)
+router.get('/anthropic/test', async (_req: Request, res: Response) => {
+  const result = await testAnthropicConnection(process.env.ANTHROPIC_API_KEY || '', CONFIG_DIR);
+  res.json(result);
 });
 
 const storage = multer.diskStorage({
