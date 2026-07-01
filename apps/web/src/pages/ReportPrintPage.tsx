@@ -3,11 +3,26 @@ import { useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import type { ReportType } from 'qa-dashboard-batch';
 import { batchApi } from '../lib/api';
+import { waitForChartPaint } from '../lib/printReadiness';
 import type { KpiStyle } from '../theme/qaTheme';
 import { ReportPrintContent } from '../components/qa/ReportPrintContent';
 
 const KPI_STYLES: KpiStyle[] = ['editorial', 'framed', 'minimal'];
 const REPORT_TYPES: ReportType[] = ['executive', 'full', 'testers', 'cycles'];
+
+function clearPdfSignals() {
+  document.documentElement.classList.remove('qa-pdf-ready', 'qa-pdf-error');
+}
+
+function markPdfError() {
+  clearPdfSignals();
+  document.documentElement.classList.add('qa-pdf-error');
+}
+
+function markPdfReady() {
+  clearPdfSignals();
+  document.documentElement.classList.add('qa-pdf-ready');
+}
 
 export function ReportPrintPage() {
   const [params] = useSearchParams();
@@ -22,18 +37,22 @@ export function ReportPrintPage() {
     ? (typeParam as ReportType)
     : 'executive';
 
-  const { data: dashboard, isLoading: loadingDashboard, isError: dashboardError } = useQuery({
+  const dashboardQuery = useQuery({
     queryKey: ['print-dashboard', startDate, endDate],
     queryFn: () => batchApi.getDashboard({ startDate, endDate }),
     enabled: Boolean(startDate && endDate),
     retry: false,
   });
 
-  const { data: reportData, isFetched: reportFetched } = useQuery({
+  const reportQuery = useQuery({
     queryKey: ['print-report'],
     queryFn: batchApi.getReport,
     retry: false,
   });
+
+  const dashboard = dashboardQuery.data;
+  const dashboardSettled = !dashboardQuery.isLoading && (dashboardQuery.isSuccess || dashboardQuery.isError);
+  const reportSettled = reportQuery.isSuccess || reportQuery.isError;
 
   useEffect(() => {
     if (startDate && endDate) {
@@ -42,38 +61,59 @@ export function ReportPrintPage() {
   }, [startDate, endDate]);
 
   useEffect(() => {
-    if (!dashboard || !startDate || !endDate || !reportFetched) return;
+    clearPdfSignals();
+
+    if (!startDate || !endDate) {
+      markPdfError();
+      return undefined;
+    }
+
+    if (!dashboardSettled || !reportSettled) {
+      return undefined;
+    }
+
+    if (dashboardQuery.isError || !dashboard) {
+      markPdfError();
+      return undefined;
+    }
 
     let cancelled = false;
-    async function markReady() {
+    async function signalReady() {
       if (document.fonts?.ready) await document.fonts.ready;
-      // Full reports need extra time for charts/SVG to paint
-      const delay = reportType === 'executive' ? 350 : 800;
-      await new Promise((resolve) => setTimeout(resolve, delay));
-      if (!cancelled) document.documentElement.classList.add('qa-pdf-ready');
+      await waitForChartPaint(reportType);
+      if (!cancelled) markPdfReady();
     }
-    markReady();
+    signalReady();
+
     return () => {
       cancelled = true;
-      document.documentElement.classList.remove('qa-pdf-ready');
+      clearPdfSignals();
     };
-  }, [dashboard, startDate, endDate, reportFetched, reportType]);
+  }, [
+    startDate,
+    endDate,
+    dashboard,
+    dashboardSettled,
+    reportSettled,
+    dashboardQuery.isError,
+    reportType,
+  ]);
 
   if (!startDate || !endDate) {
     return (
-      <div className="qa-print-page p-8 text-sm text-qa-muted">
+      <div className="qa-print-page qa-pdf-error p-8 text-sm text-qa-muted">
         Missing startDate or endDate query parameters.
       </div>
     );
   }
 
-  if (loadingDashboard) {
+  if (dashboardQuery.isLoading || !reportSettled) {
     return <div className="qa-print-page p-8 text-sm text-qa-muted">Loading report data…</div>;
   }
 
-  if (dashboardError || !dashboard) {
+  if (dashboardQuery.isError || !dashboard) {
     return (
-      <div className="qa-print-page p-8 text-sm text-qa-muted">
+      <div className="qa-print-page qa-pdf-error p-8 text-sm text-qa-muted">
         No dashboard data for {startDate} → {endDate}. Generate a report first.
       </div>
     );
@@ -84,7 +124,7 @@ export function ReportPrintPage() {
       dashboard={dashboard}
       kpiStyle={kpiStyle}
       reportType={reportType}
-      narrative={reportData?.markdown ?? ''}
+      narrative={reportQuery.data?.markdown ?? ''}
       startDate={startDate}
       endDate={endDate}
     />

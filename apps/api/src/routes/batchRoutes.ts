@@ -170,7 +170,8 @@ router.post('/report/pdf', async (req: Request, res: Response) => {
 
   const validTypes = ['full', 'executive', 'testers', 'cycles'];
   const type = validTypes.includes(reportType || '') ? reportType! : 'executive';
-  const kpi = kpiStyle || 'editorial';
+  const validKpi = ['editorial', 'framed', 'minimal'];
+  const kpi = validKpi.includes(kpiStyle || '') ? kpiStyle! : 'editorial';
 
   const cached = await ensureDataset();
   if (!cached) {

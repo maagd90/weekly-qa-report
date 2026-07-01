@@ -82,7 +82,7 @@ export const batchApi = {
     const response = await api.post(
       '/report/pdf',
       { startDate, endDate, reportType, kpiStyle },
-      { responseType: 'blob', timeout: 120_000 },
+      { responseType: 'blob', timeout: 150_000 },
     );
     const blob = response.data as Blob;
     if (blob.type === 'application/json') {
