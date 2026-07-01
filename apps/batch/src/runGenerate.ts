@@ -82,28 +82,49 @@ export async function runGenerate(params: GenerateParams): Promise<GenerateResul
     };
   }
 
-  const report = await generateReportFromDataset(dataset, params, apiKey, filterParams);
-  const reportMeta = {
-    generatedAt: new Date().toISOString(),
-    params,
-    toolCalls: report.toolCalls,
-  };
-  fs.writeFileSync(reportPath, report.markdown);
-  fs.writeFileSync(metaPath, JSON.stringify(reportMeta, null, 2));
+  try {
+    const report = await generateReportFromDataset(dataset, params, apiKey, filterParams);
+    const reportMeta = {
+      generatedAt: new Date().toISOString(),
+      params,
+      toolCalls: report.toolCalls,
+    };
+    fs.writeFileSync(reportPath, report.markdown);
+    fs.writeFileSync(metaPath, JSON.stringify(reportMeta, null, 2));
 
-  return {
-    ok: true,
-    filesParsed: fileCount,
-    rowCounts: {
-      executions: dataset.executions.length,
-      issues: dataset.issues.length,
-      uat: dataset.uat.length,
-    },
-    warnings: dataset.meta.warnings,
-    paths: { dashboard: dashboardPath, report: reportPath, meta: metaPath, raw: rawPath },
-    payload,
-    report: { markdown: report.markdown, meta: reportMeta },
-  };
+    return {
+      ok: true,
+      filesParsed: fileCount,
+      rowCounts: {
+        executions: dataset.executions.length,
+        issues: dataset.issues.length,
+        uat: dataset.uat.length,
+      },
+      warnings: dataset.meta.warnings,
+      paths: { dashboard: dashboardPath, report: reportPath, meta: metaPath, raw: rawPath },
+      payload,
+      report: { markdown: report.markdown, meta: reportMeta },
+    };
+  } catch (err) {
+    const msg = (err as Error).message;
+    const isConn = /connection error|fetch failed|ECONNREFUSED|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|network|socket/i.test(msg);
+    const hint = isConn && !process.env.HTTPS_PROXY && !process.env.ANTHROPIC_PROXY_URL
+      ? ' — could not reach api.anthropic.com. On the office network set HTTPS_PROXY (or ANTHROPIC_PROXY_URL) in .env, e.g. http://proxy.corp:8080'
+      : '';
+    return {
+      ok: true,
+      filesParsed: fileCount,
+      rowCounts: {
+        executions: dataset.executions.length,
+        issues: dataset.issues.length,
+        uat: dataset.uat.length,
+      },
+      warnings: [...dataset.meta.warnings, `AI narrative failed: ${msg}${hint}`],
+      paths: { dashboard: dashboardPath, report: '', meta: '', raw: rawPath },
+      payload,
+      error: (err as Error).message,
+    };
+  }
 }
 
 export function refilterDashboard(

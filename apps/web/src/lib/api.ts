@@ -3,6 +3,23 @@ import type { DashboardPayload, FilterParams, ReportType, GenerateParams, Genera
 
 const api = axios.create({ baseURL: '/api' });
 
+function apiErrorMessage(err: unknown, fallback: string): string {
+  if (axios.isAxiosError(err)) {
+    const data = err.response?.data as { error?: string; message?: string } | undefined;
+    if (data?.error) return data.error;
+    if (data?.message) return data.message;
+    if (err.response?.status === 504) {
+      return 'Report generation timed out at the gateway. Rebuild Docker (nginx timeout fix) or retry — Full reports can take 1–2 minutes.';
+    }
+    if (err.code === 'ECONNABORTED') {
+      return 'Report generation timed out. Full reports can take 1–2 minutes — please wait and try again.';
+    }
+    return err.message || fallback;
+  }
+  return err instanceof Error ? err.message : fallback;
+}
+
+export { apiErrorMessage };
 export type { DashboardPayload, FilterParams, ReportType, GenerateParams, GenerateResult };
 
 export interface IntegrationsStatus {
@@ -17,7 +34,15 @@ export interface IntegrationsStatus {
 export const batchApi = {
   getStatus: () => api.get('/status').then((r) => r.data as { apiKeyConfigured: boolean; jiraConfigured: boolean }),
 
-  generate: (params: GenerateParams) => api.post<GenerateResult>('/generate', params).then((r) => r.data),
+  testAnthropic: () =>
+    api.get('/anthropic/test', { timeout: 35_000 })
+      .then((r) => r.data as { ok: boolean; model?: string; proxyUsed: boolean; proxyUrl?: string; elapsedMs?: number; error?: string })
+      .catch((err) => {
+        throw new Error(apiErrorMessage(err, 'Anthropic connectivity test failed'));
+      }),
+
+  generate: (params: GenerateParams) =>
+    api.post<GenerateResult>('/generate', params, { timeout: 300_000 }).then((r) => r.data),
 
   getDashboard: (filter?: Partial<FilterParams>) => {
     const params = filter ? {
@@ -49,4 +74,36 @@ export const batchApi = {
 
   getIntegrations: () => api.get('/integrations').then((r) => r.data as IntegrationsStatus),
   testIntegrations: () => api.post('/integrations/test').then((r) => r.data),
+
+  downloadReportPdf: async ({
+    startDate,
+    endDate,
+    reportType,
+    kpiStyle,
+  }: {
+    startDate: string;
+    endDate: string;
+    reportType: ReportType;
+    kpiStyle: string;
+  }) => {
+    const response = await api.post(
+      '/report/pdf',
+      { startDate, endDate, reportType, kpiStyle },
+      { responseType: 'blob', timeout: 150_000 },
+    );
+    const blob = response.data as Blob;
+    if (blob.type === 'application/json') {
+      const text = await blob.text();
+      const payload = JSON.parse(text) as { error?: string };
+      throw new Error(payload.error || 'PDF export failed');
+    }
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `qa-report-${startDate}-to-${endDate}.pdf`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  },
 };

@@ -11,6 +11,8 @@ export { resultColor } from './types/dataset';
 export { applyFilters } from './filters/applyFilters';
 export { executeTool, AI_TOOLS } from './ai/datasetTools';
 export { generateReportFromDataset } from './ai/reportWriter';
+export { testAnthropicConnection } from './ai/testConnection';
+export type { AnthropicTestResult } from './ai/testConnection';
 export { loadIntegrations, integrationsSummary, getBasicAuth, getEncodedAuth } from './config/loadIntegrations';
 export { buildDataset, loadRawDataset, computeFingerprint, loadFingerprint, saveRawDataset } from './cache/datasetCache';
 export { fetchJiraIssues } from './integrations/jiraClient';

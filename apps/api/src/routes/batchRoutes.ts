@@ -12,7 +12,9 @@ import {
   refilterDashboard,
   integrationsSummary,
   loadIntegrations,
+  testAnthropicConnection,
 } from 'qa-dashboard-batch';
+import { generateReportPdf } from '../services/reportPdf';
 
 const router = Router();
 
@@ -63,6 +65,20 @@ router.get('/status', (_req: Request, res: Response) => {
     apiKeyConfigured: Boolean(process.env.ANTHROPIC_API_KEY),
     jiraConfigured: Boolean(process.env.JIRA_EMAIL && process.env.JIRA_API_TOKEN),
   });
+});
+
+// GET /api/anthropic/test — live Anthropic connectivity check (key + proxy + model)
+router.get('/anthropic/test', async (_req: Request, res: Response) => {
+  console.log('[api] GET /api/anthropic/test');
+  try {
+    const result = await testAnthropicConnection(process.env.ANTHROPIC_API_KEY || '', CONFIG_DIR);
+    console.log(`[api] GET /api/anthropic/test — ok=${result.ok} elapsed=${result.elapsedMs ?? '?'}ms`);
+    res.json(result);
+  } catch (err) {
+    const message = (err as Error).message || String(err);
+    console.error('[api] GET /api/anthropic/test — unexpected error:', message);
+    res.status(500).json({ ok: false, proxyUsed: false, error: message });
+  }
 });
 
 const storage = multer.diskStorage({
@@ -120,6 +136,7 @@ router.post('/generate', async (req: Request, res: Response) => {
     }
     res.json(resultPayload);
   } catch (err) {
+    console.error('[api] POST /generate failed:', (err as Error).message);
     res.status(500).json({ error: (err as Error).message });
   }
 });
@@ -151,6 +168,46 @@ router.get('/report', (_req: Request, res: Response) => {
   const markdown = fs.readFileSync(mdPath, 'utf8');
   const meta = fs.existsSync(metaPath) ? JSON.parse(fs.readFileSync(metaPath, 'utf8')) : {};
   res.json({ markdown, meta });
+});
+
+// POST /api/report/pdf — server-side Puppeteer render of /print/report
+router.post('/report/pdf', async (req: Request, res: Response) => {
+  const { startDate, endDate, reportType, kpiStyle } = req.body as {
+    startDate?: string;
+    endDate?: string;
+    reportType?: string;
+    kpiStyle?: string;
+  };
+
+  if (!startDate || !endDate) {
+    return res.status(400).json({ error: 'startDate and endDate are required' });
+  }
+
+  const validTypes = ['full', 'executive', 'testers', 'cycles'];
+  const type = validTypes.includes(reportType || '') ? reportType! : 'executive';
+  const validKpi = ['editorial', 'framed', 'minimal'];
+  const kpi = validKpi.includes(kpiStyle || '') ? kpiStyle! : 'editorial';
+
+  const cached = await ensureDataset();
+  if (!cached) {
+    return res.status(404).json({ error: 'No dashboard data. Generate a report first.' });
+  }
+
+  const payload = refilterDashboard(cached.dataset, { startDate, endDate });
+  if (!payload.overview.totalCases && !payload.uat?.total) {
+    return res.status(404).json({ error: 'No metrics for this date range.' });
+  }
+
+  try {
+    const pdfBuffer = await generateReportPdf(startDate, endDate, type, kpi);
+    const filename = `qa-report-${startDate}-to-${endDate}.pdf`;
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(pdfBuffer);
+  } catch (err) {
+    console.error('[api] POST /report/pdf failed:', (err as Error).message);
+    res.status(500).json({ error: `PDF generation failed: ${(err as Error).message}` });
+  }
 });
 
 // GET /api/integrations

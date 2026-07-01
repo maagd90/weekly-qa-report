@@ -22,6 +22,16 @@ ENV PORT=3001
 ENV INPUT_DIR=/data/input
 ENV OUTPUT_DIR=/data/output
 ENV CONFIG_DIR=/data/config
+ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
+ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
+ENV PDF_PRINT_URL=http://dashboard-web/print/report
+
+RUN apt-get update && apt-get install -y \
+  chromium \
+  fonts-liberation \
+  fonts-noto-color-emoji \
+  --no-install-recommends \
+  && rm -rf /var/lib/apt/lists/*
 
 COPY package.json package-lock.json ./
 COPY apps/batch/package.json ./apps/batch/

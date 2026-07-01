@@ -5,11 +5,10 @@ import remarkGfm from 'remark-gfm';
 import clsx from 'clsx';
 import { Download } from 'lucide-react';
 import type { DashboardPayload } from 'qa-dashboard-batch';
-import { batchApi, type ReportType } from '../lib/api';
+import { batchApi, apiErrorMessage, type ReportType } from '../lib/api';
 import type { KpiStyle } from '../theme/qaTheme';
 import { QA } from '../theme/qaTheme';
 import { AiReportCharts } from '../components/qa/AiReportCharts';
-import { downloadReportPdf } from '../lib/downloadReportPdf';
 
 const REPORT_TYPES: { value: ReportType; label: string; desc: string }[] = [
   { value: 'full', label: 'Full', desc: 'all sections' },
@@ -111,12 +110,11 @@ export function AiReportPage({ dashboard, kpiStyle, onGenerated }: AiReportPageP
   ];
 
   async function handleDownloadPdf() {
-    if (!exportRef.current) return;
     setDownloading(true);
     try {
-      await downloadReportPdf(exportRef.current, `qa-report-${startDate}-to-${endDate}.pdf`);
+      await batchApi.downloadReportPdf({ startDate, endDate, reportType, kpiStyle });
     } catch (err) {
-      setError((err as Error).message || 'PDF export failed');
+      setError(apiErrorMessage(err, 'PDF export failed'));
     } finally {
       setDownloading(false);
     }
