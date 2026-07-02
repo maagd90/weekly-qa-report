@@ -1,7 +1,7 @@
 import { createAnthropicClient, anthropicRoute } from './anthropicClient';
 import { createAnthropicLogger } from './anthropicLog';
 import { describeFetchError, probeAnthropicReachability } from './networkProbe';
-import { getOptionalAnthropicProxyUrl, maskProxyUrl } from './optionalProxy';
+import { getOptionalAnthropicProxyUrl, maskProxyUrl, anthropicProxySource } from './optionalProxy';
 import { loadReportConfig } from '../config/loadReportConfig';
 
 export interface AnthropicTestResult {
@@ -49,7 +49,9 @@ export async function testAnthropicConnection(
 
   log('connectivity test started', `configDir=${configDir}`);
   log('runtime', `node=${process.version} platform=${process.platform}`);
-  log('route', route === 'proxy' ? `proxy via ${maskProxyUrl(getOptionalAnthropicProxyUrl()!)}` : 'direct (no ANTHROPIC_PROXY_URL)');
+  log('route', route === 'proxy'
+    ? `proxy via ${maskProxyUrl(getOptionalAnthropicProxyUrl()!)} (${anthropicProxySource()})`
+    : 'direct — set ANTHROPIC_PROXY_URL or HTTPS_PROXY in .env for Zscaler/office networks');
 
   if (!apiKey) {
     log('API key check', 'missing — set ANTHROPIC_API_KEY in .env');
