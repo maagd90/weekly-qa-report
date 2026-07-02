@@ -34,9 +34,18 @@ summary and a downloadable PDF. It is **file-based — no database to install or
 
 ```bash
 git clone <repo-url> && cd weekly-qa-report
-./run.sh setup          # creates .env, config, folders; installs deps
+./run.sh setup          # Mac/Linux — creates .env, config, folders; installs deps
 ./run.sh dev            # web on http://localhost:3000, API on http://localhost:3001
 ```
+
+**Windows (CMD or PowerShell):**
+
+```bat
+run.bat setup
+run.bat dev
+```
+
+`.env` is loaded automatically — do **not** run `source .env` in Git Bash.
 
 Then open <http://localhost:3000>, stage an Excel export under **Import Data**, and click **Generate Report**.
 No API keys are needed for the core dashboard — only for AI summaries. Full details below.
@@ -472,7 +481,7 @@ The AI report gives Claude six read-only dataset tools so numbers are never inve
 | **JIRA API errors** | Check `JIRA_EMAIL` / `JIRA_API_TOKEN` and `enabled: true` in `integrations.json`. |
 | **Port 3000/3001 in use** | Stop the conflicting process or change ports (`vite.config.ts` / `docker-compose.yml`). |
 | **`.env` not loaded (Docker)** | Ensure `.env` exists in the repo root before `docker compose up`. |
-| **`.env` not loaded (local dev)** | Run `npm run dev` from the repo root — the API loads repo-root `.env` automatically on Mac and Windows. Do **not** use `source .env` in Git Bash; unquoted Windows paths break `source`. Quote paths with spaces in `.env`. |
+| **`.env` not loaded (local dev)** | Run `npm run dev` or `run.bat dev` from the repo root — `.env` loads automatically on Mac and Windows. Check `GET http://localhost:3001/api/env` for diagnostics. Do **not** use `source .env` in Git Bash. Quote paths with spaces in `.env`. |
 | **`docker: command not found`** | Install [Docker Desktop](https://www.docker.com/products/docker-desktop/). |
 | **Changes not reflected (Docker)** | `./run.sh docker restart` after code changes. |
 

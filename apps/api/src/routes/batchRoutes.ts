@@ -62,9 +62,17 @@ function parseFilterParams(req: Request) {
 // GET /api/status
 router.get('/status', (_req: Request, res: Response) => {
   res.json({
-    apiKeyConfigured: Boolean(process.env.ANTHROPIC_API_KEY),
+    apiKeyConfigured: Boolean((process.env.ANTHROPIC_API_KEY || '').trim()),
     jiraConfigured: Boolean(process.env.JIRA_EMAIL && process.env.JIRA_API_TOKEN),
+    projectRoot: process.env.PROJECT_ROOT || ROOT,
   });
+});
+
+// GET /api/env — diagnostics for .env loading (local troubleshooting)
+router.get('/env', (_req: Request, res: Response) => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { getEnvStatus } = require(path.join(__dirname, '../../../../scripts/loadRepoEnv.cjs'));
+  res.json(getEnvStatus());
 });
 
 // GET /api/anthropic/test — live Anthropic connectivity check (key + model)
