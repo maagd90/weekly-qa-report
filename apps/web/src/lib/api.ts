@@ -42,7 +42,7 @@ export const batchApi = {
         const data = r.data as {
           ok: boolean;
           model?: string;
-          route?: 'direct';
+          route?: 'direct' | 'proxy';
           elapsedMs?: number;
           error?: string;
           logs?: string[];

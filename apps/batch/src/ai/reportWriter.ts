@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import type { Dataset, FilterParams, GenerateParams, ReportType } from '../types/dataset';
 import { AI_TOOLS, executeTool } from './datasetTools';
+import { createAnthropicClient } from './anthropicClient';
 
 const DEFAULT_REPORT_MODEL = 'claude-sonnet-4-6';
 
@@ -25,7 +26,7 @@ export async function generateReportFromDataset(
   apiKey: string,
   filter: FilterParams,
 ): Promise<{ markdown: string; toolCalls: { toolName: string; rowCount: number }[] }> {
-  const client = new Anthropic({ apiKey });
+  const client = createAnthropicClient(apiKey, 120_000);
   const model = process.env.ANTHROPIC_MODEL || DEFAULT_REPORT_MODEL;
   const toolCalls: { toolName: string; rowCount: number }[] = [];
 

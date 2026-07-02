@@ -460,7 +460,7 @@ The AI report gives Claude six read-only dataset tools so numbers are never inve
 
 | Problem | Fix |
 |---|---|
-| **AI report: `Connection error`** | Verify internet access to `api.anthropic.com` and use **Settings → Test Anthropic connection**. |
+| **AI report: `Connection error` (Docker)** | The container may not reach `api.anthropic.com` directly. Use `./run.sh dev` on the host, or set `ANTHROPIC_PROXY_URL` in `.env` and `./run.sh docker restart`. |
 | **AI report: 401 / auth error** | `ANTHROPIC_API_KEY` is missing, invalid, or revoked — rotate and update `.env`. |
 | **PDF export fails locally** | Set `PUPPETEER_EXECUTABLE_PATH` and `PDF_PRINT_URL` (see [PDF export](#pdf-export)). |
 | **Empty dashboard** | Stage files in `input/` or enable integrations, then **Generate Report**. |

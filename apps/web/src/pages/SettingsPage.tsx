@@ -99,7 +99,7 @@ QMETRY_BASIC_AUTH=Basic xxxxx`}</pre>
           {anthropicResult && (
             <div className={`mt-3 p-3 text-[13px] border ${anthropicResult.ok ? 'border-[#cfe0d4] bg-[#eef4ef] text-[#2f6a48]' : 'border-[#ecccc2] bg-[#f8ece8] text-[#a13d2c]'}`}>
               {anthropicResult.ok
-                ? `Connected — model ${anthropicResult.model} (direct)${anthropicResult.elapsedMs != null ? ` · ${anthropicResult.elapsedMs}ms` : ''}`
+                ? `Connected — model ${anthropicResult.model} (${anthropicResult.route ?? 'direct'})${anthropicResult.elapsedMs != null ? ` · ${anthropicResult.elapsedMs}ms` : ''}`
                 : anthropicResult.error}
             </div>
           )}
