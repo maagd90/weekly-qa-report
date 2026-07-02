@@ -354,10 +354,15 @@ Use **Settings → Test Anthropic connection** to verify your API key and networ
 
 - **In Docker:** works out of the box — the API image installs Chromium and sets `PUPPETEER_EXECUTABLE_PATH`
   and `PDF_PRINT_URL` automatically.
-- **In local dev:** point the API at a local Chrome and the running web app:
+- **In local dev:** point the API at a local Chrome and the running web app (add to `.env`; `npm run dev` loads it on Mac and Windows):
 
   ```bash
-  PUPPETEER_EXECUTABLE_PATH=C:\Program Files\Google\Chrome\Application\chrome.exe
+  # Mac
+  PUPPETEER_EXECUTABLE_PATH="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+
+  # Windows — quote paths with spaces; forward slashes are fine
+  PUPPETEER_EXECUTABLE_PATH="C:/Program Files/Google/Chrome/Application/chrome.exe"
+
   PDF_PRINT_URL=http://localhost:3000/print/report
   ```
 
@@ -467,7 +472,7 @@ The AI report gives Claude six read-only dataset tools so numbers are never inve
 | **JIRA API errors** | Check `JIRA_EMAIL` / `JIRA_API_TOKEN` and `enabled: true` in `integrations.json`. |
 | **Port 3000/3001 in use** | Stop the conflicting process or change ports (`vite.config.ts` / `docker-compose.yml`). |
 | **`.env` not loaded (Docker)** | Ensure `.env` exists in the repo root before `docker compose up`. |
-| **`.env` not loaded (local / Windows)** | Run `npm run dev` from the repo root — the API loads repo-root `.env` automatically. Do **not** use `source .env` in Git Bash; unquoted Windows paths (e.g. `PUPPETEER_EXECUTABLE_PATH=C:\Program Files\...`) break `source`. Quote paths or comment out PDF lines you do not need. |
+| **`.env` not loaded (local dev)** | Run `npm run dev` from the repo root — the API loads repo-root `.env` automatically on Mac and Windows. Do **not** use `source .env` in Git Bash; unquoted Windows paths break `source`. Quote paths with spaces in `.env`. |
 | **`docker: command not found`** | Install [Docker Desktop](https://www.docker.com/products/docker-desktop/). |
 | **Changes not reflected (Docker)** | `./run.sh docker restart` after code changes. |
 

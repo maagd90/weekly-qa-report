@@ -1,4 +1,5 @@
 import fs from 'fs';
+import path from 'path';
 import puppeteer, { type Browser, type Page } from 'puppeteer-core';
 
 const DEFAULT_PRINT_URL = 'http://dashboard-web/print/report';
@@ -16,13 +17,26 @@ function renderTimeoutMs(): number {
   return Number.isFinite(raw) && raw > 10_000 ? raw : DEFAULT_RENDER_TIMEOUT_MS;
 }
 
+function normalizeExecutablePath(raw: string): string {
+  let p = raw.trim();
+  if ((p.startsWith('"') && p.endsWith('"')) || (p.startsWith("'") && p.endsWith("'"))) {
+    p = p.slice(1, -1);
+  }
+  if (process.platform === 'win32') {
+    p = p.replace(/%([^%]+)%/g, (_, name) => process.env[name] ?? `%${name}%`);
+  }
+  return path.normalize(p);
+}
+
 function resolveChromiumPath(): string {
-  const executablePath = process.env.PUPPETEER_EXECUTABLE_PATH || DEFAULT_CHROMIUM;
+  const raw = process.env.PUPPETEER_EXECUTABLE_PATH || DEFAULT_CHROMIUM;
+  const executablePath = normalizeExecutablePath(raw);
   if (!fs.existsSync(executablePath)) {
     throw new Error(
       `Chromium not found at "${executablePath}". ` +
       `Set PUPPETEER_EXECUTABLE_PATH in .env to your Chrome/Edge path ` +
-      `(e.g. C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe), or run via Docker.`,
+      `(Mac: /Applications/Google Chrome.app/Contents/MacOS/Google Chrome; ` +
+      `Windows: "C:/Program Files/Google/Chrome/Application/chrome.exe"), or run via Docker.`,
     );
   }
   return executablePath;
