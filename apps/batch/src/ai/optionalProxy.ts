@@ -8,6 +8,10 @@ function firstNonEmpty(...values: Array<string | undefined>): string | undefined
   return undefined;
 }
 
+function insecureTlsEnabled(): boolean {
+  return /^(1|true|yes)$/i.test((process.env.ANTHROPIC_PROXY_INSECURE_TLS || '').trim());
+}
+
 /**
  * Corporate proxy for Anthropic only (JIRA/QMetry stay direct).
  * Precedence: ANTHROPIC_PROXY_URL → HTTPS_PROXY → HTTP_PROXY (skip empty strings).
@@ -49,12 +53,23 @@ export function getOptionalAnthropicFetchOptions(
   if (!proxyUrl) return undefined;
 
   const source = anthropicProxySource();
+  const insecure = insecureTlsEnabled();
   log?.('proxy active', `${source}=${maskProxyUrl(proxyUrl)}`);
+  if (insecure) {
+    log?.(
+      'proxy TLS',
+      'ANTHROPIC_PROXY_INSECURE_TLS=1 — skipping certificate verification (Zscaler/no CA only)',
+    );
+  }
+
+  const tls = insecure ? { rejectUnauthorized: false as const } : undefined;
+
   return {
     dispatcher: new ProxyAgent({
       uri: proxyUrl,
       connectTimeout: 15_000,
       bodyTimeout: 120_000,
+      ...(tls ? { requestTls: tls, proxyTls: tls } : {}),
     }),
   };
 }

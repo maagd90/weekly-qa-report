@@ -25,8 +25,10 @@ function formatError(err: unknown, model: string, route: 'direct' | 'proxy'): st
     hint = route === 'proxy'
       ? ' — check ANTHROPIC_PROXY_URL in .env (host/port/auth).'
       : ' — Docker/office networks often block direct outbound HTTPS. Try ./run.sh dev on the host, or set ANTHROPIC_PROXY_URL in .env and restart Docker.';
-  } else if (/self.signed|unable to verify|cert/.test(lower)) {
-    hint = ' — TLS certificate issue; set NODE_EXTRA_CA_CERTS to your corporate CA .pem in .env.';
+  } else if (/self.signed|unable to verify|cert|unauthorized certificate|self signed/.test(lower)) {
+    hint = route === 'proxy'
+      ? ' — Zscaler/TLS-inspecting proxy without CA: set ANTHROPIC_PROXY_INSECURE_TLS=1 in .env, restart Docker, retry. Better long-term: get corporate CA from IT → NODE_EXTRA_CA_CERTS.'
+      : ' — TLS certificate issue; on Zscaler set HTTPS_PROXY and ANTHROPIC_PROXY_INSECURE_TLS=1.';
   } else if (/401|authentication|invalid x-api-key|unauthorized/.test(lower)) {
     hint = ' — the API key is missing, invalid, or revoked. Rotate it and update .env.';
   } else if (/not_found_error|model|400|bad request/.test(lower)) {

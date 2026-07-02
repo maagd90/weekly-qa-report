@@ -467,6 +467,7 @@ The AI report gives Claude six read-only dataset tools so numbers are never inve
 | **JIRA API errors** | Check `JIRA_EMAIL` / `JIRA_API_TOKEN` and `enabled: true` in `integrations.json`. |
 | **Port 3000/3001 in use** | Stop the conflicting process or change ports (`vite.config.ts` / `docker-compose.yml`). |
 | **`.env` not loaded (Docker)** | Ensure `.env` exists in the repo root before `docker compose up`. |
+| **`.env` not loaded (local / Windows)** | Run `npm run dev` from the repo root — the API loads repo-root `.env` automatically. Do **not** use `source .env` in Git Bash; unquoted Windows paths (e.g. `PUPPETEER_EXECUTABLE_PATH=C:\Program Files\...`) break `source`. Quote paths or comment out PDF lines you do not need. |
 | **`docker: command not found`** | Install [Docker Desktop](https://www.docker.com/products/docker-desktop/). |
 | **Changes not reflected (Docker)** | `./run.sh docker restart` after code changes. |
 
