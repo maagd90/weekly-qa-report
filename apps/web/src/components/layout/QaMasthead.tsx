@@ -38,7 +38,7 @@ export function QaMasthead({ dashboard }: QaMastheadProps) {
         <div className="flex items-center justify-between py-1.5 border-b border-qa-ink">
           <div className="font-mono-qa text-[10.5px] tracking-wide uppercase text-qa-muted-light">
             {dashboard
-              ? `Zephyr execution export · ${fmt(totalCases)} records · ${cycleCount} cycles`
+              ? `Test execution data · ${fmt(totalCases)} records · ${cycleCount} cycles`
               : 'Awaiting data — stage files or generate report'}
           </div>
           <div className="font-mono-qa text-[10.5px] tracking-wide uppercase text-qa-muted-light hidden sm:block">
