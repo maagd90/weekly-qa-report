@@ -4,7 +4,7 @@ import crypto from 'crypto';
 import type { Dataset } from '../types/dataset';
 import type { UserConnections } from '../types/connections';
 import { emptyDataset } from '../types/dataset';
-import { loadIntegrations, jiraConfigFromConnection, qmetryConfigFromConnection } from '../config/loadIntegrations';
+import { loadIntegrations, jiraConfigFromConnection, qmetryConfigFromConnection, configuredJiraProfiles } from '../config/loadIntegrations';
 import { fetchJiraDataset, fetchJiraIssues } from '../integrations/jiraClient';
 import { fetchQmetryDataset, fetchQmetryExecutions } from '../integrations/qmetryClient';
 import { parseAllFiles, discoverInputFiles } from '../parse/dispatcher';
@@ -22,22 +22,17 @@ async function buildJiraConnectionDataset(configDir: string, connections?: UserC
       ds.meta.fetchedAt = new Date().toISOString();
       if (error) ds.meta.warnings.push(`[${conn.name}] ${error}`);
       if (issues.length) {
-        ds.files.push({
-          name: `jira-api:${conn.name}`,
-          ext: 'API',
-          project: issues[0]?.project || conn.projectKeys?.[0] || 'UNKNOWN',
-          rows: issues.length,
-          status: 'parsed',
-          detectedType: 'jira',
-          source: 'jira-api',
-        });
+        ds.files.push({ name: `jira-api:${conn.name}`, ext: 'API', project: issues[0]?.project || conn.projectKeys?.[0] || 'UNKNOWN', rows: issues.length, status: 'parsed', detectedType: 'jira', source: 'jira-api' });
         ds.projects = [...new Set(issues.map((i) => i.project))];
       }
       parts.push(ds);
     }
   } else {
     const cfg = loadIntegrations(configDir);
-    if (cfg.jira.enabled) parts.push(await fetchJiraDataset(cfg));
+    const profiles = configuredJiraProfiles(cfg);
+    for (const profile of profiles) {
+      parts.push(await fetchJiraDataset({ ...cfg, jira: profile }));
+    }
   }
   return parts;
 }
@@ -54,15 +49,7 @@ async function buildQmetryConnectionDataset(configDir: string, connections?: Use
       ds.meta.fetchedAt = new Date().toISOString();
       if (error) ds.meta.warnings.push(`[${conn.name}] ${error}`);
       if (executions.length) {
-        ds.files.push({
-          name: `qmetry-api:${conn.name}`,
-          ext: 'API',
-          project: executions[0]?.project || conn.projectKey,
-          rows: executions.length,
-          status: 'parsed',
-          detectedType: 'zephyr',
-          source: 'qmetry-api',
-        });
+        ds.files.push({ name: `qmetry-api:${conn.name}`, ext: 'API', project: executions[0]?.project || conn.projectKey, rows: executions.length, status: 'parsed', detectedType: 'zephyr', source: 'qmetry-api' });
         ds.projects = [...new Set(executions.map((e) => e.project))];
       }
       parts.push(ds);
