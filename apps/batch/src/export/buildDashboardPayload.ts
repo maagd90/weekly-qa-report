@@ -20,13 +20,7 @@ function cycleAgg(rows: ExecutionRow[]): CycleAgg {
   }
   const exec = a.pass + a.fail + a.blocked + a.na;
   const total = exec + a.ne;
-  return {
-    ...a,
-    exec,
-    total,
-    pr: exec ? Math.round((a.pass / exec) * 100) : 0,
-    cov: total ? Math.round((exec / total) * 100) : 0,
-  };
+  return { ...a, exec, total, pr: exec ? Math.round((a.pass / exec) * 100) : 0, cov: total ? Math.round((exec / total) * 100) : 0 };
 }
 
 function cycleStatus(c: CycleAgg): string {
@@ -38,7 +32,12 @@ function cycleStatus(c: CycleAgg): string {
 
 const MLAB = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
-export function buildDashboardPayload(dataset: Dataset, params: FilterParams & { reportType?: string }): DashboardPayload {
+export function buildDashboardPayload(
+  dataset: Dataset,
+  params: FilterParams & { reportType?: string },
+  opts: { includeByProject?: boolean } = {},
+): DashboardPayload {
+  const { includeByProject = true } = opts;
   const filtered = applyFilters(dataset, params);
   const { executions, issues, uat } = filtered;
   const execTotals = cycleAgg(executions);
@@ -58,9 +57,7 @@ export function buildDashboardPayload(dataset: Dataset, params: FilterParams & {
     pct: Math.round((execTotals[def.key] / totalForPct) * 100),
     color: resultColor(def.code),
   }));
-  const chartSeries = {
-    resultMix: resultMix.map((r) => ({ name: r.label, value: r.count, color: r.color })),
-  };
+  const chartSeries = { resultMix: resultMix.map((r) => ({ name: r.label, value: r.count, color: r.color })) };
 
   const monthBuckets: Record<string, { pass: number; blocked: number; fail: number }> = {};
   for (const r of executions) {
@@ -71,19 +68,11 @@ export function buildDashboardPayload(dataset: Dataset, params: FilterParams & {
     else if (r.result === 'BLOCKED') monthBuckets[ym].blocked++;
     else if (r.result === 'FAIL') monthBuckets[ym].fail++;
   }
-  const byMonth = Object.keys(monthBuckets).sort().slice(-6)
-    .map((ym) => {
-      const bucket = monthBuckets[ym];
-      const monthIndex = parseInt(ym.slice(5, 7), 10) - 1;
-      return {
-        ym,
-        label: `${MLAB[monthIndex]} '${ym.slice(2, 4)}`,
-        pass: bucket.pass,
-        blocked: bucket.blocked,
-        fail: bucket.fail,
-      };
-    })
-    .filter((m) => m.pass + m.blocked + m.fail > 0);
+  const byMonth = Object.keys(monthBuckets).sort().slice(-6).map((ym) => {
+    const bucket = monthBuckets[ym];
+    const monthIndex = parseInt(ym.slice(5, 7), 10) - 1;
+    return { ym, label: `${MLAB[monthIndex]} '${ym.slice(2, 4)}`, pass: bucket.pass, blocked: bucket.blocked, fail: bucket.fail };
+  }).filter((m) => m.pass + m.blocked + m.fail > 0);
 
   const testerNames = [...new Set(executions.map((r) => r.tester).filter(Boolean))] as string[];
   const testers = testerNames.map((name) => {
@@ -93,15 +82,7 @@ export function buildDashboardPayload(dataset: Dataset, params: FilterParams & {
     const blocked = testerRows.filter((r) => r.result === 'BLOCKED').length;
     const na = testerRows.filter((r) => r.result === 'NA').length;
     const executed = pass + fail + blocked + na;
-    return {
-      name,
-      executed,
-      pass,
-      fail,
-      blocked,
-      na,
-      passPct: executed ? Math.round((pass / executed) * 100) : 0,
-    };
+    return { name, executed, pass, fail, blocked, na, passPct: executed ? Math.round((pass / executed) * 100) : 0 };
   }).filter((t) => t.executed > 0).sort((a, b) => b.executed - a.executed);
 
   const cycleKeys = [...new Set(executions.map((r) => r.cycleKey))];
@@ -124,12 +105,7 @@ export function buildDashboardPayload(dataset: Dataset, params: FilterParams & {
   }).sort((a, b) => b.total - a.total);
   const cyclesByPassPctAsc = [...cycles].sort((a, b) => a.passPct - b.passPct);
 
-  const projects = [...new Set([
-    ...dataset.projects,
-    ...dataset.executions.map((e) => e.project),
-    ...dataset.issues.map((i) => i.project),
-  ].filter(Boolean))].sort();
-
+  const projects = [...new Set([...dataset.projects, ...dataset.executions.map((e) => e.project), ...dataset.issues.map((i) => i.project)].filter(Boolean))].sort();
   const jStory = issues.filter((r) => r.issueType === 'Story');
   const jBug = issues.filter((r) => r.issueType === 'Bug');
   const storyBug = {
@@ -152,35 +128,21 @@ export function buildDashboardPayload(dataset: Dataset, params: FilterParams & {
     let status = 'Verified';
     if (openBugs > 0) status = 'At Risk';
     else if (open > 0) status = 'In Progress';
-    return {
-      area,
-      stories: stories.length,
-      done,
-      open,
-      bugs: bugs.length,
-      openBugs,
-      completion,
-      status,
-    };
+    return { area, stories: stories.length, done, open, bugs: bugs.length, openBugs, completion, status };
   }).filter((t) => t.stories > 0 || t.bugs > 0).sort((a, b) => b.stories - a.stories);
 
   const openBugs = issues.filter((r) => r.issueType === 'Bug' && r.status === 'open');
   const prioOrder = ['Highest', 'High', 'Medium', 'Low'];
   const bugTotByPrio: Record<string, number> = {};
-  issues.filter((r) => r.issueType === 'Bug').forEach((r) => {
-    bugTotByPrio[r.priority] = (bugTotByPrio[r.priority] || 0) + 1;
-  });
+  issues.filter((r) => r.issueType === 'Bug').forEach((r) => { bugTotByPrio[r.priority] = (bugTotByPrio[r.priority] || 0) + 1; });
   const byPriority = prioOrder.map((priority) => ({
     priority,
     open: openBugs.filter((b) => b.priority === priority).length,
     total: bugTotByPrio[priority] || 0,
   })).filter((p) => p.total > 0 || p.open > 0);
-
   const ownerMap: Record<string, number> = {};
   openBugs.forEach((b) => { ownerMap[b.assignee] = (ownerMap[b.assignee] || 0) + 1; });
-  const byOwner = Object.entries(ownerMap)
-    .map(([name, open]) => ({ name, open }))
-    .sort((a, b) => b.open - a.open);
+  const byOwner = Object.entries(ownerMap).map(([name, open]) => ({ name, open })).sort((a, b) => b.open - a.open);
 
   let uatPayload: DashboardPayload['uat'] = null;
   if (uat.length > 0) {
@@ -207,30 +169,20 @@ export function buildDashboardPayload(dataset: Dataset, params: FilterParams & {
       byPriority: Object.entries(prCounts).map(([priority, count]) => ({ priority, count })).sort((a, b) => b.count - a.count),
       byArea: Object.entries(areaCounts).map(([area, count]) => ({ area, count })).sort((a, b) => b.count - a.count).slice(0, 8),
       bySubmitter: Object.entries(submitterCounts).map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count),
-      rows: uat.map((r) => ({
-        id: r.id,
-        subject: r.subject,
-        area: r.area,
-        priority: r.priority,
-        status: r.status,
-        submitter: r.submitter,
-        submittedAt: r.submittedAt || '',
-        updatedAt: r.updatedAt,
-        cr: r.cr,
-        project: r.project,
-      })),
+      rows: uat.map((r) => ({ id: r.id, subject: r.subject, area: r.area, priority: r.priority, status: r.status, submitter: r.submitter, submittedAt: r.submittedAt || '', updatedAt: r.updatedAt, cr: r.cr })),
     };
   }
 
+  const isAllProjects = !params.project || params.project === 'all';
+  const byProject = includeByProject && isAllProjects && projects.length > 1
+    ? projects.map((project) => {
+      const slice = buildDashboardPayload(dataset, { ...params, project }, { includeByProject: false });
+      return { project, overview: slice.overview, storyBug: slice.storyBug, defectBacklog: slice.defectBacklog, cycles: slice.cycles, testers: slice.testers, uat: slice.uat };
+    })
+    : undefined;
+
   return {
-    scope: {
-      startDate: params.startDate,
-      endDate: params.endDate,
-      search: params.search || '',
-      result: params.result || 'all',
-      project: params.project || 'all',
-      projects,
-    },
+    scope: { startDate: params.startDate, endDate: params.endDate, search: params.search || '', result: params.result || 'all', project: params.project || 'all', projects },
     overview: {
       totalCases: execTotals.total,
       executed: execTotals.exec,
@@ -246,21 +198,10 @@ export function buildDashboardPayload(dataset: Dataset, params: FilterParams & {
     cyclesByPassPctAsc,
     storyBug,
     traceability,
-    defectBacklog: {
-      openTotal: openBugs.length,
-      byPriority,
-      topPriorities: byPriority.slice(0, 6),
-      byOwner,
-    },
+    defectBacklog: { openTotal: openBugs.length, byPriority, topPriorities: byPriority.slice(0, 6), byOwner },
     uat: uatPayload,
+    byProject,
     files: dataset.files,
-    meta: {
-      generatedAt: new Date().toISOString(),
-      parsedAt: dataset.meta.parsedAt,
-      fetchedAt: dataset.meta.fetchedAt,
-      warnings: dataset.meta.warnings,
-      dataMin: filtered.dataMin,
-      dataMax: filtered.dataMax,
-    },
+    meta: { generatedAt: new Date().toISOString(), parsedAt: dataset.meta.parsedAt, fetchedAt: dataset.meta.fetchedAt, warnings: dataset.meta.warnings, dataMin: filtered.dataMin, dataMax: filtered.dataMax },
   };
 }
