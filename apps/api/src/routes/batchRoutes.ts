@@ -49,7 +49,7 @@ function logError(req: Request, message: string, err: unknown, data?: Record<str
 
 function connectionSummary(connections: UserConnections) {
   return {
-    jira: connections.jira.map((c) => ({ name: c.name, baseUrl: c.baseUrl, projectKeys: c.projectKeys?.length ?? 0 })),
+    jira: connections.jira.map((c) => ({ name: c.name, baseUrl: c.baseUrl, projectKeys: c.projectKeys?.join(',') || '' })),
     qmetry: connections.qmetry.map((c) => ({ name: c.name, baseUrl: c.baseUrl, projectKey: c.projectKey, cycleIds: c.cycleIds?.length ?? 0 })),
   };
 }
@@ -245,9 +245,9 @@ router.get('/report', (_req: Request, res: Response) => {
 });
 
 router.post('/report/pdf', async (req: Request, res: Response) => {
-  const { startDate, endDate, reportType, kpiStyle } = req.body as { startDate?: string; endDate?: string; reportType?: string; kpiStyle?: string };
+  const { startDate, endDate, reportType, kpiStyle, project } = req.body as { startDate?: string; endDate?: string; reportType?: string; kpiStyle?: string; project?: string };
   const connections = resolveConnections(req);
-  log(req, 'POST /report/pdf:start', { startDate, endDate, reportType, kpiStyle, connections: connectionSummary(connections) });
+  log(req, 'POST /report/pdf:start', { startDate, endDate, reportType, kpiStyle, project, connections: connectionSummary(connections) });
 
   if (!startDate || !endDate) {
     log(req, 'POST /report/pdf:validation failed', { startDatePresent: Boolean(startDate), endDatePresent: Boolean(endDate) });
@@ -259,19 +259,20 @@ router.post('/report/pdf', async (req: Request, res: Response) => {
   const cached = await ensureDataset(req, connections);
   if (!cached) return res.status(404).json({ error: 'No dashboard data. Generate a report first.', requestId: requestId(req) });
 
-  const payload = refilterDashboard(cached.dataset, { startDate, endDate });
+  const payload = refilterDashboard(cached.dataset, { startDate, endDate, project });
   log(req, 'POST /report/pdf:payload ready', { totalCases: payload.overview.totalCases, uatTotal: payload.uat?.total ?? 0, project: payload.scope.project });
-  if (!payload.overview.totalCases && !payload.uat?.total) return res.status(404).json({ error: 'No metrics for this date range.', requestId: requestId(req) });
+  if (!payload.overview.totalCases && !payload.uat?.total) return res.status(404).json({ error: 'No metrics for this date range/project.', requestId: requestId(req) });
 
   try {
-    const pdfBuffer = await generateReportPdf(startDate, endDate, type, kpi);
-    const filename = `qa-report-${startDate}-to-${endDate}.pdf`;
-    log(req, 'POST /report/pdf:done', { bytes: pdfBuffer.length, filename });
+    const pdfBuffer = await generateReportPdf(startDate, endDate, type, kpi, project);
+    const suffix = project && project !== 'all' ? `-${project}` : '';
+    const filename = `qa-report${suffix}-${startDate}-to-${endDate}.pdf`;
+    log(req, 'POST /report/pdf:done', { bytes: pdfBuffer.length, filename, project: project || 'all' });
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     res.send(pdfBuffer);
   } catch (err) {
-    logError(req, 'POST /report/pdf:failed', err);
+    logError(req, 'POST /report/pdf:failed', err, { project });
     res.status(500).json({ error: `PDF generation failed: ${(err as Error).message}`, requestId: requestId(req) });
   }
 });
