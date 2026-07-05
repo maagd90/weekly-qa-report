@@ -9,6 +9,11 @@ import { mapJiraStatus, projectFromKey, sanitizeText } from '../utils/excel';
 
 const MAX_PAGES = 500;
 
+function jiraSessionHeader(): string | null {
+  const value = process.env.JIRA_SESSION_HEADER || process.env.JIRA_COOKIE;
+  return value?.trim() || null;
+}
+
 function snippet(body: string): string {
   return body.replace(/\s+/g, ' ').trim().slice(0, 220);
 }
@@ -31,6 +36,7 @@ export async function fetchJiraIssues(cfg: IntegrationsConfig['jira']): Promise<
   if (!cfg.enabled) return { issues: [] };
   const authHeader = getAuthHeader(cfg.auth);
   if (!authHeader) return { issues: [], error: 'JIRA credentials not configured' };
+  const sessionHeader = jiraSessionHeader();
 
   const issues: IssueRow[] = [];
   let startAt = 0;
@@ -41,13 +47,15 @@ export async function fetchJiraIssues(cfg: IntegrationsConfig['jira']): Promise<
     const url = `${cfg.baseUrl}${cfg.searchPath}`;
     let res: Response;
     try {
+      const headers: Record<string, string> = {
+        Authorization: authHeader,
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+      };
+      if (sessionHeader) headers.Cookie = sessionHeader;
       res = await fetchWithTimeout(url, {
         method: 'POST',
-        headers: {
-          Authorization: authHeader,
-          Accept: 'application/json',
-          'Content-Type': 'application/json',
-        },
+        headers,
         body: JSON.stringify({ jql: cfg.jql, startAt, maxResults, fields: cfg.fields }),
       });
     } catch (err) {
