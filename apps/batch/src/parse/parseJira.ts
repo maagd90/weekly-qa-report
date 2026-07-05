@@ -11,6 +11,14 @@ import { deriveArea } from '../utils/deriveArea';
 const JIRA_HEADERS = ['Key', 'Issue Type', 'Summary'];
 const DONE = ['Done', 'CLOSED', 'Cancel'];
 
+function firstText(obj: Record<string, unknown>, names: string[]): string {
+  for (const name of names) {
+    const value = sanitizeText(obj[name]);
+    if (value) return value;
+  }
+  return '';
+}
+
 export function isJiraExport(rows: unknown[][]): boolean {
   return findHeaderRow(rows, JIRA_HEADERS) >= 0;
 }
@@ -41,8 +49,9 @@ export function parseJiraFromRows(
     }
     const summary = sanitizeText(obj['Summary']);
     const updatedAt = excelSerialToIso(obj['Updated']) || createdAt;
+    const sprint = firstText(obj, ['Sprint', 'Sprint Name', 'Sprint No', 'Sprint Number', 'Sprint ID', 'Sprint Id']);
 
-    issues.push({
+    (issues as any[]).push({
       project: projectFromKey(key),
       key,
       area: deriveArea(summary),
@@ -53,6 +62,8 @@ export function parseJiraFromRows(
       createdAt,
       resolvedAt: excelSerialToIso(obj['Resolved']),
       updatedAt,
+      summary,
+      sprint: sprint || 'Not mapped',
       source: 'jira-file',
     });
   }
