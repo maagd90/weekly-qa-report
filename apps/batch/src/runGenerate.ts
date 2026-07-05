@@ -3,11 +3,27 @@ import path from 'path';
 import type { DashboardPayload, GenerateParams, GenerateResult } from './types/dataset';
 import { buildDataset, computeFingerprint, saveRawDataset } from './cache/datasetCache';
 import { buildDashboardPayload } from './export/buildDashboardPayload';
-import { generateReportFromDataset } from './ai/reportWriter';
+import { generateReportFromDataset, resolveReportLlmConfig } from './ai/reportWriter';
+import { LLM_PROVIDER_LABELS, envKeyForProvider } from './ai/llmProviders';
 import { discoverInputFiles } from './parse/dispatcher';
 
 function resolveRoot(): string {
   return path.resolve(__dirname, '../../..');
+}
+
+function sanitizeParamsForMeta(params: GenerateParams): GenerateParams {
+  const safe: GenerateParams = { ...params };
+  delete safe.apiKey;
+  if (safe.llm) {
+    safe.llm = { provider: safe.llm.provider, model: safe.llm.model, baseUrl: safe.llm.baseUrl };
+  }
+  if (safe.connections) {
+    safe.connections = {
+      jira: safe.connections.jira.map((c) => ({ ...c, credential: c.credential ? '***redacted***' : '' })),
+      qmetry: safe.connections.qmetry.map((c) => ({ ...c, credential: c.credential ? '***redacted***' : '' })),
+    };
+  }
+  return safe;
 }
 
 export async function runGenerate(params: GenerateParams): Promise<GenerateResult> {
@@ -29,7 +45,7 @@ export async function runGenerate(params: GenerateParams): Promise<GenerateResul
 
   let dataset;
   try {
-    dataset = await buildDataset(inputDir, configDir);
+    dataset = await buildDataset(inputDir, configDir, params.connections);
   } catch (err) {
     return {
       ok: false,
@@ -55,7 +71,7 @@ export async function runGenerate(params: GenerateParams): Promise<GenerateResul
     };
   }
 
-  const fingerprint = computeFingerprint(inputDir, configDir);
+  const fingerprint = computeFingerprint(inputDir, configDir, params.connections);
   const rawPath = path.join(outputDir, 'raw-dataset.json');
   saveRawDataset(outputDir, dataset, fingerprint);
 
@@ -66,28 +82,25 @@ export async function runGenerate(params: GenerateParams): Promise<GenerateResul
   const payload = buildDashboardPayload(dataset, filterParams);
   fs.writeFileSync(dashboardPath, JSON.stringify(payload, null, 2));
 
-  const apiKey = params.apiKey || process.env.ANTHROPIC_API_KEY || '';
-  if (!apiKey) {
+  const llmConfig = resolveReportLlmConfig(params, configDir, params.apiKey);
+  if (!llmConfig.apiKey) {
     return {
       ok: true,
       filesParsed: fileCount,
-      rowCounts: {
-        executions: dataset.executions.length,
-        issues: dataset.issues.length,
-        uat: dataset.uat.length,
-      },
-      warnings: [...dataset.meta.warnings, 'ANTHROPIC_API_KEY not set — AI narrative skipped'],
+      rowCounts: { executions: dataset.executions.length, issues: dataset.issues.length, uat: dataset.uat.length },
+      warnings: [...dataset.meta.warnings, `${envKeyForProvider(llmConfig.provider)} not set — AI narrative skipped for ${LLM_PROVIDER_LABELS[llmConfig.provider]}`],
       paths: { dashboard: dashboardPath, report: '', meta: '', raw: rawPath },
       payload,
     };
   }
 
   try {
-    const report = await generateReportFromDataset(dataset, params, apiKey, filterParams);
+    const report = await generateReportFromDataset(dataset, params, llmConfig.apiKey, filterParams);
     const reportMeta = {
       generatedAt: new Date().toISOString(),
-      params,
+      params: sanitizeParamsForMeta(params),
       toolCalls: report.toolCalls,
+      llm: report.llm,
     };
     fs.writeFileSync(reportPath, report.markdown);
     fs.writeFileSync(metaPath, JSON.stringify(reportMeta, null, 2));
@@ -95,11 +108,7 @@ export async function runGenerate(params: GenerateParams): Promise<GenerateResul
     return {
       ok: true,
       filesParsed: fileCount,
-      rowCounts: {
-        executions: dataset.executions.length,
-        issues: dataset.issues.length,
-        uat: dataset.uat.length,
-      },
+      rowCounts: { executions: dataset.executions.length, issues: dataset.issues.length, uat: dataset.uat.length },
       warnings: dataset.meta.warnings,
       paths: { dashboard: dashboardPath, report: reportPath, meta: metaPath, raw: rawPath },
       payload,
@@ -108,17 +117,11 @@ export async function runGenerate(params: GenerateParams): Promise<GenerateResul
   } catch (err) {
     const msg = (err as Error).message;
     const isConn = /connection error|fetch failed|ECONNREFUSED|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|network|socket/i.test(msg);
-    const hint = isConn
-      ? ' — could not reach api.anthropic.com; verify internet access and ANTHROPIC_API_KEY in .env.'
-      : '';
+    const hint = isConn ? ` — could not reach ${LLM_PROVIDER_LABELS[llmConfig.provider]}; verify network access and ${envKeyForProvider(llmConfig.provider)} in .env or Settings.` : '';
     return {
       ok: true,
       filesParsed: fileCount,
-      rowCounts: {
-        executions: dataset.executions.length,
-        issues: dataset.issues.length,
-        uat: dataset.uat.length,
-      },
+      rowCounts: { executions: dataset.executions.length, issues: dataset.issues.length, uat: dataset.uat.length },
       warnings: [...dataset.meta.warnings, `AI narrative failed: ${msg}${hint}`],
       paths: { dashboard: dashboardPath, report: '', meta: '', raw: rawPath },
       payload,
@@ -127,9 +130,6 @@ export async function runGenerate(params: GenerateParams): Promise<GenerateResul
   }
 }
 
-export function refilterDashboard(
-  dataset: import('./types/dataset').Dataset,
-  filterParams: import('./types/dataset').FilterParams,
-): DashboardPayload {
+export function refilterDashboard(dataset: import('./types/dataset').Dataset, filterParams: import('./types/dataset').FilterParams): DashboardPayload {
   return buildDashboardPayload(dataset, filterParams);
 }
