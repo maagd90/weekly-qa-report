@@ -2,7 +2,7 @@ export * from './types/dataset';
 export * from './types/connections';
 export { runGenerate, refilterDashboard } from './runGenerate';
 export { discoverInputFiles, parseFile, parseAllFiles, sniffFileType } from './parse/dispatcher';
-export { parseZephyr } from './parse/parseZephyr';
+export { parseExecutionExport } from './parse/parseExecutionExport';
 export { parseJira } from './parse/parseJira';
 export { parseOdl } from './parse/parseOdl';
 export { mergeDatasets } from './merge/mergeDataset';
