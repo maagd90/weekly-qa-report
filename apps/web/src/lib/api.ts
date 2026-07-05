@@ -15,6 +15,7 @@ import type {
 const api = axios.create({ baseURL: '/api' });
 
 const ANTHROPIC_KEY_STORAGE = 'qa_dashboard_anthropic_key';
+const LLM_KEYS_STORAGE = 'qa_dashboard_llm_keys';
 const JIRA_CONNECTIONS_STORAGE = 'qa_dashboard_jira_connections';
 const QMETRY_CONNECTIONS_STORAGE = 'qa_dashboard_qmetry_connections';
 const LLM_SELECTION_STORAGE = 'qa_dashboard_llm_selection';
@@ -124,16 +125,47 @@ export function setActiveProject(project: string): void {
   }
 }
 
+export function getUserLlmKey(provider: LlmProvider): string {
+  const keys = readStoredObject<Record<string, string>>(LLM_KEYS_STORAGE, {});
+  if (keys[provider]) return keys[provider];
+  if (provider === 'anthropic') {
+    try {
+      return window.localStorage.getItem(ANTHROPIC_KEY_STORAGE) || '';
+    } catch {
+      return '';
+    }
+  }
+  return '';
+}
+
+export function setUserLlmKey(provider: LlmProvider, value: string): void {
+  const keys = readStoredObject<Record<string, string>>(LLM_KEYS_STORAGE, {});
+  const clean = value.trim();
+  if (clean) keys[provider] = clean;
+  else delete keys[provider];
+  writeStoredObject(LLM_KEYS_STORAGE, keys);
+  if (provider === 'anthropic') {
+    try {
+      if (clean) window.localStorage.setItem(ANTHROPIC_KEY_STORAGE, clean);
+      else window.localStorage.removeItem(ANTHROPIC_KEY_STORAGE);
+    } catch {
+      /* storage unavailable */
+    }
+  }
+}
+
 export function getUserLlmSelection(): LlmSelectionInput {
   const stored = readStoredObject<Partial<LlmSelectionInput>>(LLM_SELECTION_STORAGE, {});
   const provider = normalizeProvider(stored.provider);
   const model = stored.model && LLM_MODELS[provider].includes(stored.model)
     ? stored.model
     : LLM_MODELS[provider][0];
+  const apiKey = getUserLlmKey(provider);
   return {
     provider,
     model,
     baseUrl: stored.baseUrl || undefined,
+    apiKey: apiKey || undefined,
   };
 }
 
@@ -147,23 +179,15 @@ export function setUserLlmSelection(selection: LlmSelectionInput): void {
     model,
     baseUrl: selection.baseUrl || '',
   });
+  setUserLlmKey(provider, selection.apiKey || '');
 }
 
 export function getUserAnthropicKey(): string {
-  try {
-    return window.localStorage.getItem(ANTHROPIC_KEY_STORAGE) || '';
-  } catch {
-    return '';
-  }
+  return getUserLlmKey('anthropic');
 }
 
 export function setUserAnthropicKey(key: string): void {
-  try {
-    if (key.trim()) window.localStorage.setItem(ANTHROPIC_KEY_STORAGE, key.trim());
-    else window.localStorage.removeItem(ANTHROPIC_KEY_STORAGE);
-  } catch {
-    /* storage unavailable */
-  }
+  setUserLlmKey('anthropic', key);
 }
 
 function readConnections<T>(key: string): T[] {
@@ -189,8 +213,9 @@ api.interceptors.request.use((config) => {
   config.headers = config.headers || {};
   config.headers['x-request-id'] = meta.requestId;
 
-  const key = getUserAnthropicKey();
-  if (key) config.headers['x-anthropic-key'] = key;
+  const selectedLlm = getUserLlmSelection();
+  const anthropicKey = getUserAnthropicKey();
+  if (anthropicKey) config.headers['x-anthropic-key'] = anthropicKey;
 
   const jira = getJiraConnections();
   const qmetry = getQmetryConnections();
@@ -204,7 +229,8 @@ api.interceptors.request.use((config) => {
     method: (config.method || 'GET').toUpperCase(),
     url: `${config.baseURL || ''}${config.url || ''}`,
     activeProject: getActiveProject(),
-    hasAnthropicKey: Boolean(key),
+    llmProvider: selectedLlm.provider,
+    hasSelectedLlmKey: Boolean(selectedLlm.apiKey),
     hasReportLogo: Boolean(getReportBranding().logoUrl),
     jiraConnections: jira.length,
     qmetryConnections: qmetry.length,
