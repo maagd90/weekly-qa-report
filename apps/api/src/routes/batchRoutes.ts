@@ -13,12 +13,13 @@ import {
   integrationsSummary,
   loadIntegrations,
   testAnthropicConnection,
+  testLlmConnection,
 } from 'qa-dashboard-batch';
+import type { LlmSelectionInput } from 'qa-dashboard-batch';
 import { getEnvStatus } from '../loadRepoEnv';
 import { generateReportPdf } from '../services/reportPdf';
 
 const router = Router();
-
 const ROOT = process.env.PROJECT_ROOT || path.resolve(__dirname, '../../../..');
 const INPUT_DIR = process.env.INPUT_DIR || path.join(ROOT, 'input');
 const OUTPUT_DIR = process.env.OUTPUT_DIR || path.join(ROOT, 'output');
@@ -32,16 +33,10 @@ async function ensureDataset(): Promise<{ dataset: import('qa-dashboard-batch').
   const fingerprint = computeFingerprint(INPUT_DIR, CONFIG_DIR);
   const cached = loadFingerprint(OUTPUT_DIR);
   let dataset = loadRawDataset(OUTPUT_DIR);
-
-  if (dataset && cached === fingerprint) {
-    return { dataset, fingerprint };
-  }
-
+  if (dataset && cached === fingerprint) return { dataset, fingerprint };
   try {
     dataset = await buildDataset(INPUT_DIR, CONFIG_DIR);
-    if (!dataset.executions.length && !dataset.issues.length && !dataset.uat.length) {
-      return null;
-    }
+    if (!dataset.executions.length && !dataset.issues.length && !dataset.uat.length) return null;
     saveRawDataset(OUTPUT_DIR, dataset, fingerprint);
     return { dataset, fingerprint };
   } catch (err) {
@@ -60,50 +55,42 @@ function parseFilterParams(req: Request) {
   };
 }
 
-// GET /api/status
 router.get('/status', (_req: Request, res: Response) => {
   res.json({
-    apiKeyConfigured: Boolean((process.env.ANTHROPIC_API_KEY || '').trim()),
+    apiKeyConfigured: Boolean(process.env.ANTHROPIC_API_KEY || process.env.OPENAI_API_KEY || process.env.GEMINI_API_KEY || process.env.CUSTOM_LLM_API_KEY),
+    llmProvidersConfigured: {
+      anthropic: Boolean(process.env.ANTHROPIC_API_KEY),
+      openai: Boolean(process.env.OPENAI_API_KEY),
+      gemini: Boolean(process.env.GEMINI_API_KEY),
+      custom: Boolean(process.env.CUSTOM_LLM_API_KEY),
+    },
     jiraConfigured: Boolean(process.env.JIRA_EMAIL && process.env.JIRA_API_TOKEN),
     projectRoot: process.env.PROJECT_ROOT || ROOT,
   });
 });
 
-// GET /api/env — diagnostics for .env loading (local troubleshooting)
-router.get('/env', (_req: Request, res: Response) => {
-  res.json(getEnvStatus());
+router.get('/env', (_req: Request, res: Response) => res.json(getEnvStatus()));
+
+router.post('/llm/test', async (req: Request, res: Response) => {
+  try {
+    res.json(await testLlmConnection((req.body || {}) as LlmSelectionInput, CONFIG_DIR));
+  } catch (err) {
+    res.status(500).json({ ok: false, route: 'direct', error: (err as Error).message || String(err) });
+  }
 });
 
-// GET /api/anthropic/test — live Anthropic connectivity check (key + model)
 router.get('/anthropic/test', async (_req: Request, res: Response) => {
-  console.log('[api] GET /api/anthropic/test — request received');
-  console.log(`[api] configDir=${CONFIG_DIR}`);
-  console.log(`[api] ANTHROPIC_API_KEY=${process.env.ANTHROPIC_API_KEY ? 'set' : 'missing'}`);
   try {
-    const result = await testAnthropicConnection(process.env.ANTHROPIC_API_KEY || '', CONFIG_DIR);
-    console.log(
-      `[api] GET /api/anthropic/test — finished ok=${result.ok} route=${result.route} elapsed=${result.elapsedMs ?? '?'}ms`,
-    );
-    if (result.logs?.length) {
-      console.log('[api] anthropic test log trail:');
-      for (const line of result.logs) console.log(`  ${line}`);
-    }
-    res.json(result);
+    res.json(await testAnthropicConnection(process.env.ANTHROPIC_API_KEY || '', CONFIG_DIR));
   } catch (err) {
-    const message = (err as Error).message || String(err);
-    console.error('[api] GET /api/anthropic/test — unexpected error:', message);
-    res.status(500).json({ ok: false, route: 'direct', error: message });
+    res.status(500).json({ ok: false, route: 'direct', error: (err as Error).message || String(err) });
   }
 });
 
 const storage = multer.diskStorage({
   destination: (_req, _file, cb) => cb(null, INPUT_DIR),
-  filename: (_req, file, cb) => {
-    const safe = path.basename(file.originalname).replace(/[/\\]/g, '_');
-    cb(null, `${Date.now()}_${safe}`);
-  },
+  filename: (_req, file, cb) => cb(null, `${Date.now()}_${path.basename(file.originalname).replace(/[/\\]/g, '_')}`),
 });
-
 const upload = multer({
   storage,
   limits: { fileSize: 20 * 1024 * 1024 },
@@ -114,24 +101,12 @@ const upload = multer({
   },
 });
 
-// POST /api/generate
 router.post('/generate', async (req: Request, res: Response) => {
-  const { startDate, endDate, reportType, search, result, project } = req.body as {
-    startDate?: string;
-    endDate?: string;
-    reportType?: string;
-    search?: string;
-    result?: string;
-    project?: string;
+  const { startDate, endDate, reportType, search, result, project, llm } = req.body as {
+    startDate?: string; endDate?: string; reportType?: string; search?: string; result?: string; project?: string; llm?: LlmSelectionInput;
   };
-
-  if (!startDate || !endDate) {
-    return res.status(400).json({ error: 'startDate and endDate are required' });
-  }
-
-  const validTypes = ['full', 'executive', 'testers', 'cycles'];
-  const type = validTypes.includes(reportType || '') ? reportType! : 'full';
-
+  if (!startDate || !endDate) return res.status(400).json({ error: 'startDate and endDate are required' });
+  const type = ['full', 'executive', 'testers', 'cycles'].includes(reportType || '') ? reportType! : 'full';
   try {
     const resultPayload = await runGenerate({
       startDate,
@@ -143,12 +118,9 @@ router.post('/generate', async (req: Request, res: Response) => {
       inputDir: INPUT_DIR,
       outputDir: OUTPUT_DIR,
       configDir: CONFIG_DIR,
-      apiKey: process.env.ANTHROPIC_API_KEY,
+      llm,
     });
-
-    if (!resultPayload.ok) {
-      return res.status(resultPayload.paths.dashboard ? 207 : 400).json(resultPayload);
-    }
+    if (!resultPayload.ok) return res.status(resultPayload.paths.dashboard ? 207 : 400).json(resultPayload);
     res.json(resultPayload);
   } catch (err) {
     console.error('[api] POST /generate failed:', (err as Error).message);
@@ -156,76 +128,42 @@ router.post('/generate', async (req: Request, res: Response) => {
   }
 });
 
-// GET /api/dashboard — re-filter cached dataset with query params
 router.get('/dashboard', async (req: Request, res: Response) => {
-  const filter = parseFilterParams(req);
   const cached = await ensureDataset();
-
-  if (cached) {
-    const payload = refilterDashboard(cached.dataset, filter);
-    return res.json(payload);
-  }
-
+  if (cached) return res.json(refilterDashboard(cached.dataset, parseFilterParams(req)));
   const file = path.join(OUTPUT_DIR, 'dashboard-data.json');
-  if (!fs.existsSync(file)) {
-    return res.status(404).json({ error: 'No dashboard generated yet. Click Generate Report or configure integrations.' });
-  }
+  if (!fs.existsSync(file)) return res.status(404).json({ error: 'No dashboard generated yet. Click Generate Report or configure integrations.' });
   res.json(JSON.parse(fs.readFileSync(file, 'utf8')));
 });
 
-// GET /api/report
 router.get('/report', (_req: Request, res: Response) => {
   const mdPath = path.join(OUTPUT_DIR, 'report.md');
   const metaPath = path.join(OUTPUT_DIR, 'report-meta.json');
-  if (!fs.existsSync(mdPath)) {
-    return res.status(404).json({ error: 'No report generated yet.' });
-  }
+  if (!fs.existsSync(mdPath)) return res.status(404).json({ error: 'No report generated yet.' });
   const markdown = fs.readFileSync(mdPath, 'utf8');
   const meta = fs.existsSync(metaPath) ? JSON.parse(fs.readFileSync(metaPath, 'utf8')) : {};
   res.json({ markdown, meta });
 });
 
-// POST /api/report/pdf — server-side Puppeteer render of /print/report
 router.post('/report/pdf', async (req: Request, res: Response) => {
-  const { startDate, endDate, reportType, kpiStyle } = req.body as {
-    startDate?: string;
-    endDate?: string;
-    reportType?: string;
-    kpiStyle?: string;
-  };
-
-  if (!startDate || !endDate) {
-    return res.status(400).json({ error: 'startDate and endDate are required' });
-  }
-
-  const validTypes = ['full', 'executive', 'testers', 'cycles'];
-  const type = validTypes.includes(reportType || '') ? reportType! : 'executive';
-  const validKpi = ['editorial', 'framed', 'minimal'];
-  const kpi = validKpi.includes(kpiStyle || '') ? kpiStyle! : 'editorial';
-
+  const { startDate, endDate, reportType, kpiStyle } = req.body as { startDate?: string; endDate?: string; reportType?: string; kpiStyle?: string };
+  if (!startDate || !endDate) return res.status(400).json({ error: 'startDate and endDate are required' });
+  const type = ['full', 'executive', 'testers', 'cycles'].includes(reportType || '') ? reportType! : 'executive';
+  const kpi = ['editorial', 'framed', 'minimal'].includes(kpiStyle || '') ? kpiStyle! : 'editorial';
   const cached = await ensureDataset();
-  if (!cached) {
-    return res.status(404).json({ error: 'No dashboard data. Generate a report first.' });
-  }
-
+  if (!cached) return res.status(404).json({ error: 'No dashboard data. Generate a report first.' });
   const payload = refilterDashboard(cached.dataset, { startDate, endDate });
-  if (!payload.overview.totalCases && !payload.uat?.total) {
-    return res.status(404).json({ error: 'No metrics for this date range.' });
-  }
-
+  if (!payload.overview.totalCases && !payload.uat?.total) return res.status(404).json({ error: 'No metrics for this date range.' });
   try {
     const pdfBuffer = await generateReportPdf(startDate, endDate, type, kpi);
-    const filename = `qa-report-${startDate}-to-${endDate}.pdf`;
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('Content-Disposition', `attachment; filename="qa-report-${startDate}-to-${endDate}.pdf"`);
     res.send(pdfBuffer);
   } catch (err) {
-    console.error('[api] POST /report/pdf failed:', (err as Error).message);
     res.status(500).json({ error: `PDF generation failed: ${(err as Error).message}` });
   }
 });
 
-// GET /api/integrations
 router.get('/integrations', (_req: Request, res: Response) => {
   const summary = integrationsSummary(CONFIG_DIR);
   const cfg = loadIntegrations(CONFIG_DIR);
@@ -238,44 +176,31 @@ router.get('/integrations', (_req: Request, res: Response) => {
   });
 });
 
-// POST /api/integrations/test
 router.post('/integrations/test', async (_req: Request, res: Response) => {
   try {
     const dataset = await buildDataset(INPUT_DIR, CONFIG_DIR);
-    res.json({
-      ok: true,
-      executions: dataset.executions.length,
-      issues: dataset.issues.length,
-      uat: dataset.uat.length,
-      warnings: dataset.meta.warnings,
-    });
+    res.json({ ok: true, executions: dataset.executions.length, issues: dataset.issues.length, uat: dataset.uat.length, warnings: dataset.meta.warnings });
   } catch (err) {
     res.status(500).json({ ok: false, error: (err as Error).message });
   }
 });
 
-// POST /api/upload
 router.post('/upload', upload.single('file'), (req: Request, res: Response) => {
   if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
   res.json({ ok: true, filename: req.file.filename, path: req.file.path, message: 'File staged. Run Generate Report to process.' });
 });
 
-// GET /api/input/files
 router.get('/input/files', (_req: Request, res: Response) => {
   if (!fs.existsSync(INPUT_DIR)) return res.json([]);
-  const files = fs.readdirSync(INPUT_DIR)
-    .filter((f) => !f.startsWith('.'))
-    .map((f) => {
-      const stat = fs.statSync(path.join(INPUT_DIR, f));
-      return { name: f, size: stat.size, modifiedAt: stat.mtime.toISOString() };
-    });
+  const files = fs.readdirSync(INPUT_DIR).filter((f) => !f.startsWith('.')).map((f) => {
+    const stat = fs.statSync(path.join(INPUT_DIR, f));
+    return { name: f, size: stat.size, modifiedAt: stat.mtime.toISOString() };
+  });
   res.json(files);
 });
 
-// DELETE /api/input/:filename
 router.delete('/input/:filename', (req: Request, res: Response) => {
-  const safe = path.basename(req.params.filename);
-  const filePath = path.join(INPUT_DIR, safe);
+  const filePath = path.join(INPUT_DIR, path.basename(req.params.filename));
   if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'File not found' });
   fs.unlinkSync(filePath);
   res.json({ ok: true });
