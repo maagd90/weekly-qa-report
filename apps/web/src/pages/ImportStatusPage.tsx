@@ -14,7 +14,7 @@ interface StagedFile {
 const EXPECTED = [
   { ext: 'XLSX', label: 'Test execution export', map: 'result, tester, cycle' },
   { ext: 'XLSX', label: 'JIRA issues export', map: 'Issue Type → Story/Bug' },
-  { ext: 'XLSX', label: 'ODL UAT issue log', map: 'auto-detected → UAT tab' },
+  { ext: 'XLSX', label: 'Vendor Portal Bug log', map: 'auto-detected → Vendor Portal Bugs tab' },
 ];
 
 const MAPPING_ROWS = [
