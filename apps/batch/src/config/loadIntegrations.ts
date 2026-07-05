@@ -5,24 +5,9 @@ import type { JiraConnectionInput, QmetryConnectionInput } from '../types/connec
 const JIRA_SEARCH_PATH = '/rest/api/2/search';
 
 const DEFAULT_JIRA_FIELDS = [
-  'summary',
-  'description',
-  'assignee',
-  'status',
-  'priority',
-  'issuetype',
-  'created',
-  'updated',
-  'resolution',
-  'resolutiondate',
-  'resolved',
-  'reporter',
-  'labels',
-  'components',
-  'fixVersions',
-  'customfield_10020',
-  'customfield_10016',
-  'customfield_10028',
+  'summary', 'description', 'assignee', 'status', 'priority', 'issuetype',
+  'created', 'updated', 'resolution', 'resolutiondate', 'resolved', 'reporter',
+  'labels', 'components', 'fixVersions', 'customfield_10020', 'customfield_10016', 'customfield_10028',
 ];
 
 export interface BasicAuthConfig {
@@ -41,6 +26,9 @@ export interface JiraIntegrationConfig {
   baseUrl: string;
   searchPath: string;
   auth: BasicAuthConfig;
+  cookie?: string;
+  jiraSessionId?: string;
+  jiraXsrfToken?: string;
   projectKeys: string[];
   jql: string;
   pageSize: number;
@@ -174,7 +162,7 @@ function connectionSecret(conn: { apiToken?: string; credential?: string }): str
 export function jiraConfigFromConnection(conn: JiraConnectionInput): JiraIntegrationConfig {
   const projectKeys = conn.projectKeys?.filter(Boolean) || [];
   const jql = conn.jql?.trim() || (projectKeys.length ? `project in (${projectKeys.join(',')}) AND issuetype in (Story, Bug) ORDER BY updated DESC` : 'issuetype in (Story, Bug) ORDER BY updated DESC');
-  const deploymentType = conn.deploymentType || 'cloud';
+  const deploymentType = conn.deploymentType || 'on-prem';
   return {
     ...DEFAULT_JIRA,
     enabled: true,
@@ -183,6 +171,9 @@ export function jiraConfigFromConnection(conn: JiraConnectionInput): JiraIntegra
     baseUrl: conn.baseUrl.replace(/\/+$/, ''),
     searchPath: conn.searchPath?.trim() || JIRA_SEARCH_PATH,
     auth: { type: conn.authType || 'basic', email: conn.email, username: conn.username, token: connectionSecret(conn) },
+    cookie: conn.cookie,
+    jiraSessionId: conn.jiraSessionId,
+    jiraXsrfToken: conn.jiraXsrfToken,
     projectKeys,
     jql,
     applicationCiFieldId: conn.applicationCiFieldId || null,
