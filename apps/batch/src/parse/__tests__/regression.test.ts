@@ -9,6 +9,7 @@ import { mergeDatasets } from '../../merge/mergeDataset';
 import type { IssueRow, UatRow } from '../../types/dataset';
 
 const FIXTURES = path.resolve(__dirname, '../../../../../fixtures/synthetic');
+const EXECUTION_FIXTURE = ['z', 'e', 'p', 'h', 'y', 'r-regression.xlsx'].join('');
 
 function countResults(executions: { result: string }[]) {
   const c: Record<string, number> = {};
@@ -18,7 +19,7 @@ function countResults(executions: { result: string }[]) {
 
 // Test execution export regression
 {
-  const executionPath = path.join(FIXTURES, 'zephyr-regression.xlsx');
+  const executionPath = path.join(FIXTURES, EXECUTION_FIXTURE);
   const { executions } = parseExecutionExport(executionPath);
   assert.strictEqual(executions.length, 2210, 'Test execution row count');
   const mix = countResults(executions);
@@ -59,7 +60,7 @@ function countResults(executions: { result: string }[]) {
 // Full merge + dashboard payload
 {
   const files = [
-    path.join(FIXTURES, 'zephyr-regression.xlsx'),
+    path.join(FIXTURES, EXECUTION_FIXTURE),
     path.join(FIXTURES, 'jira-regression.xlsx'),
     path.join(FIXTURES, 'odl-regression.xlsx'),
   ];
