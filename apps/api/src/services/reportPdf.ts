@@ -12,6 +12,13 @@ let activePdfJobs = 0;
 const pdfQueue: Array<() => void> = [];
 let shutdownHooksRegistered = false;
 
+export interface ReportBrandingPayload {
+  logoUrl?: string;
+  logoAlt?: string;
+  title?: string;
+  subtitle?: string;
+}
+
 function pdfLog(message: string, data?: Record<string, unknown>): void {
   console.log(`[pdf] ${message}`, data || '');
 }
@@ -130,17 +137,21 @@ async function renderPdfPage(page: Page, url: string, gotoTimeout: number, selec
   return Buffer.from(pdf);
 }
 
-export async function generateReportPdf(startDate: string, endDate: string, reportType: string, kpiStyle: string, project?: string): Promise<Buffer> {
+export async function generateReportPdf(startDate: string, endDate: string, reportType: string, kpiStyle: string, project?: string, branding?: ReportBrandingPayload): Promise<Buffer> {
   const totalTimeout = renderTimeoutMs();
   const gotoTimeout = Math.floor(totalTimeout * 0.6);
   const selectorTimeout = Math.floor(totalTimeout * 0.35);
   const baseUrl = process.env.PDF_PRINT_URL || DEFAULT_PRINT_URL;
   const qs = new URLSearchParams({ startDate, endDate, reportType, kpiStyle });
   if (project && project !== 'all') qs.set('project', project);
+  if (branding?.logoUrl) qs.set('logoUrl', branding.logoUrl);
+  if (branding?.logoAlt) qs.set('logoAlt', branding.logoAlt);
+  if (branding?.title) qs.set('title', branding.title);
+  if (branding?.subtitle) qs.set('subtitle', branding.subtitle);
   const url = `${baseUrl}?${qs.toString()}`;
   const executablePath = resolveChromiumPath();
 
-  pdfLog('generateReportPdf:start', { startDate, endDate, reportType, kpiStyle, project: project || 'all', baseUrl, totalTimeout });
+  pdfLog('generateReportPdf:start', { startDate, endDate, reportType, kpiStyle, project: project || 'all', hasLogo: Boolean(branding?.logoUrl), baseUrl, totalTimeout });
   await acquirePdfSlot();
   let page: Page | null = null;
   try {
