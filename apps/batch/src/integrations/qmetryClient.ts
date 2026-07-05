@@ -13,20 +13,12 @@ function authHeader(cfg: QmetryIntegrationConfig): string | null {
   return basic ? `Basic ${basic}` : null;
 }
 
-async function qmetryFetch(
-  cfg: QmetryIntegrationConfig,
-  method: 'GET' | 'POST',
-  path: string,
-  body?: unknown,
-): Promise<{ ok: boolean; data?: unknown; error?: string }> {
+async function qmetryFetch(cfg: QmetryIntegrationConfig, method: 'GET' | 'POST', path: string, body?: unknown): Promise<{ ok: boolean; data?: unknown; error?: string }> {
   const auth = authHeader(cfg);
   if (!auth) return { ok: false, error: 'QMetry credentials not configured' };
 
   const url = `${cfg.baseUrl}${cfg.apiPrefix}${path}`;
-  const headers: Record<string, string> = {
-    Authorization: auth,
-    Accept: 'application/json',
-  };
+  const headers: Record<string, string> = { Authorization: auth, Accept: 'application/json' };
   const init: RequestInit = { method, headers };
   if (body !== undefined) {
     headers['Content-Type'] = 'application/json';
@@ -35,21 +27,14 @@ async function qmetryFetch(
 
   try {
     const res = await fetchWithTimeout(url, init);
-    if (!res.ok) {
-      const text = await res.text();
-      return { ok: false, error: safeApiError('QMetry API', res.status, text) };
-    }
+    if (!res.ok) return { ok: false, error: safeApiError('QMetry API', res.status, await res.text()) };
     return { ok: true, data: await res.json() };
   } catch (err) {
     return { ok: false, error: `QMetry API timeout: ${(err as Error).message}` };
   }
 }
 
-function normalizeTestCase(
-  tc: Record<string, unknown>,
-  cycleKey: string,
-  cycleName: string,
-): ExecutionRow | null {
+function normalizeTestCase(tc: Record<string, unknown>, cycleKey: string, cycleName: string): ExecutionRow | null {
   const caseKey = sanitizeText(tc.key);
   if (!caseKey) return null;
   const executedAt = isoDateFromApi(tc.executedOn || tc.lastModified);
@@ -68,21 +53,19 @@ function normalizeTestCase(
 }
 
 function extractItems(data: unknown): Record<string, unknown>[] {
-  const payload = data as {
-    data?: Record<string, unknown>[];
-    values?: Record<string, unknown>[];
-    testCases?: Record<string, unknown>[];
-    total?: number;
-  };
+  const payload = data as { data?: Record<string, unknown>[]; values?: Record<string, unknown>[]; testCases?: Record<string, unknown>[]; total?: number };
   if (Array.isArray(data)) return data as Record<string, unknown>[];
   return payload.data || payload.values || payload.testCases || [];
 }
 
-/** List test cycle IDs for a QMetry project (numeric projectId) */
 async function fetchProjectCycleIds(cfg: QmetryIntegrationConfig): Promise<string[]> {
+  return (await fetchProjectCycles(cfg)).map((c) => c.id);
+}
+
+export async function fetchProjectCycles(cfg: QmetryIntegrationConfig): Promise<{ id: string; name: string }[]> {
   if (!cfg.projectId || !cfg.testCyclesSearchPath) return [];
   const path = cfg.testCyclesSearchPath.replace('{projectId}', encodeURIComponent(cfg.projectId));
-  const ids: string[] = [];
+  const cycles: { id: string; name: string }[] = [];
   let startAt = 0;
   let pages = 0;
 
@@ -97,21 +80,18 @@ async function fetchProjectCycleIds(cfg: QmetryIntegrationConfig): Promise<strin
     const items = extractItems(data);
     for (const item of items) {
       const id = sanitizeText(item.id || item.cycleId);
-      if (id) ids.push(id);
+      const name = sanitizeText(item.name || item.summary || item.folderName) || id;
+      if (id) cycles.push({ id, name });
     }
     const total = (data as { total?: number })?.total ?? items.length;
     startAt += items.length;
     pages++;
     if (!items.length || startAt >= total) break;
   }
-  return ids;
+  return cycles;
 }
 
-/** Fetch executions for one test cycle — POST search (matches QmetryPublisher Java pattern) */
-async function fetchCycleExecutions(
-  cfg: QmetryIntegrationConfig,
-  cycleId: string,
-): Promise<{ executions: ExecutionRow[]; cycleKey: string; cycleName: string; error?: string }> {
+async function fetchCycleExecutions(cfg: QmetryIntegrationConfig, cycleId: string): Promise<{ executions: ExecutionRow[]; cycleKey: string; cycleName: string; error?: string }> {
   const executions: ExecutionRow[] = [];
   let cycleKey = cycleId;
   let cycleName = cycleId;
@@ -122,17 +102,9 @@ async function fetchCycleExecutions(
   const filterBody = cfg.testCasesSearchBody || { filter: { filter: { folderId: -1 } } };
 
   while (pages < cfg.maxPages) {
-    const qs = new URLSearchParams({
-      startAt: String(startAt),
-      maxResults: String(cfg.pageSize),
-      fields: cfg.testCaseFields,
-    });
+    const qs = new URLSearchParams({ startAt: String(startAt), maxResults: String(cfg.pageSize), fields: cfg.testCaseFields });
     const path = `${searchPath}?${qs}`;
-
-    const { ok, data, error } = cfg.usePostSearch
-      ? await qmetryFetch(cfg, 'POST', path, filterBody)
-      : await qmetryFetch(cfg, 'GET', path);
-
+    const { ok, data, error } = cfg.usePostSearch ? await qmetryFetch(cfg, 'POST', path, filterBody) : await qmetryFetch(cfg, 'GET', path);
     if (!ok) return { executions, cycleKey, cycleName, error };
 
     const items = extractItems(data);
@@ -155,36 +127,24 @@ async function fetchCycleExecutions(
   return { executions, cycleKey, cycleName };
 }
 
-export async function fetchQmetryExecutions(cfg: QmetryIntegrationConfig): Promise<{
-  executions: ExecutionRow[];
-  cycleMeta: Map<string, string>;
-  error?: string;
-}> {
+export async function fetchQmetryExecutions(cfg: QmetryIntegrationConfig): Promise<{ executions: ExecutionRow[]; cycleMeta: Map<string, string>; error?: string }> {
   if (!cfg.enabled) return { executions: [], cycleMeta: new Map() };
 
   let cycleIds = [...cfg.cycleIds];
-  if (!cycleIds.length && cfg.projectId) {
-    cycleIds = await fetchProjectCycleIds(cfg);
-  }
+  if (!cycleIds.length && cfg.projectId) cycleIds = await fetchProjectCycleIds(cfg);
   if (!cycleIds.length) {
-    return {
-      executions: [],
-      cycleMeta: new Map(),
-      error: 'No cycleIds configured — set cycleIds or projectId + testCyclesSearchPath in integrations.json',
-    };
+    return { executions: [], cycleMeta: new Map(), error: 'No cycleIds configured — set cycleIds or projectId + testCyclesSearchPath in integrations.json' };
   }
 
   const executions: ExecutionRow[] = [];
   const cycleMeta = new Map<string, string>();
   const errors: string[] = [];
-
   for (const cycleId of cycleIds) {
     const { executions: batch, cycleKey, cycleName, error } = await fetchCycleExecutions(cfg, cycleId);
     if (error) errors.push(`Cycle ${cycleId}: ${error}`);
     executions.push(...batch);
     cycleMeta.set(cycleKey, cycleName);
   }
-
   return { executions, cycleMeta, error: errors.length ? errors.join('; ') : undefined };
 }
 
