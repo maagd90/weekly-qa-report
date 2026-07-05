@@ -12,6 +12,8 @@ export interface JiraConnectionInput {
   apiToken?: string;
   credential?: string;
   cookie?: string;
+  jiraSessionId?: string;
+  jiraXsrfToken?: string;
   searchPath?: string;
   projectKeys: string[];
   jql?: string;
