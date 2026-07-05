@@ -75,13 +75,65 @@ function withProject(conn: JiraConnectionInput, projectKey: string): JiraConnect
   return { ...conn, projectKeys: clean ? [clean] : [], jql: clean ? `project = ${clean} AND issuetype in (Story, Bug) ORDER BY updated DESC` : '' };
 }
 
+function cleanCookie(value: string): string {
+  return value.replace(/^Cookie:\s*/i, '').trim();
+}
+
+function buildJiraCookie(conn: JiraConnectionInput): string {
+  const full = cleanCookie(conn.cookie || '');
+  if (full) return full;
+  const parts: string[] = [];
+  if (conn.jiraSessionId?.trim()) parts.push(`JSESSIONID=${conn.jiraSessionId.trim()}`);
+  if (conn.jiraXsrfToken?.trim()) parts.push(`atlassian.xsrf.token=${conn.jiraXsrfToken.trim()}`);
+  return parts.join('; ');
+}
+
+function shellQuote(value: string): string {
+  return `'${value.replace(/'/g, `'\\''`)}'`;
+}
+
+function buildJiraCurl(conn: JiraConnectionInput): string {
+  const url = `${(conn.baseUrl || '').replace(/\/+$/, '')}${conn.searchPath || '/rest/api/2/search'}`;
+  const auth = (conn.apiToken || conn.credential || '').trim();
+  const jql = conn.jql?.trim() || (conn.projectKeys?.[0] ? `project = ${conn.projectKeys[0]} AND issuetype in (Story, Bug) ORDER BY updated DESC` : 'issuetype in (Story, Bug) ORDER BY updated DESC');
+  const cookie = buildJiraCookie(conn);
+  const body = JSON.stringify({
+    jql,
+    startAt: 0,
+    maxResults: 10,
+    fields: ['summary', 'description', 'assignee', 'status', 'priority', 'issuetype', 'created', 'updated', 'resolution', 'resolved', 'reporter', 'labels', 'components', 'fixVersions', 'customfield_10020', 'customfield_10016', 'customfield_10028'],
+  }, null, 2);
+  return [
+    `curl --location --request POST ${shellQuote(url)} \\`,
+    auth ? `--header ${shellQuote(`Authorization: ${auth}`)} \\` : '',
+    `--header ${shellQuote('Accept: application/json')} \\`,
+    `--header ${shellQuote('Content-Type: application/json')} \\`,
+    cookie ? `--header ${shellQuote(`Cookie: ${cookie}`)} \\` : '',
+    `--data-raw ${shellQuote(body)}`,
+  ].filter(Boolean).join('\n');
+}
+
 function JiraConnectionCard({ conn, onChange, onRemove, projectOptions }: { conn: JiraConnectionInput; onChange: (next: JiraConnectionInput) => void; onRemove: () => void; projectOptions: string[] }) {
   const [testResult, setTestResult] = useState<TestResult | null>(null);
+  const [showSecrets, setShowSecrets] = useState(false);
+  const [copyMsg, setCopyMsg] = useState<string | null>(null);
   const deploymentType = conn.deploymentType || 'on-prem';
   const isCloud = deploymentType === 'cloud';
+  const secretInputType = showSecrets ? 'text' : 'password';
   const selectedProject = conn.projectKeys?.[0] || '';
   const customProject = selectedProject && !projectOptions.includes(selectedProject) ? selectedProject : '';
   const testMutation = useMutation({ mutationFn: () => batchApi.testConnection('jira', conn), onSuccess: (r) => setTestResult(r) });
+
+  async function copyCurl() {
+    const command = buildJiraCurl(conn);
+    try {
+      await navigator.clipboard.writeText(command);
+      setCopyMsg('Curl copied. Compare it with the working Postman/curl command.');
+    } catch {
+      setCopyMsg(command);
+    }
+    setTimeout(() => setCopyMsg(null), 6000);
+  }
 
   return (
     <div className="border border-qa-border bg-[#faf8f2] p-3.5 mb-3">
@@ -93,6 +145,14 @@ function JiraConnectionCard({ conn, onChange, onRemove, projectOptions }: { conn
           {isCloud ? 'Cloud uses Jira REST API v2 with Authorization header.' : 'On-premises uses Jira REST API v2 with Authorization header and optional JSESSIONID/XSRF session values when SSO redirects API requests.'}
         </p>
       </div>
+      <div className="flex items-center justify-between mb-2.5">
+        <span className="font-mono-qa text-[10.5px] uppercase tracking-wide text-qa-muted-light">Connection values</span>
+        <div className="flex gap-2">
+          <button type="button" onClick={() => setShowSecrets((v) => !v)} className="font-mono-qa text-[10px] font-semibold tracking-wider uppercase px-3 py-1.5 border border-qa-border bg-white cursor-pointer">{showSecrets ? 'Hide values' : 'Show values'}</button>
+          <button type="button" onClick={copyCurl} className="font-mono-qa text-[10px] font-semibold tracking-wider uppercase px-3 py-1.5 border border-qa-border bg-white cursor-pointer">Copy curl</button>
+        </div>
+      </div>
+      {copyMsg && <div className="mb-2.5 p-2 border border-qa-border bg-white text-[11px] font-mono-qa whitespace-pre-wrap break-all text-qa-muted">{copyMsg}</div>}
       <div className="grid grid-cols-2 gap-2.5 mb-2.5">
         <div>
           <label className={labelClass}>JIRA project to connect</label>
@@ -106,7 +166,7 @@ function JiraConnectionCard({ conn, onChange, onRemove, projectOptions }: { conn
         <Field label="Connection name" placeholder={isCloud ? 'DLM Cloud' : 'DLM On-Prem'} value={conn.name} onChange={(e) => onChange({ ...conn, name: e.target.value })} />
         <Field label="Base URL" placeholder={isCloud ? 'https://company.atlassian.net' : 'https://jira.company.local'} value={conn.baseUrl} onChange={(e) => onChange({ ...conn, baseUrl: e.target.value })} />
         <Field label={isCloud ? 'Email / username' : 'Username / service account'} value={conn.email} onChange={(e) => onChange({ ...conn, email: e.target.value, username: e.target.value })} />
-        <Field label={isCloud ? 'Basic auth / API token' : 'Basic auth / password'} type="password" value={conn.apiToken || ''} onChange={(e) => onChange({ ...conn, apiToken: e.target.value, credential: e.target.value })} />
+        <Field label={isCloud ? 'Basic auth / API token' : 'Basic auth / password'} type={secretInputType} value={conn.apiToken || ''} onChange={(e) => onChange({ ...conn, apiToken: e.target.value, credential: e.target.value })} />
         <Field label="REST search path" value={conn.searchPath || '/rest/api/2/search'} onChange={(e) => onChange({ ...conn, searchPath: e.target.value })} />
         <Field label="Application CI field (optional)" placeholder="customfield_12345" value={conn.applicationCiFieldId || ''} onChange={(e) => onChange({ ...conn, applicationCiFieldId: e.target.value })} />
       </div>
@@ -118,11 +178,11 @@ function JiraConnectionCard({ conn, onChange, onRemove, projectOptions }: { conn
             Use these only if the API redirects to an HTML login/SSO page. The backend sends them as one header: JSESSIONID=value; atlassian.xsrf.token=value.
           </p>
           <div className="grid grid-cols-2 gap-2.5">
-            <Field label="JSESSIONID" type="password" placeholder="6B0D9467083D..." value={conn.jiraSessionId || ''} onChange={(e) => onChange({ ...conn, jiraSessionId: e.target.value })} />
-            <Field label="Atlassian XSRF token" type="password" placeholder="BRNK-BWG8-..." value={conn.jiraXsrfToken || ''} onChange={(e) => onChange({ ...conn, jiraXsrfToken: e.target.value })} />
+            <Field label="JSESSIONID" type={secretInputType} placeholder="6B0D9467083D..." value={conn.jiraSessionId || ''} onChange={(e) => onChange({ ...conn, jiraSessionId: e.target.value })} />
+            <Field label="Atlassian XSRF token" type={secretInputType} placeholder="BRNK-BWG8-..." value={conn.jiraXsrfToken || ''} onChange={(e) => onChange({ ...conn, jiraXsrfToken: e.target.value })} />
           </div>
           <div className="mt-2.5">
-            <Field label="Full Cookie header alternative" type="password" placeholder="JSESSIONID=...; atlassian.xsrf.token=..." value={conn.cookie || ''} onChange={(e) => onChange({ ...conn, cookie: e.target.value })} />
+            <Field label="Full Cookie header alternative" type={secretInputType} placeholder="JSESSIONID=...; atlassian.xsrf.token=..." value={conn.cookie || ''} onChange={(e) => onChange({ ...conn, cookie: e.target.value })} />
           </div>
           <p className="text-[11px] text-qa-muted m-0 mt-2">If full Cookie header is entered, it will be used first. Otherwise JSESSIONID + XSRF token are combined.</p>
         </div>
@@ -268,7 +328,7 @@ export function SettingsPage() {
           {savedMsg && <div className="mt-3 p-3 text-[13px] border border-[#cfe0d4] bg-[#eef4ef] text-[#2f6a48]">{savedMsg}</div>}
         </QaSection>
 
-        <QaSection title="JIRA connections" className="lg:col-span-2"><p className="text-[13px] text-qa-muted m-0 mb-3">Add one JIRA connection per project. For on-prem JIRA, enter Basic Authorization and optional JSESSIONID/XSRF values directly here. No .env file is required.</p>{jiraConnections.map((conn, idx) => <JiraConnectionCard key={conn.id} conn={conn} projectOptions={projectOptions} onChange={(next) => setJiraConnectionsState(jiraConnections.map((c, i) => (i === idx ? next : c)))} onRemove={() => setJiraConnectionsState(jiraConnections.filter((_, i) => i !== idx))} />)}<button type="button" onClick={() => setJiraConnectionsState([...jiraConnections, blankJiraConnection()])} className="font-mono-qa text-xs font-semibold tracking-wider uppercase px-4 py-2.5 border border-qa-border bg-white cursor-pointer">+ Add JIRA connection</button></QaSection>
+        <QaSection title="JIRA connections" className="lg:col-span-2"><p className="text-[13px] text-qa-muted m-0 mb-3">Add one JIRA connection per project. For on-prem JIRA, enter Basic Authorization and optional JSESSIONID/XSRF values directly here. Use Copy curl to verify the app builds the same request as your working terminal command.</p>{jiraConnections.map((conn, idx) => <JiraConnectionCard key={conn.id} conn={conn} projectOptions={projectOptions} onChange={(next) => setJiraConnectionsState(jiraConnections.map((c, i) => (i === idx ? next : c)))} onRemove={() => setJiraConnectionsState(jiraConnections.filter((_, i) => i !== idx))} />)}<button type="button" onClick={() => setJiraConnectionsState([...jiraConnections, blankJiraConnection()])} className="font-mono-qa text-xs font-semibold tracking-wider uppercase px-4 py-2.5 border border-qa-border bg-white cursor-pointer">+ Add JIRA connection</button></QaSection>
         <QaSection title="QMetry connections" className="lg:col-span-2"><p className="text-[13px] text-qa-muted m-0 mb-3">Add QMetry connections to fetch test cycles/test case executions. Cycle IDs are optional if Project ID can list cycles.</p>{qmetryConnections.map((conn, idx) => <QmetryConnectionCard key={conn.id} conn={conn} onChange={(next) => setQmetryConnectionsState(qmetryConnections.map((c, i) => (i === idx ? next : c)))} onRemove={() => setQmetryConnectionsState(qmetryConnections.filter((_, i) => i !== idx))} />)}<button type="button" onClick={() => setQmetryConnectionsState([...qmetryConnections, blankQmetryConnection()])} className="font-mono-qa text-xs font-semibold tracking-wider uppercase px-4 py-2.5 border border-qa-border bg-white cursor-pointer">+ Add QMetry connection</button></QaSection>
         <QaSection title="Cycle / Folder list" className="lg:col-span-2"><p className="text-[13px] text-qa-muted m-0 mb-3">Used for filtering/report selection. Live QMetry cycles are shown when available; otherwise imported cycle names are listed.</p><div className="text-[12px] text-qa-muted mb-2">Source: <span className="font-mono-qa text-qa-ink">{cycles?.source || 'not loaded'}</span>{cycles?.connection ? ` · ${cycles.connection}` : ''}</div><div className="grid grid-cols-1 md:grid-cols-2 gap-2 max-h-72 overflow-y-auto">{(cycles?.cycles || []).map((c) => <div key={c.id} className="border border-qa-border bg-[#faf8f2] px-3 py-2 font-mono-qa text-[11px]"><span className="text-qa-muted-light">{c.id}</span> · {c.name}</div>)}{!cycles?.cycles?.length && <div className="text-[13px] text-qa-muted">No cycles found yet. Configure QMetry or generate a report from imported files.</div>}</div></QaSection>
         <QaSection title="Folder paths"><ul className="text-[13px] text-qa-muted m-0 p-0 list-none space-y-2 font-mono-qa"><li><span className="text-qa-ink">input/</span> — staged Excel exports</li><li><span className="text-qa-ink">output/</span> — dashboard-data.json, report.md</li><li><span className="text-qa-ink">config/</span> — fallback integrations.json</li></ul></QaSection>
