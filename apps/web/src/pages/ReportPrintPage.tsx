@@ -28,6 +28,7 @@ export function ReportPrintPage() {
   const [params] = useSearchParams();
   const startDate = params.get('startDate') ?? '';
   const endDate = params.get('endDate') ?? '';
+  const project = params.get('project') || undefined;
   const kpiParam = params.get('kpiStyle') ?? 'editorial';
   const typeParam = params.get('reportType') ?? 'executive';
   const kpiStyle: KpiStyle = KPI_STYLES.includes(kpiParam as KpiStyle)
@@ -38,8 +39,8 @@ export function ReportPrintPage() {
     : 'executive';
 
   const dashboardQuery = useQuery({
-    queryKey: ['print-dashboard', startDate, endDate],
-    queryFn: () => batchApi.getDashboard({ startDate, endDate }),
+    queryKey: ['print-dashboard', startDate, endDate, project || 'all'],
+    queryFn: () => batchApi.getDashboard({ startDate, endDate, project }),
     enabled: Boolean(startDate && endDate),
     retry: false,
   });
@@ -56,9 +57,9 @@ export function ReportPrintPage() {
 
   useEffect(() => {
     if (startDate && endDate) {
-      document.title = `QA Report ${startDate} – ${endDate}`;
+      document.title = `QA Report ${project ? `${project} ` : ''}${startDate} – ${endDate}`;
     }
-  }, [startDate, endDate]);
+  }, [startDate, endDate, project]);
 
   useEffect(() => {
     clearPdfSignals();
@@ -92,6 +93,7 @@ export function ReportPrintPage() {
   }, [
     startDate,
     endDate,
+    project,
     dashboard,
     dashboardSettled,
     reportSettled,
@@ -114,7 +116,7 @@ export function ReportPrintPage() {
   if (dashboardQuery.isError || !dashboard) {
     return (
       <div className="qa-print-page qa-pdf-error p-8 text-sm text-qa-muted">
-        No dashboard data for {startDate} → {endDate}. Generate a report first.
+        No dashboard data for {project ? `${project} · ` : ''}{startDate} → {endDate}. Generate a report first.
       </div>
     );
   }
