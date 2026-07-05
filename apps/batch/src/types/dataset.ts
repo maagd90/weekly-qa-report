@@ -104,13 +104,22 @@ export interface GenerateParams extends FilterParams {
   inputDir?: string;
   outputDir?: string;
   configDir?: string;
+  /** Legacy Anthropic-only key. Prefer llm.apiKey for provider-specific keys. */
   apiKey?: string;
+  llm?: import('../ai/llmProviders').LlmSelectionInput;
+  connections?: import('./connections').UserConnections;
 }
 
 export interface ReportMeta {
   generatedAt: string;
   params: GenerateParams;
   toolCalls: { toolName: string; rowCount: number }[];
+  llm?: {
+    provider: string;
+    model: string;
+    baseUrl?: string;
+    maxTokens?: number;
+  };
 }
 
 export interface GenerateResult {
