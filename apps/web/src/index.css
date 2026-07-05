@@ -3,92 +3,114 @@
 @tailwind utilities;
 
 @layer base {
-  :root {
-    --qa-bg: #F5F3ED;
-    --qa-bg-outer: #EDEAE2;
-    --qa-ink: #1C1B18;
-    --qa-accent: #15605E;
-    --qa-muted: #78736A;
-    --qa-border: #e2ded4;
-  }
-
-  html, body {
-    margin: 0;
-    padding: 0;
+  html,
+  body,
+  #root {
+    min-height: 100%;
   }
 
   body {
-    @apply antialiased;
-    background: var(--qa-bg-outer);
-    color: var(--qa-ink);
-    font-family: 'Public Sans', system-ui, sans-serif;
+    margin: 0;
+    background: #f5f3ed;
+    color: #1f1e1a;
+    font-family: 'Public Sans', Inter, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   }
 
-  ::selection {
-    background: #1c1b18;
-    color: #f5f3ed;
+  * {
+    box-sizing: border-box;
+  }
+
+  button,
+  input,
+  select,
+  textarea {
+    font: inherit;
   }
 }
 
-.qa-scroll::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
-}
+@layer utilities {
+  .max-w-qa {
+    max-width: 1180px;
+  }
 
-.qa-scroll::-webkit-scrollbar-thumb {
-  background: #cfcabd;
-  border: 3px solid #F5F3ED;
-}
+  .font-spectral {
+    font-family: 'Spectral', Georgia, serif;
+  }
 
-.qa-scroll::-webkit-scrollbar-track {
-  background: transparent;
-}
+  .font-mono-qa {
+    font-family: 'IBM Plex Mono', 'SFMono-Regular', Consolas, monospace;
+  }
 
-.font-spectral {
-  font-family: 'Spectral', Georgia, serif;
-}
+  .qa-scroll::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
 
-.font-mono-qa {
-  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  .qa-scroll::-webkit-scrollbar-track {
+    background: #efece4;
+  }
+
+  .qa-scroll::-webkit-scrollbar-thumb {
+    background: #cfc8b8;
+    border-radius: 999px;
+  }
+
+  .qa-pulse {
+    animation: qaPulse 1.3s infinite ease-in-out;
+  }
 }
 
 @keyframes qaPulse {
-  0%, 100% { opacity: 0.35; }
-  50% { opacity: 0.9; }
-}
-
-.qa-pulse {
-  animation: qaPulse 1.3s ease infinite;
+  0%, 100% { opacity: 0.35; transform: scale(0.9); }
+  50% { opacity: 1; transform: scale(1.05); }
 }
 
 @media print {
-  body { background: white; }
-  .print\:hidden { display: none !important; }
-  .prose { max-width: 100% !important; }
-  h1, h2, h3 { break-after: avoid; }
-  table { break-inside: avoid; }
+  @page {
+    size: A4;
+    margin: 10mm;
+  }
+
+  body {
+    background: white !important;
+  }
+
+  .qa-print-page {
+    width: 100%;
+    min-height: auto;
+    background: white !important;
+  }
+
+  .qa-print-document {
+    padding: 0 !important;
+  }
 }
 
-@page {
-  size: A4;
-  margin: 10mm;
+.qa-print-brand-wrapper {
+  position: relative;
 }
 
-.qa-print-page {
-  width: 794px;
-  max-width: 794px;
-  margin: 0 auto;
+.qa-print-brand-logo {
+  position: absolute;
+  top: 30px;
+  right: 48px;
+  z-index: 10;
   background: #ffffff;
-  box-sizing: border-box;
+  border: 1px solid rgba(255, 255, 255, 0.85);
+  padding: 8px 12px;
+  min-width: 96px;
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
 }
 
-html.qa-pdf-ready .qa-print-page {
-  visibility: visible;
-}
-
-.qa-print-document .pdf-section {
-  break-inside: avoid-page;
-  page-break-inside: avoid;
+.qa-print-brand-logo img {
+  display: block;
+  max-height: 42px;
+  max-width: 180px;
+  object-fit: contain;
 }
 
 .qa-business-report {
@@ -228,10 +250,4 @@ html.qa-pdf-ready .qa-print-page {
 .qa-business-report .prose th {
   background: #d00000;
   color: #ffffff;
-}
-
-.qa-business-report .prose th,
-.qa-business-report .prose td {
-  border: 1px solid #d5d5d5;
-  padding: 8px 10px;
 }
