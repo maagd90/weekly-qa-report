@@ -9,7 +9,8 @@ export interface JiraConnectionInput {
   authType?: JiraAuthType;
   email: string;
   username?: string;
-  credential: string;
+  apiToken?: string;
+  credential?: string;
   searchPath?: string;
   projectKeys: string[];
   jql?: string;
@@ -21,7 +22,8 @@ export interface QmetryConnectionInput {
   name: string;
   baseUrl: string;
   email: string;
-  credential: string;
+  apiToken?: string;
+  credential?: string;
   projectKey: string;
   projectId?: string;
   cycleIds?: string[];
