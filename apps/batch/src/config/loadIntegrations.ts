@@ -2,6 +2,8 @@ import fs from 'fs';
 import path from 'path';
 import type { JiraConnectionInput, QmetryConnectionInput } from '../types/connections';
 
+const JIRA_SEARCH_PATH = '/rest/api/2/search';
+
 export interface BasicAuthConfig {
   type: 'basic' | 'bearer';
   emailEnv?: string;
@@ -56,7 +58,7 @@ const DEFAULT_JIRA: JiraIntegrationConfig = {
   name: 'Default JIRA',
   deploymentType: 'on-prem',
   baseUrl: '',
-  searchPath: '/rest/api/2/search',
+  searchPath: JIRA_SEARCH_PATH,
   auth: { type: 'basic', emailEnv: 'JIRA_EMAIL', tokenEnv: 'JIRA_API_TOKEN' },
   projectKeys: ['DLM'],
   jql: 'project = DLM AND issuetype in (Story, Bug) ORDER BY updated DESC',
@@ -91,11 +93,10 @@ const DEFAULTS: IntegrationsConfig = {
 
 function mergeJira(raw: Partial<JiraIntegrationConfig> | undefined, idx = 0): JiraIntegrationConfig {
   const cfg = { ...DEFAULT_JIRA, ...(raw || {}) };
-  const deploymentType = cfg.deploymentType || 'on-prem';
   return {
     ...cfg,
     name: cfg.name || `JIRA ${idx + 1}`,
-    searchPath: cfg.searchPath || (deploymentType === 'cloud' ? '/rest/api/3/search' : '/rest/api/2/search'),
+    searchPath: cfg.searchPath || JIRA_SEARCH_PATH,
   };
 }
 
@@ -143,7 +144,7 @@ export function jiraConfigFromConnection(conn: JiraConnectionInput): JiraIntegra
     name: conn.name,
     deploymentType,
     baseUrl: conn.baseUrl.replace(/\/+$/, ''),
-    searchPath: conn.searchPath?.trim() || (deploymentType === 'cloud' ? '/rest/api/3/search' : '/rest/api/2/search'),
+    searchPath: conn.searchPath?.trim() || JIRA_SEARCH_PATH,
     auth: { type: conn.authType || 'basic', email: conn.email, username: conn.username, token: connectionSecret(conn) },
     projectKeys,
     jql,
