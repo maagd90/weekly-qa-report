@@ -23,7 +23,7 @@ import {
 } from 'qa-dashboard-batch';
 import type { LlmSelectionInput, UserConnections, JiraConnectionInput, QmetryConnectionInput } from 'qa-dashboard-batch';
 import { getEnvStatus } from '../loadRepoEnv';
-import { generateReportPdf } from '../services/reportPdf';
+import { generateReportPdf, type ReportBrandingPayload } from '../services/reportPdf';
 
 const router = Router();
 const ROOT = process.env.PROJECT_ROOT || path.resolve(__dirname, '../../../..');
@@ -245,9 +245,9 @@ router.get('/report', (_req: Request, res: Response) => {
 });
 
 router.post('/report/pdf', async (req: Request, res: Response) => {
-  const { startDate, endDate, reportType, kpiStyle, project } = req.body as { startDate?: string; endDate?: string; reportType?: string; kpiStyle?: string; project?: string };
+  const { startDate, endDate, reportType, kpiStyle, project, branding } = req.body as { startDate?: string; endDate?: string; reportType?: string; kpiStyle?: string; project?: string; branding?: ReportBrandingPayload };
   const connections = resolveConnections(req);
-  log(req, 'POST /report/pdf:start', { startDate, endDate, reportType, kpiStyle, project, connections: connectionSummary(connections) });
+  log(req, 'POST /report/pdf:start', { startDate, endDate, reportType, kpiStyle, project, hasLogo: Boolean(branding?.logoUrl), connections: connectionSummary(connections) });
 
   if (!startDate || !endDate) {
     log(req, 'POST /report/pdf:validation failed', { startDatePresent: Boolean(startDate), endDatePresent: Boolean(endDate) });
@@ -264,10 +264,10 @@ router.post('/report/pdf', async (req: Request, res: Response) => {
   if (!payload.overview.totalCases && !payload.uat?.total) return res.status(404).json({ error: 'No metrics for this date range/project.', requestId: requestId(req) });
 
   try {
-    const pdfBuffer = await generateReportPdf(startDate, endDate, type, kpi, project);
+    const pdfBuffer = await generateReportPdf(startDate, endDate, type, kpi, project, branding);
     const suffix = project && project !== 'all' ? `-${project}` : '';
     const filename = `qa-report${suffix}-${startDate}-to-${endDate}.pdf`;
-    log(req, 'POST /report/pdf:done', { bytes: pdfBuffer.length, filename, project: project || 'all' });
+    log(req, 'POST /report/pdf:done', { bytes: pdfBuffer.length, filename, project: project || 'all', hasLogo: Boolean(branding?.logoUrl) });
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     res.send(pdfBuffer);
