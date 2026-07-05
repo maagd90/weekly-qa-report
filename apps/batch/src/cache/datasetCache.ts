@@ -2,33 +2,94 @@ import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
 import type { Dataset } from '../types/dataset';
-import { loadIntegrations } from '../config/loadIntegrations';
-import { fetchJiraDataset } from '../integrations/jiraClient';
-import { fetchQmetryDataset } from '../integrations/qmetryClient';
+import type { UserConnections } from '../types/connections';
+import { emptyDataset } from '../types/dataset';
+import { loadIntegrations, jiraConfigFromConnection, qmetryConfigFromConnection } from '../config/loadIntegrations';
+import { fetchJiraDataset, fetchJiraIssues } from '../integrations/jiraClient';
+import { fetchQmetryDataset, fetchQmetryExecutions } from '../integrations/qmetryClient';
 import { parseAllFiles, discoverInputFiles } from '../parse/dispatcher';
 import { mergeDatasets } from '../merge/mergeDataset';
 
-export async function buildDataset(inputDir: string, configDir: string): Promise<Dataset> {
-  const cfg = loadIntegrations(configDir);
+async function buildJiraConnectionDataset(configDir: string, connections?: UserConnections): Promise<Dataset[]> {
   const parts: Dataset[] = [];
+  if (connections?.jira?.length) {
+    for (const conn of connections.jira) {
+      const jiraCfg = jiraConfigFromConnection(conn);
+      const { issues, error } = await fetchJiraIssues(jiraCfg);
+      const ds = emptyDataset();
+      ds.issues = issues;
+      ds.meta.integrations.jira = true;
+      ds.meta.fetchedAt = new Date().toISOString();
+      if (error) ds.meta.warnings.push(`[${conn.name}] ${error}`);
+      if (issues.length) {
+        ds.files.push({
+          name: `jira-api:${conn.name}`,
+          ext: 'API',
+          project: issues[0]?.project || conn.projectKeys?.[0] || 'UNKNOWN',
+          rows: issues.length,
+          status: 'parsed',
+          detectedType: 'jira',
+          source: 'jira-api',
+        });
+        ds.projects = [...new Set(issues.map((i) => i.project))];
+      }
+      parts.push(ds);
+    }
+  } else {
+    const cfg = loadIntegrations(configDir);
+    if (cfg.jira.enabled) parts.push(await fetchJiraDataset(cfg));
+  }
+  return parts;
+}
 
-  if (cfg.jira.enabled) parts.push(await fetchJiraDataset(cfg));
-  if (cfg.qmetry.enabled) parts.push(await fetchQmetryDataset(cfg));
+async function buildQmetryConnectionDataset(configDir: string, connections?: UserConnections): Promise<Dataset[]> {
+  const parts: Dataset[] = [];
+  if (connections?.qmetry?.length) {
+    for (const conn of connections.qmetry) {
+      const qmetryCfg = qmetryConfigFromConnection(conn);
+      const { executions, error } = await fetchQmetryExecutions(qmetryCfg);
+      const ds = emptyDataset();
+      ds.executions = executions;
+      ds.meta.integrations.qmetry = true;
+      ds.meta.fetchedAt = new Date().toISOString();
+      if (error) ds.meta.warnings.push(`[${conn.name}] ${error}`);
+      if (executions.length) {
+        ds.files.push({
+          name: `qmetry-api:${conn.name}`,
+          ext: 'API',
+          project: executions[0]?.project || conn.projectKey,
+          rows: executions.length,
+          status: 'parsed',
+          detectedType: 'zephyr',
+          source: 'qmetry-api',
+        });
+        ds.projects = [...new Set(executions.map((e) => e.project))];
+      }
+      parts.push(ds);
+    }
+  } else {
+    const cfg = loadIntegrations(configDir);
+    if (cfg.qmetry.enabled) parts.push(await fetchQmetryDataset(cfg));
+  }
+  return parts;
+}
 
+export async function buildDataset(inputDir: string, configDir: string, connections?: UserConnections): Promise<Dataset> {
+  const parts: Dataset[] = [
+    ...(await buildJiraConnectionDataset(configDir, connections)),
+    ...(await buildQmetryConnectionDataset(configDir, connections)),
+  ];
   const files = discoverInputFiles(inputDir);
   if (files.length) parts.push(parseAllFiles(files));
-
   return mergeDatasets(parts);
 }
 
-export function computeFingerprint(inputDir: string, configDir: string): string {
+export function computeFingerprint(inputDir: string, configDir: string, connections?: UserConnections): string {
   const parts: string[] = [];
   const intFile = path.join(configDir, 'integrations.json');
-  if (fs.existsSync(intFile)) {
-    const st = fs.statSync(intFile);
-    parts.push(`int:${st.mtimeMs}`);
-  }
+  if (fs.existsSync(intFile)) parts.push(`int:${fs.statSync(intFile).mtimeMs}`);
   parts.push(JSON.stringify(loadIntegrations(configDir)));
+  parts.push(`conn:${JSON.stringify(connections || {})}`);
   if (fs.existsSync(inputDir)) {
     for (const f of fs.readdirSync(inputDir).sort()) {
       if (f.startsWith('.')) continue;
