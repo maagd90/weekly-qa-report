@@ -1,6 +1,6 @@
 import assert from 'assert';
 import path from 'path';
-import { parseZephyr } from '../parseZephyr';
+import { parseExecutionExport } from '../parseExecutionExport';
 import { parseJira } from '../parseJira';
 import { parseOdl } from '../parseOdl';
 import { parseAllFiles } from '../dispatcher';
@@ -16,18 +16,18 @@ function countResults(executions: { result: string }[]) {
   return c;
 }
 
-// Zephyr regression
+// Test execution export regression
 {
-  const zephyrPath = path.join(FIXTURES, 'zephyr-regression.xlsx');
-  const { executions } = parseZephyr(zephyrPath);
-  assert.strictEqual(executions.length, 2210, 'Zephyr row count');
+  const executionPath = path.join(FIXTURES, 'zephyr-regression.xlsx');
+  const { executions } = parseExecutionExport(executionPath);
+  assert.strictEqual(executions.length, 2210, 'Test execution row count');
   const mix = countResults(executions);
   assert.strictEqual(mix.PASS, 1319);
   assert.strictEqual(mix.NE, 715);
   assert.strictEqual(mix.BLOCKED, 109);
   assert.strictEqual(mix.FAIL, 46);
   assert.strictEqual(mix.NA, 21);
-  console.log('✓ Zephyr parser');
+  console.log('✓ Test execution export parser');
 }
 
 // JIRA regression
