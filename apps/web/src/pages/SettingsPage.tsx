@@ -2,15 +2,35 @@ import { useState } from 'react';
 import React from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import type { JiraConnectionInput, QmetryConnectionInput } from 'qa-dashboard-batch';
+import type { LlmProvider, LlmSelectionInput } from '../lib/api';
 import {
-  batchApi, apiErrorMessage, getUserAnthropicKey, setUserAnthropicKey,
-  getJiraConnections, setJiraConnections, getQmetryConnections, setQmetryConnections, newConnectionId,
+  batchApi,
+  getJiraConnections,
+  setJiraConnections,
+  getQmetryConnections,
+  setQmetryConnections,
+  newConnectionId,
+  getUserLlmSelection,
+  setUserLlmSelection,
+  LLM_MODELS,
+  LLM_PROVIDER_LABELS,
 } from '../lib/api';
 import { QaPageShell, QaSection } from '../components/layout/QaPageShell';
 import { QA } from '../theme/qaTheme';
 
 function blankJiraConnection(): JiraConnectionInput {
-  return { id: newConnectionId(), name: '', baseUrl: '', email: '', apiToken: '', projectKeys: [], jql: '' };
+  return {
+    id: newConnectionId(),
+    name: '',
+    baseUrl: '',
+    deploymentType: 'cloud',
+    authType: 'basic',
+    email: '',
+    apiToken: '',
+    searchPath: '/rest/api/3/search',
+    projectKeys: [],
+    jql: '',
+  };
 }
 
 function blankQmetryConnection(): QmetryConnectionInput {
@@ -19,6 +39,7 @@ function blankQmetryConnection(): QmetryConnectionInput {
 
 const fieldClass = 'w-full border border-qa-line bg-white px-2.5 py-1.5 text-[12.5px] font-mono-qa';
 const labelClass = 'block text-[10.5px] font-mono-qa uppercase tracking-wide text-qa-muted-light mb-1';
+const checkLabelClass = 'inline-flex items-center gap-2 font-mono-qa text-[11px] uppercase tracking-wide text-qa-ink mr-5 cursor-pointer';
 
 function Field({ label, ...props }: { label: string } & React.InputHTMLAttributes<HTMLInputElement>) {
   return (
@@ -31,6 +52,13 @@ function Field({ label, ...props }: { label: string } & React.InputHTMLAttribute
 
 interface TestResult { ok: boolean; count?: number; error?: string }
 
+function setDeployment(conn: JiraConnectionInput, deploymentType: 'cloud' | 'on-prem'): JiraConnectionInput {
+  if (deploymentType === 'cloud') {
+    return { ...conn, deploymentType, authType: 'basic', searchPath: '/rest/api/3/search' };
+  }
+  return { ...conn, deploymentType, authType: 'bearer', searchPath: '/rest/api/2/search' };
+}
+
 function JiraConnectionCard({
   conn, onChange, onRemove,
 }: {
@@ -39,6 +67,8 @@ function JiraConnectionCard({
   onRemove: () => void;
 }) {
   const [testResult, setTestResult] = useState<TestResult | null>(null);
+  const deploymentType = conn.deploymentType || 'cloud';
+  const isCloud = deploymentType === 'cloud';
   const testMutation = useMutation({
     mutationFn: () => batchApi.testConnection('jira', conn),
     onSuccess: (r) => setTestResult(r),
@@ -46,25 +76,54 @@ function JiraConnectionCard({
 
   return (
     <div className="border border-qa-border bg-[#faf8f2] p-3.5 mb-3">
+      <div className="mb-3 border border-qa-border bg-white px-3 py-2">
+        <div className={labelClass}>JIRA deployment</div>
+        <label className={checkLabelClass}>
+          <input
+            type="checkbox"
+            checked={isCloud}
+            onChange={() => onChange(setDeployment(conn, 'cloud'))}
+          />
+          On-cloud JIRA
+        </label>
+        <label className={checkLabelClass}>
+          <input
+            type="checkbox"
+            checked={!isCloud}
+            onChange={() => onChange(setDeployment(conn, 'on-prem'))}
+          />
+          On-premises JIRA
+        </label>
+        <p className="text-[11px] text-qa-muted m-0 mt-2">
+          {isCloud
+            ? 'Cloud uses Jira REST API v3 with email + API token.'
+            : 'On-premises uses Jira REST API v2 with bearer/token authentication by default.'}
+        </p>
+      </div>
+
       <div className="grid grid-cols-2 gap-2.5 mb-2.5">
         <Field label="Connection name"
-          placeholder="DLM Cloud / DLM On-Prem"
+          placeholder={isCloud ? 'DLM Cloud' : 'DLM On-Prem'}
           value={conn.name}
           onChange={(e) => onChange({ ...conn, name: e.target.value })}
         />
         <Field label="Base URL"
-          placeholder="https://jira.example.com"
+          placeholder={isCloud ? 'https://company.atlassian.net' : 'https://jira.company.local'}
           value={conn.baseUrl}
           onChange={(e) => onChange({ ...conn, baseUrl: e.target.value })}
         />
-        <Field label="Email / username"
+        <Field label={isCloud ? 'Email' : 'Username / service account'}
           value={conn.email}
-          onChange={(e) => onChange({ ...conn, email: e.target.value })}
+          onChange={(e) => onChange({ ...conn, email: e.target.value, username: e.target.value })}
         />
-        <Field label="API token / password"
-          type="password"
-          value={conn.apiToken}
-          onChange={(e) => onChange({ ...conn, apiToken: e.target.value })}
+        <Field label={isCloud ? 'API token' : 'Bearer token / password'}
+          type="text"
+          value={conn.apiToken || ''}
+          onChange={(e) => onChange({ ...conn, apiToken: e.target.value, credential: e.target.value })}
+        />
+        <Field label="REST search path"
+          value={conn.searchPath || (isCloud ? '/rest/api/3/search' : '/rest/api/2/search')}
+          onChange={(e) => onChange({ ...conn, searchPath: e.target.value })}
         />
         <Field label="Project keys (comma separated)"
           placeholder="DLM,ACE"
@@ -125,7 +184,7 @@ function QmetryConnectionCard({
         <Field label="Connection name" value={conn.name} onChange={(e) => onChange({ ...conn, name: e.target.value })} />
         <Field label="Base URL" placeholder="https://jira.example.com" value={conn.baseUrl} onChange={(e) => onChange({ ...conn, baseUrl: e.target.value })} />
         <Field label="Email / username" value={conn.email} onChange={(e) => onChange({ ...conn, email: e.target.value })} />
-        <Field label="API token / password" type="password" value={conn.apiToken} onChange={(e) => onChange({ ...conn, apiToken: e.target.value })} />
+        <Field label="API token / password" type="text" value={conn.apiToken || ''} onChange={(e) => onChange({ ...conn, apiToken: e.target.value, credential: e.target.value })} />
         <Field label="Project key" placeholder="DLM" value={conn.projectKey} onChange={(e) => onChange({ ...conn, projectKey: e.target.value })} />
         <Field label="Project ID (optional)" placeholder="23000" value={conn.projectId || ''} onChange={(e) => onChange({ ...conn, projectId: e.target.value })} />
         <Field label="Cycle IDs (comma separated)" value={(conn.cycleIds || []).join(',')} onChange={(e) => onChange({ ...conn, cycleIds: e.target.value.split(',').map((s) => s.trim()).filter(Boolean) })} />
@@ -155,7 +214,11 @@ function QmetryConnectionCard({
 
 export function SettingsPage() {
   const queryClient = useQueryClient();
-  const [anthropicKey, setAnthropicKeyState] = useState(getUserAnthropicKey());
+  const initialLlm = getUserLlmSelection();
+  const [llmProvider, setLlmProvider] = useState<LlmProvider>((initialLlm.provider || 'anthropic') as LlmProvider);
+  const [llmModel, setLlmModel] = useState(initialLlm.model || LLM_MODELS[(initialLlm.provider || 'anthropic') as LlmProvider][0]);
+  const [llmBaseUrl, setLlmBaseUrl] = useState(initialLlm.baseUrl || '');
+  const [llmTestMsg, setLlmTestMsg] = useState<string | null>(null);
   const [jiraConnections, setJiraConnectionsState] = useState<JiraConnectionInput[]>(getJiraConnections());
   const [qmetryConnections, setQmetryConnectionsState] = useState<QmetryConnectionInput[]>(getQmetryConnections());
   const [savedMsg, setSavedMsg] = useState<string | null>(null);
@@ -176,55 +239,75 @@ export function SettingsPage() {
     onSuccess: () => refetch(),
   });
 
-  const anthropicTest = useMutation({
-    mutationFn: batchApi.testAnthropic,
-    onMutate: () => {
-      console.log('[settings] Test Anthropic connection — button clicked, request starting');
-    },
-    onSuccess: (data) => {
-      console.log('[settings] Test Anthropic connection — success', data);
-    },
-    onError: (err) => {
-      console.error('[settings] Test Anthropic connection — error', err);
-    },
+  const llmTest = useMutation({
+    mutationFn: () => batchApi.testLlm(currentLlmSelection()),
+    onSuccess: (data) => setLlmTestMsg(data.ok ? `Connected — ${data.providerLabel || LLM_PROVIDER_LABELS[llmProvider]} / ${data.model}` : data.error || 'LLM connection failed'),
+    onError: (err: Error) => setLlmTestMsg(err.message),
   });
-  const anthropicResult = anthropicTest.data;
-  const anthropicError = anthropicTest.isError
-    ? apiErrorMessage(anthropicTest.error, 'Anthropic connectivity test failed')
-    : undefined;
 
   const testResult = testMutation.data as {
     ok?: boolean; executions?: number; issues?: number; uat?: number; error?: string;
   } | undefined;
 
+  function currentLlmSelection(): LlmSelectionInput {
+    return {
+      provider: llmProvider,
+      model: llmModel,
+      baseUrl: llmProvider === 'openai-compatible' ? llmBaseUrl.trim() || undefined : undefined,
+    };
+  }
+
   function saveAll() {
-    setUserAnthropicKey(anthropicKey);
+    setUserLlmSelection(currentLlmSelection());
     setJiraConnections(jiraConnections);
     setQmetryConnections(qmetryConnections);
-    setSavedMsg('Saved in this browser. Server will use these settings on the next Generate/Test call.');
+    setSavedMsg('Saved in this browser. The selected LLM and connection settings will be used on the next Generate/Test call.');
     queryClient.invalidateQueries({ queryKey: ['integrations'] });
     queryClient.invalidateQueries({ queryKey: ['cycles-folders'] });
     setTimeout(() => setSavedMsg(null), 3500);
   }
 
+  function changeLlmProvider(provider: LlmProvider) {
+    setLlmProvider(provider);
+    setLlmModel(LLM_MODELS[provider][0]);
+    if (provider !== 'openai-compatible') setLlmBaseUrl('');
+  }
+
   return (
     <QaPageShell
       title="Settings"
-      intro="Per-user settings are stored in your browser and sent only with your requests. Configure your own Anthropic key and multiple JIRA/QMetry connections without changing server files."
+      intro="Configure the global LLM provider and your JIRA/QMetry integrations. The selected LLM is used everywhere, including AI Report generation."
     >
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-[22px]">
-        <QaSection title="Anthropic API Key">
+        <QaSection title="Global LLM Provider">
           <p className="text-[13px] text-qa-muted m-0 mb-3">
-            Optional. If set here, this browser key overrides the server .env key. It is stored only in localStorage.
+            Select the LLM once here. AI Report will use this saved provider/model for all generations.
           </p>
-          <div className="grid grid-cols-[1fr_auto] gap-2">
-            <input
-              type="password"
-              className="border border-qa-line bg-white px-3 py-2 text-sm font-mono-qa"
-              placeholder="sk-ant-api03-..."
-              value={anthropicKey}
-              onChange={(e) => setAnthropicKeyState(e.target.value)}
+          <div className="grid grid-cols-2 gap-2.5 mb-2.5">
+            <div>
+              <label className={labelClass}>Provider</label>
+              <select className={fieldClass} value={llmProvider} onChange={(e) => changeLlmProvider(e.target.value as LlmProvider)}>
+                {(Object.keys(LLM_PROVIDER_LABELS) as LlmProvider[]).map((p) => (
+                  <option key={p} value={p}>{LLM_PROVIDER_LABELS[p]}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className={labelClass}>Model</label>
+              <select className={fieldClass} value={llmModel} onChange={(e) => setLlmModel(e.target.value)}>
+                {LLM_MODELS[llmProvider].map((m) => <option key={m} value={m}>{m}</option>)}
+              </select>
+            </div>
+          </div>
+          {llmProvider === 'openai-compatible' && (
+            <Field
+              label="Custom base URL"
+              placeholder="https://provider.example.com/v1"
+              value={llmBaseUrl}
+              onChange={(e) => setLlmBaseUrl(e.target.value)}
             />
+          )}
+          <div className="flex items-center gap-2 mt-3">
             <button
               type="button"
               onClick={saveAll}
@@ -233,34 +316,22 @@ export function SettingsPage() {
             >
               Save
             </button>
+            <button
+              type="button"
+              onClick={() => {
+                saveAll();
+                llmTest.mutate();
+              }}
+              disabled={llmTest.isPending}
+              className="font-mono-qa text-xs font-semibold tracking-wider uppercase px-4 py-2.5 border-none cursor-pointer text-white disabled:opacity-50"
+              style={{ background: QA.accent }}
+            >
+              {llmTest.isPending ? 'Testing…' : 'Save & Test LLM'}
+            </button>
           </div>
-          <button
-            type="button"
-            onClick={() => {
-              saveAll();
-              anthropicTest.mutate();
-            }}
-            disabled={anthropicTest.isPending}
-            className="mt-3 font-mono-qa text-xs font-semibold tracking-wider uppercase px-4 py-2.5 border-none cursor-pointer text-white disabled:opacity-50"
-            style={{ background: QA.accent }}
-          >
-            {anthropicTest.isPending ? 'Testing…' : 'Save & Test Anthropic'}
-          </button>
-          {anthropicResult && (
-            <div className={`mt-3 p-3 text-[13px] border ${anthropicResult.ok ? 'border-[#cfe0d4] bg-[#eef4ef] text-[#2f6a48]' : 'border-[#ecccc2] bg-[#f8ece8] text-[#a13d2c]'}`}>
-              {anthropicResult.ok
-                ? `Connected — model ${anthropicResult.model} (${anthropicResult.route ?? 'direct'})${anthropicResult.elapsedMs != null ? ` · ${anthropicResult.elapsedMs}ms` : ''}`
-                : anthropicResult.error}
-            </div>
-          )}
-          {anthropicResult?.logs && anthropicResult.logs.length > 0 && (
-            <pre className="mt-3 bg-[#faf8f2] text-[10px] font-mono-qa p-3 overflow-x-auto border border-qa-border m-0 max-h-48 overflow-y-auto whitespace-pre-wrap">
-              {anthropicResult.logs.join('\n')}
-            </pre>
-          )}
-          {anthropicError && !anthropicResult && (
-            <div className="mt-3 p-3 text-[13px] border border-[#ecccc2] bg-[#f8ece8] text-[#a13d2c]">
-              {anthropicError}
+          {llmTestMsg && (
+            <div className="mt-3 p-3 text-[13px] border border-qa-border bg-[#faf8f2] text-qa-ink">
+              {llmTestMsg}
             </div>
           )}
         </QaSection>
@@ -304,7 +375,7 @@ export function SettingsPage() {
 
         <QaSection title="JIRA connections" className="lg:col-span-2">
           <p className="text-[13px] text-qa-muted m-0 mb-3">
-            Add one or more JIRA dashboards. Use this for cloud + on-prem, multiple projects, or multiple environments.
+            Add one or more JIRA dashboards. Use the deployment checkboxes to configure on-cloud and on-premises JIRA differently.
           </p>
           {jiraConnections.map((conn, idx) => (
             <JiraConnectionCard
