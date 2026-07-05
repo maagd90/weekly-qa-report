@@ -29,6 +29,10 @@ export function ReportPrintPage() {
   const startDate = params.get('startDate') ?? '';
   const endDate = params.get('endDate') ?? '';
   const project = params.get('project') || undefined;
+  const logoUrl = params.get('logoUrl') || '';
+  const logoAlt = params.get('logoAlt') || 'Report logo';
+  const title = params.get('title') || 'QA Sprint Report';
+  const subtitle = params.get('subtitle') || '';
   const kpiParam = params.get('kpiStyle') ?? 'editorial';
   const typeParam = params.get('reportType') ?? 'executive';
   const kpiStyle: KpiStyle = KPI_STYLES.includes(kpiParam as KpiStyle)
@@ -129,6 +133,7 @@ export function ReportPrintPage() {
       narrative={reportQuery.data?.markdown ?? ''}
       startDate={startDate}
       endDate={endDate}
+      branding={{ logoUrl, logoAlt, title, subtitle }}
     />
   );
 }
