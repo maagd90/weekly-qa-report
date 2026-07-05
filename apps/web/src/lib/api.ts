@@ -1,5 +1,5 @@
 import axios from 'axios';
-import type { DashboardPayload, FilterParams, ReportType, GenerateParams, GenerateResult } from 'qa-dashboard-batch';
+import type { DashboardPayload, FilterParams, ReportType, GenerateParams, GenerateResult, LlmSelectionInput, LlmProvider } from 'qa-dashboard-batch';
 
 const api = axios.create({ baseURL: '/api' });
 
@@ -8,19 +8,15 @@ function apiErrorMessage(err: unknown, fallback: string): string {
     const data = err.response?.data as { error?: string; message?: string } | undefined;
     if (data?.error) return data.error;
     if (data?.message) return data.message;
-    if (err.response?.status === 504) {
-      return 'Report generation timed out at the gateway. Rebuild Docker (nginx timeout fix) or retry — Full reports can take 1–2 minutes.';
-    }
-    if (err.code === 'ECONNABORTED') {
-      return 'Report generation timed out. Full reports can take 1–2 minutes — please wait and try again.';
-    }
+    if (err.response?.status === 504) return 'Report generation timed out at the gateway. Rebuild Docker or retry.';
+    if (err.code === 'ECONNABORTED') return 'Report generation timed out. Please try again.';
     return err.message || fallback;
   }
   return err instanceof Error ? err.message : fallback;
 }
 
 export { apiErrorMessage };
-export type { DashboardPayload, FilterParams, ReportType, GenerateParams, GenerateResult };
+export type { DashboardPayload, FilterParams, ReportType, GenerateParams, GenerateResult, LlmSelectionInput, LlmProvider };
 
 export interface IntegrationsStatus {
   jira: { enabled: boolean; baseUrl: string; configured: boolean };
@@ -32,48 +28,18 @@ export interface IntegrationsStatus {
 }
 
 export const batchApi = {
-  getStatus: () => api.get('/status').then((r) => r.data as { apiKeyConfigured: boolean; jiraConfigured: boolean }),
+  getStatus: () => api.get('/status').then((r) => r.data as { apiKeyConfigured: boolean; jiraConfigured: boolean; llmProvidersConfigured?: Record<string, boolean> }),
 
-  testAnthropic: () => {
-    console.log('[web] batchApi.testAnthropic — sending GET /api/anthropic/test');
-    const started = Date.now();
-    return api.get('/anthropic/test', { timeout: 35_000 })
-      .then((r) => {
-        const data = r.data as {
-          ok: boolean;
-          model?: string;
-          route?: 'direct' | 'proxy';
-          elapsedMs?: number;
-          error?: string;
-          logs?: string[];
-        };
-        console.log(
-          `[web] batchApi.testAnthropic — response ok=${data.ok} route=${data.route ?? 'direct'} elapsed=${Date.now() - started}ms`,
-        );
-        if (data.logs?.length) {
-          console.group('[web] Anthropic test server logs');
-          for (const line of data.logs) console.log(line);
-          console.groupEnd();
-        }
-        return data;
-      })
-      .catch((err) => {
-        console.error('[web] batchApi.testAnthropic — request failed:', err);
-        throw new Error(apiErrorMessage(err, 'Anthropic connectivity test failed'));
-      });
-  },
+  testLlm: (selection: LlmSelectionInput) => api.post('/llm/test', selection, { timeout: 35_000 })
+    .then((r) => r.data as { ok: boolean; provider?: LlmProvider; providerLabel?: string; model?: string; route?: 'direct' | 'proxy'; elapsedMs?: number; error?: string; logs?: string[] })
+    .catch((err) => { throw new Error(apiErrorMessage(err, 'LLM connectivity test failed')); }),
 
-  generate: (params: GenerateParams) =>
-    api.post<GenerateResult>('/generate', params, { timeout: 300_000 }).then((r) => r.data),
+  testAnthropic: () => api.get('/anthropic/test', { timeout: 35_000 }).then((r) => r.data),
+
+  generate: (params: GenerateParams) => api.post<GenerateResult>('/generate', params, { timeout: 300_000 }).then((r) => r.data),
 
   getDashboard: (filter?: Partial<FilterParams>) => {
-    const params = filter ? {
-      startDate: filter.startDate,
-      endDate: filter.endDate,
-      search: filter.search,
-      result: filter.result,
-      project: filter.project,
-    } : undefined;
+    const params = filter ? { startDate: filter.startDate, endDate: filter.endDate, search: filter.search, result: filter.result, project: filter.project } : undefined;
     return api.get('/dashboard', { params }).then((r) => r.data as DashboardPayload).catch((err) => {
       if (axios.isAxiosError(err) && err.response?.status === 404) return null;
       throw err;
@@ -93,26 +59,11 @@ export const batchApi = {
 
   listInputFiles: () => api.get('/input/files').then((r) => r.data as { name: string; size: number; modifiedAt: string }[]),
   deleteInputFile: (filename: string) => api.delete(`/input/${encodeURIComponent(filename)}`).then((r) => r.data),
-
   getIntegrations: () => api.get('/integrations').then((r) => r.data as IntegrationsStatus),
   testIntegrations: () => api.post('/integrations/test').then((r) => r.data),
 
-  downloadReportPdf: async ({
-    startDate,
-    endDate,
-    reportType,
-    kpiStyle,
-  }: {
-    startDate: string;
-    endDate: string;
-    reportType: ReportType;
-    kpiStyle: string;
-  }) => {
-    const response = await api.post(
-      '/report/pdf',
-      { startDate, endDate, reportType, kpiStyle },
-      { responseType: 'blob', timeout: 150_000 },
-    );
+  downloadReportPdf: async ({ startDate, endDate, reportType, kpiStyle }: { startDate: string; endDate: string; reportType: ReportType; kpiStyle: string }) => {
+    const response = await api.post('/report/pdf', { startDate, endDate, reportType, kpiStyle }, { responseType: 'blob', timeout: 150_000 });
     const blob = response.data as Blob;
     if (blob.type === 'application/json') {
       const text = await blob.text();
