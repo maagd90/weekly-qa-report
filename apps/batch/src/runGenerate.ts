@@ -19,8 +19,8 @@ function sanitizeParamsForMeta(params: GenerateParams): GenerateParams {
   }
   if (safe.connections) {
     safe.connections = {
-      jira: safe.connections.jira.map((c) => ({ ...c, credential: c.credential ? '***redacted***' : '' })),
-      qmetry: safe.connections.qmetry.map((c) => ({ ...c, credential: c.credential ? '***redacted***' : '' })),
+      jira: safe.connections.jira.map((c) => ({ ...c, apiToken: c.apiToken ? '***redacted***' : '', credential: c.credential ? '***redacted***' : '' })),
+      qmetry: safe.connections.qmetry.map((c) => ({ ...c, apiToken: c.apiToken ? '***redacted***' : '', credential: c.credential ? '***redacted***' : '' })),
     };
   }
   return safe;
