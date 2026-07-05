@@ -127,7 +127,15 @@ export function ReportPrintPage() {
     <div className="qa-print-brand-wrapper">
       {logoUrl && (
         <div className="qa-print-brand-logo">
-          <img src={logoUrl} alt={logoAlt} />
+          <img
+            src={logoUrl}
+            alt={logoAlt}
+            onError={(event) => {
+              const img = event.currentTarget;
+              img.style.display = 'none';
+              img.parentElement?.classList.add('qa-print-brand-logo-missing');
+            }}
+          />
         </div>
       )}
       <ReportPrintContent
