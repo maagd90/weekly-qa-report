@@ -89,33 +89,28 @@ export function buildDashboardPayload(
   const cycles = cycleKeys.map((key) => {
     const cycleRows = executions.filter((r) => r.cycleKey === key);
     const cycleTotals = cycleAgg(cycleRows);
-    return {
-      key,
-      name: cycleRows[0]?.cycleName || key,
-      total: cycleTotals.total,
-      pass: cycleTotals.pass,
-      fail: cycleTotals.fail,
-      blocked: cycleTotals.blocked,
-      ne: cycleTotals.ne,
-      na: cycleTotals.na,
-      passPct: cycleTotals.pr,
-      coverage: cycleTotals.cov,
-      status: cycleStatus(cycleTotals),
-    };
+    return { key, name: cycleRows[0]?.cycleName || key, total: cycleTotals.total, pass: cycleTotals.pass, fail: cycleTotals.fail, blocked: cycleTotals.blocked, ne: cycleTotals.ne, na: cycleTotals.na, passPct: cycleTotals.pr, coverage: cycleTotals.cov, status: cycleStatus(cycleTotals) };
   }).sort((a, b) => b.total - a.total);
   const cyclesByPassPctAsc = [...cycles].sort((a, b) => a.passPct - b.passPct);
 
   const projects = [...new Set([...dataset.projects, ...dataset.executions.map((e) => e.project), ...dataset.issues.map((i) => i.project)].filter(Boolean))].sort();
   const jStory = issues.filter((r) => r.issueType === 'Story');
   const jBug = issues.filter((r) => r.issueType === 'Bug');
-  const storyBug = {
-    story: jStory.length,
-    bug: jBug.length,
-    storyOpen: jStory.filter((r) => r.status === 'open').length,
-    storyDone: jStory.filter((r) => r.status === 'done').length,
-    bugOpen: jBug.filter((r) => r.status === 'open').length,
-    bugDone: jBug.filter((r) => r.status === 'done').length,
-  };
+  const storyBug = { story: jStory.length, bug: jBug.length, storyOpen: jStory.filter((r) => r.status === 'open').length, storyDone: jStory.filter((r) => r.status === 'done').length, bugOpen: jBug.filter((r) => r.status === 'open').length, bugDone: jBug.filter((r) => r.status === 'done').length };
+
+  const workItems = issues.map((r) => ({
+    key: r.key,
+    summary: (r as any).summary || r.area,
+    issueType: r.issueType,
+    status: r.status,
+    priority: r.priority,
+    assignee: r.assignee,
+    sprint: (r as any).sprint || 'Not mapped',
+    sprintId: (r as any).sprintId,
+    area: r.area,
+    project: r.project,
+    updatedAt: r.updatedAt,
+  })).sort((a, b) => (a.sprint === b.sprint ? a.key.localeCompare(b.key) : a.sprint.localeCompare(b.sprint)));
 
   const areaKeys = [...new Set(issues.map((i) => i.area))];
   const traceability = areaKeys.map((area) => {
@@ -135,17 +130,13 @@ export function buildDashboardPayload(
   const prioOrder = ['Highest', 'High', 'Medium', 'Low'];
   const bugTotByPrio: Record<string, number> = {};
   issues.filter((r) => r.issueType === 'Bug').forEach((r) => { bugTotByPrio[r.priority] = (bugTotByPrio[r.priority] || 0) + 1; });
-  const byPriority = prioOrder.map((priority) => ({
-    priority,
-    open: openBugs.filter((b) => b.priority === priority).length,
-    total: bugTotByPrio[priority] || 0,
-  })).filter((p) => p.total > 0 || p.open > 0);
+  const byPriority = prioOrder.map((priority) => ({ priority, open: openBugs.filter((b) => b.priority === priority).length, total: bugTotByPrio[priority] || 0 })).filter((p) => p.total > 0 || p.open > 0);
   const ownerMap: Record<string, number> = {};
   openBugs.forEach((b) => { ownerMap[b.assignee] = (ownerMap[b.assignee] || 0) + 1; });
   const byOwner = Object.entries(ownerMap).map(([name, open]) => ({ name, open })).sort((a, b) => b.open - a.open);
 
   let uatPayload: DashboardPayload['uat'] = null;
-  if (uat.length > 0) {
+  if (uat.length > 0 && params.project === 'DLM') {
     const total = uat.length;
     const closed = uat.filter((r) => !r.open).length;
     const open = total - closed;
@@ -153,55 +144,29 @@ export function buildDashboardPayload(
     const prCounts: Record<string, number> = {};
     const areaCounts: Record<string, number> = {};
     const submitterCounts: Record<string, number> = {};
-    uat.forEach((r) => {
-      stCounts[r.status] = (stCounts[r.status] || 0) + 1;
-      prCounts[r.priority] = (prCounts[r.priority] || 0) + 1;
-      areaCounts[r.area] = (areaCounts[r.area] || 0) + 1;
-      submitterCounts[r.submitter] = (submitterCounts[r.submitter] || 0) + 1;
-    });
-    uatPayload = {
-      total,
-      open,
-      closed,
-      closureRate: total ? Math.round((closed / total) * 100) : 0,
-      urgentOpen: uat.filter((r) => r.open && r.priority === 'Urgent').length,
-      byStatus: Object.entries(stCounts).map(([status, count]) => ({ status, count })).sort((a, b) => b.count - a.count),
-      byPriority: Object.entries(prCounts).map(([priority, count]) => ({ priority, count })).sort((a, b) => b.count - a.count),
-      byArea: Object.entries(areaCounts).map(([area, count]) => ({ area, count })).sort((a, b) => b.count - a.count).slice(0, 8),
-      bySubmitter: Object.entries(submitterCounts).map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count),
-      rows: uat.map((r) => ({ id: r.id, subject: r.subject, area: r.area, priority: r.priority, status: r.status, submitter: r.submitter, submittedAt: r.submittedAt || '', updatedAt: r.updatedAt, cr: r.cr })),
-    };
+    uat.forEach((r) => { stCounts[r.status] = (stCounts[r.status] || 0) + 1; prCounts[r.priority] = (prCounts[r.priority] || 0) + 1; areaCounts[r.area] = (areaCounts[r.area] || 0) + 1; submitterCounts[r.submitter] = (submitterCounts[r.submitter] || 0) + 1; });
+    uatPayload = { total, open, closed, closureRate: total ? Math.round((closed / total) * 100) : 0, urgentOpen: uat.filter((r) => r.open && r.priority === 'Urgent').length, byStatus: Object.entries(stCounts).map(([status, count]) => ({ status, count })).sort((a, b) => b.count - a.count), byPriority: Object.entries(prCounts).map(([priority, count]) => ({ priority, count })).sort((a, b) => b.count - a.count), byArea: Object.entries(areaCounts).map(([area, count]) => ({ area, count })).sort((a, b) => b.count - a.count).slice(0, 8), bySubmitter: Object.entries(submitterCounts).map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count), rows: uat.map((r) => ({ id: r.id, subject: r.subject, area: r.area, priority: r.priority, status: r.status, submitter: r.submitter, submittedAt: r.submittedAt || '', updatedAt: r.updatedAt, cr: r.cr })) };
   }
 
   const isAllProjects = !params.project || params.project === 'all';
-  const byProject = includeByProject && isAllProjects && projects.length > 1
-    ? projects.map((project) => {
-      const slice = buildDashboardPayload(dataset, { ...params, project }, { includeByProject: false });
-      return { project, overview: slice.overview, storyBug: slice.storyBug, defectBacklog: slice.defectBacklog, cycles: slice.cycles, testers: slice.testers, uat: slice.uat };
-    })
-    : undefined;
+  const byProject = includeByProject && isAllProjects && projects.length > 1 ? projects.map((project) => {
+    const slice = buildDashboardPayload(dataset, { ...params, project }, { includeByProject: false });
+    return { project, overview: slice.overview, storyBug: slice.storyBug, defectBacklog: slice.defectBacklog, cycles: slice.cycles, testers: slice.testers, uat: slice.uat };
+  }) : undefined;
 
   return {
     scope: { startDate: params.startDate, endDate: params.endDate, search: params.search || '', result: params.result || 'all', project: params.project || 'all', projects },
-    overview: {
-      totalCases: execTotals.total,
-      executed: execTotals.exec,
-      passRate: execTotals.exec ? Math.round((execTotals.pass / execTotals.exec) * 100) : 0,
-      failed: execTotals.fail,
-      blocked: execTotals.blocked,
-      resultMix,
-      byMonth,
-      chartSeries,
-    },
+    overview: { totalCases: execTotals.total, executed: execTotals.exec, passRate: execTotals.exec ? Math.round((execTotals.pass / execTotals.exec) * 100) : 0, failed: execTotals.fail, blocked: execTotals.blocked, resultMix, byMonth, chartSeries },
     testers,
     cycles,
     cyclesByPassPctAsc,
     storyBug,
     traceability,
+    workItems,
     defectBacklog: { openTotal: openBugs.length, byPriority, topPriorities: byPriority.slice(0, 6), byOwner },
     uat: uatPayload,
     byProject,
     files: dataset.files,
     meta: { generatedAt: new Date().toISOString(), parsedAt: dataset.meta.parsedAt, fetchedAt: dataset.meta.fetchedAt, warnings: dataset.meta.warnings, dataMin: filtered.dataMin, dataMax: filtered.dataMax },
-  };
+  } as DashboardPayload & { workItems: typeof workItems };
 }
