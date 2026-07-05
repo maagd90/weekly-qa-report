@@ -5,7 +5,7 @@ import remarkGfm from 'remark-gfm';
 import clsx from 'clsx';
 import { Download } from 'lucide-react';
 import type { DashboardPayload } from 'qa-dashboard-batch';
-import { batchApi, apiErrorMessage, getUserLlmSelection, LLM_PROVIDER_LABELS, type LlmProvider, type ReportType } from '../lib/api';
+import { batchApi, apiErrorMessage, getUserLlmSelection, getReportBranding, LLM_PROVIDER_LABELS, type LlmProvider, type ReportType } from '../lib/api';
 import type { KpiStyle } from '../theme/qaTheme';
 import { QA } from '../theme/qaTheme';
 import { AiReportCharts } from '../components/qa/AiReportCharts';
@@ -85,7 +85,7 @@ export function AiReportPage({ dashboard, kpiStyle, project, onGenerated }: AiRe
   async function handleDownloadPdf() {
     setDownloading(true);
     try {
-      await batchApi.downloadReportPdf({ startDate, endDate, reportType, kpiStyle, project: selectedProject });
+      await batchApi.downloadReportPdf({ startDate, endDate, reportType, kpiStyle, project: selectedProject, branding: getReportBranding() });
     } catch (err) {
       setError(apiErrorMessage(err, 'PDF export failed'));
     } finally {
