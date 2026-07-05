@@ -1,4 +1,30 @@
 {
+  "jiraProfiles": [
+    {
+      "name": "JIRA Cloud",
+      "enabled": false,
+      "deploymentType": "cloud",
+      "baseUrl": "https://your-domain.atlassian.net",
+      "searchPath": "/rest/api/3/search",
+      "auth": { "type": "basic", "emailEnv": "JIRA_CLOUD_EMAIL", "tokenEnv": "JIRA_CLOUD_SECRET" },
+      "projectKeys": ["DLM"],
+      "jql": "project = DLM AND issuetype in (Story, Bug) ORDER BY updated DESC",
+      "pageSize": 100,
+      "statusDone": ["Done", "CLOSED", "Cancel"]
+    },
+    {
+      "name": "JIRA On-Prem",
+      "enabled": false,
+      "deploymentType": "on-prem",
+      "baseUrl": "https://jira.company.example",
+      "searchPath": "/rest/api/2/search",
+      "auth": { "type": "bearer", "tokenEnv": "JIRA_ONPREM_SECRET" },
+      "projectKeys": ["DLM"],
+      "jql": "project = DLM AND issuetype in (Story, Bug) ORDER BY updated DESC",
+      "pageSize": 100,
+      "statusDone": ["Done", "CLOSED", "Cancel"]
+    }
+  ],
   "jira": {
     "enabled": false,
     "baseUrl": "https://your-jira-host.example.com",
