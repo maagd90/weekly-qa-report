@@ -93,11 +93,7 @@ const DEFAULTS: IntegrationsConfig = {
 
 function mergeJira(raw: Partial<JiraIntegrationConfig> | undefined, idx = 0): JiraIntegrationConfig {
   const cfg = { ...DEFAULT_JIRA, ...(raw || {}) };
-  return {
-    ...cfg,
-    name: cfg.name || `JIRA ${idx + 1}`,
-    searchPath: cfg.searchPath || JIRA_SEARCH_PATH,
-  };
+  return { ...cfg, name: cfg.name || `JIRA ${idx + 1}`, searchPath: cfg.searchPath || JIRA_SEARCH_PATH };
 }
 
 export function loadIntegrations(configDir: string): IntegrationsConfig {
@@ -116,16 +112,36 @@ export function loadIntegrations(configDir: string): IntegrationsConfig {
   }
 }
 
+function configuredUser(cfg: BasicAuthConfig): string | undefined {
+  return cfg.email || cfg.username || (cfg.emailEnv ? process.env[cfg.emailEnv] : undefined);
+}
+
+function configuredSecret(cfg: BasicAuthConfig): string | undefined {
+  return cfg.token || (cfg.tokenEnv ? process.env[cfg.tokenEnv] : undefined);
+}
+
+function normalizeAuthorizationHeader(secret: string | undefined): string | null {
+  const token = (secret || '').trim();
+  if (!token) return null;
+  if (/^(basic|bearer)\s+/i.test(token)) return token;
+  return null;
+}
+
 export function getBasicAuth(cfg: BasicAuthConfig): string | null {
-  const user = cfg.email || cfg.username || (cfg.emailEnv ? process.env[cfg.emailEnv] : undefined);
-  const secret = cfg.token || (cfg.tokenEnv ? process.env[cfg.tokenEnv] : undefined);
+  const directHeader = normalizeAuthorizationHeader(configuredSecret(cfg));
+  if (directHeader?.toLowerCase().startsWith('basic ')) return directHeader.slice(6).trim();
+  const user = configuredUser(cfg);
+  const secret = configuredSecret(cfg);
+  if (!user && secret && /^[A-Za-z0-9+/=]+$/.test(secret.trim())) return secret.trim();
   if (!user || !secret) return null;
   return Buffer.from(`${user}:${secret}`).toString('base64');
 }
 
 export function getAuthHeader(cfg: BasicAuthConfig): string | null {
-  const secret = cfg.token || (cfg.tokenEnv ? process.env[cfg.tokenEnv] : undefined);
-  if (cfg.type === 'bearer') return secret ? `Bearer ${secret}` : null;
+  const secret = configuredSecret(cfg);
+  const directHeader = normalizeAuthorizationHeader(secret);
+  if (directHeader) return directHeader;
+  if (cfg.type === 'bearer') return secret ? `Bearer ${secret.trim()}` : null;
   const basic = getBasicAuth(cfg);
   return basic ? `Basic ${basic}` : null;
 }
