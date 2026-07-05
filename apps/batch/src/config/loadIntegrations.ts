@@ -1,34 +1,41 @@
 import fs from 'fs';
 import path from 'path';
+import type { JiraConnectionInput, QmetryConnectionInput } from '../types/connections';
+
+export interface BasicAuthConfig {
+  type: 'basic' | 'bearer';
+  emailEnv?: string;
+  tokenEnv?: string;
+  email?: string;
+  username?: string;
+  token?: string;
+}
 
 export interface JiraIntegrationConfig {
   enabled: boolean;
   baseUrl: string;
   searchPath: string;
-  auth: { type: 'basic'; emailEnv: string; tokenEnv: string };
+  auth: BasicAuthConfig;
   projectKeys: string[];
   jql: string;
   pageSize: number;
   fields: string[];
   statusDone: string[];
+  applicationCiFieldId: string | null;
 }
 
 export interface QmetryIntegrationConfig {
   enabled: boolean;
   baseUrl: string;
   apiPrefix: string;
-  auth: { type: 'basic'; emailEnv: string; tokenEnv: string };
-  /** Optional env var with pre-encoded Basic auth value (matches Java QmetryPublisher) */
+  auth: BasicAuthConfig;
   authEncodedEnv: string;
-  /** JIRA-style project key for display (e.g. DLM) */
   projectKey: string;
-  /** Numeric QMetry project ID (e.g. "23000") — used to discover test cycles */
   projectId: string | null;
   testCyclesSearchPath: string | null;
   testCyclesSearchBody: Record<string, unknown> | null;
   testCasesSearchPath: string;
   testCasesSearchBody: Record<string, unknown> | null;
-  /** Use POST with JSON body for test case search (Emirates QMetry pattern) */
   usePostSearch: boolean;
   testCaseFields: string;
   cycleIds: string[];
@@ -52,6 +59,7 @@ const DEFAULTS: IntegrationsConfig = {
     pageSize: 100,
     fields: ['summary', 'issuetype', 'status', 'priority', 'assignee', 'created', 'updated', 'resolutiondate'],
     statusDone: ['Done', 'CLOSED', 'Cancel'],
+    applicationCiFieldId: null,
   },
   qmetry: {
     enabled: false,
@@ -88,25 +96,64 @@ export function loadIntegrations(configDir: string): IntegrationsConfig {
   }
 }
 
-export function getBasicAuth(cfg: { emailEnv: string; tokenEnv: string }): string | null {
-  const email = process.env[cfg.emailEnv];
-  const token = process.env[cfg.tokenEnv];
-  if (!email || !token) return null;
-  return Buffer.from(`${email}:${token}`).toString('base64');
+export function getBasicAuth(cfg: BasicAuthConfig): string | null {
+  const user = cfg.email || cfg.username || (cfg.emailEnv ? process.env[cfg.emailEnv] : undefined);
+  const secret = cfg.token || (cfg.tokenEnv ? process.env[cfg.tokenEnv] : undefined);
+  if (!user || !secret) return null;
+  return Buffer.from(`${user}:${secret}`).toString('base64');
 }
 
-/** Pre-encoded "Basic xxx" or raw base64 token from env (Java automation.qmetry.encoded.authorization pattern) */
+export function getAuthHeader(cfg: BasicAuthConfig): string | null {
+  const secret = cfg.token || (cfg.tokenEnv ? process.env[cfg.tokenEnv] : undefined);
+  if (cfg.type === 'bearer') return secret ? `Bearer ${secret}` : null;
+  const basic = getBasicAuth(cfg);
+  return basic ? `Basic ${basic}` : null;
+}
+
+export function jiraConfigFromConnection(conn: JiraConnectionInput): JiraIntegrationConfig {
+  const projectKeys = conn.projectKeys?.filter(Boolean) || [];
+  const jql = conn.jql?.trim() || (projectKeys.length
+    ? `project in (${projectKeys.join(',')}) AND issuetype in (Story, Bug) ORDER BY updated DESC`
+    : 'issuetype in (Story, Bug) ORDER BY updated DESC');
+  const deploymentType = conn.deploymentType || 'cloud';
+  const authType = conn.authType || 'basic';
+  const searchPath = conn.searchPath?.trim() || (deploymentType === 'cloud' ? '/rest/api/3/search' : '/rest/api/2/search');
+  return {
+    ...DEFAULTS.jira,
+    enabled: true,
+    baseUrl: conn.baseUrl.replace(/\/+$/, ''),
+    searchPath,
+    auth: { type: authType, email: conn.email, username: conn.username, token: conn.credential },
+    projectKeys,
+    jql,
+    applicationCiFieldId: conn.applicationCiFieldId || null,
+  };
+}
+
+export function qmetryConfigFromConnection(conn: QmetryConnectionInput): QmetryIntegrationConfig {
+  return {
+    ...DEFAULTS.qmetry,
+    enabled: true,
+    baseUrl: conn.baseUrl.replace(/\/+$/, ''),
+    auth: { type: 'basic', email: conn.email, token: conn.credential },
+    authEncodedEnv: '',
+    projectKey: conn.projectKey,
+    projectId: conn.projectId || null,
+    cycleIds: conn.cycleIds?.filter(Boolean) || [],
+    testCasesSearchBody: conn.folderId ? { filter: { filter: { folderId: conn.folderId } } } : DEFAULTS.qmetry.testCasesSearchBody,
+  };
+}
+
 export function getEncodedAuth(envKey: string): string | null {
   const val = process.env[envKey];
-  if (!val) return null;
-  return val.trim();
+  return val ? val.trim() : null;
 }
 
 export function integrationsSummary(configDir: string) {
   const cfg = loadIntegrations(configDir);
   const hasAuth = !!getBasicAuth(cfg.qmetry.auth) || !!getEncodedAuth(cfg.qmetry.authEncodedEnv);
   return {
-    jira: { enabled: cfg.jira.enabled, baseUrl: cfg.jira.baseUrl, configured: !!getBasicAuth(cfg.jira.auth) },
+    jira: { enabled: cfg.jira.enabled, baseUrl: cfg.jira.baseUrl, configured: !!getAuthHeader(cfg.jira.auth) },
     qmetry: {
       enabled: cfg.qmetry.enabled,
       baseUrl: cfg.qmetry.baseUrl,
