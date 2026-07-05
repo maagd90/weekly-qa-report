@@ -55,7 +55,9 @@ function safeJson(value: unknown): unknown {
   const copy: Record<string, unknown> = {};
   for (const [key, raw] of Object.entries(value as Record<string, unknown>)) {
     const lower = key.toLowerCase();
-    if (lower.includes('key') || lower.includes('token') || lower.includes('credential') || lower.includes('password')) {
+    if (typeof raw === 'string' && raw.startsWith('data:image/')) {
+      copy[key] = '***image-data-url-redacted***';
+    } else if (lower.includes('key') || lower.includes('token') || lower.includes('credential') || lower.includes('password')) {
       copy[key] = raw ? '***redacted***' : raw;
     } else {
       copy[key] = safeJson(raw);
