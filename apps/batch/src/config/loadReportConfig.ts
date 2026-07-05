@@ -1,14 +1,41 @@
 import fs from 'fs';
 import path from 'path';
+import {
+  DEFAULT_LLM_PROVIDER,
+  defaultModelForProvider,
+  normalizeLlmProvider,
+  type LlmProvider,
+} from '../ai/llmProviders';
 
 export interface ReportConfig {
+  provider: LlmProvider;
   model: string;
   maxTokens: number;
+  baseUrl?: string;
+  proxy?: {
+    enabled?: boolean;
+    url?: string;
+  };
 }
 
-const DEFAULTS: ReportConfig = { model: 'claude-sonnet-4-6', maxTokens: 768 };
+const DEFAULTS: ReportConfig = {
+  provider: DEFAULT_LLM_PROVIDER,
+  model: defaultModelForProvider(DEFAULT_LLM_PROVIDER),
+  maxTokens: 768,
+};
 
-/** Precedence: ANTHROPIC_MODEL env > config/report.json > default. */
+function providerModelEnv(provider: LlmProvider): string | undefined {
+  switch (provider) {
+    case 'openai': return process.env.OPENAI_MODEL;
+    case 'gemini': return process.env.GEMINI_MODEL;
+    case 'openai-compatible': return process.env.CUSTOM_LLM_MODEL;
+    case 'anthropic':
+    default:
+      return process.env.ANTHROPIC_MODEL;
+  }
+}
+
+/** Precedence: env vars > config/report.json > provider defaults. */
 export function loadReportConfig(configDir: string): ReportConfig {
   const file = path.join(configDir, 'report.json');
   let fromFile: Partial<ReportConfig> = {};
@@ -19,10 +46,26 @@ export function loadReportConfig(configDir: string): ReportConfig {
       /* keep defaults on malformed JSON */
     }
   }
+
+  const provider = normalizeLlmProvider(process.env.LLM_PROVIDER || fromFile.provider || DEFAULTS.provider);
+  const model = (
+    process.env.LLM_MODEL ||
+    providerModelEnv(provider) ||
+    fromFile.model ||
+    defaultModelForProvider(provider)
+  ).trim();
+  const baseUrl = (
+    process.env.LLM_BASE_URL ||
+    (provider === 'openai-compatible' ? process.env.CUSTOM_LLM_BASE_URL : undefined) ||
+    fromFile.baseUrl ||
+    undefined
+  )?.trim();
+
   return {
-    model: (process.env.ANTHROPIC_MODEL || fromFile.model || DEFAULTS.model).trim(),
-    maxTokens: typeof fromFile.maxTokens === 'number' && fromFile.maxTokens > 0
-      ? fromFile.maxTokens
-      : DEFAULTS.maxTokens,
+    provider,
+    model,
+    maxTokens: typeof fromFile.maxTokens === 'number' && fromFile.maxTokens > 0 ? fromFile.maxTokens : DEFAULTS.maxTokens,
+    ...(baseUrl ? { baseUrl } : {}),
+    ...(fromFile.proxy ? { proxy: fromFile.proxy } : {}),
   };
 }
