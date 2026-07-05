@@ -1,5 +1,5 @@
 import type { IntegrationsConfig } from '../config/loadIntegrations';
-import { getBasicAuth, getEncodedAuth } from '../config/loadIntegrations';
+import { getAuthHeader } from '../config/loadIntegrations';
 import { fetchWithTimeout, safeApiError } from '../utils/fetchWithTimeout';
 import { mapIssueType, isoDateFromApi } from '../utils/jiraHelpers';
 import type { IssueRow } from '../types/dataset';
@@ -11,8 +11,8 @@ const MAX_PAGES = 500;
 
 export async function fetchJiraIssues(cfg: IntegrationsConfig['jira']): Promise<{ issues: IssueRow[]; error?: string }> {
   if (!cfg.enabled) return { issues: [] };
-  const auth = getBasicAuth(cfg.auth);
-  if (!auth) return { issues: [], error: 'JIRA credentials not configured' };
+  const authHeader = getAuthHeader(cfg.auth);
+  if (!authHeader) return { issues: [], error: 'JIRA credentials not configured' };
 
   const issues: IssueRow[] = [];
   let startAt = 0;
@@ -26,7 +26,7 @@ export async function fetchJiraIssues(cfg: IntegrationsConfig['jira']): Promise<
       res = await fetchWithTimeout(url, {
         method: 'POST',
         headers: {
-          Authorization: `Basic ${auth}`,
+          Authorization: authHeader,
           Accept: 'application/json',
           'Content-Type': 'application/json',
         },
@@ -67,10 +67,7 @@ export async function fetchJiraIssues(cfg: IntegrationsConfig['jira']): Promise<
     pages++;
     if (!batch.length || startAt >= (data.total || 0)) break;
   }
-  if (pages >= MAX_PAGES) {
-    return { issues, error: 'JIRA API pagination limit reached' };
-  }
-
+  if (pages >= MAX_PAGES) return { issues, error: 'JIRA API pagination limit reached' };
   return { issues };
 }
 
