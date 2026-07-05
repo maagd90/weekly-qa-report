@@ -3,6 +3,14 @@ import { createAnthropicLogger } from './anthropicLog';
 import { describeFetchError, probeAnthropicReachability } from './networkProbe';
 import { getOptionalAnthropicProxyUrl, maskProxyUrl, anthropicProxySource } from './optionalProxy';
 import { loadReportConfig } from '../config/loadReportConfig';
+import {
+  generateLlmText,
+  resolveProviderApiKey,
+  LLM_PROVIDER_LABELS,
+  envKeyForProvider,
+  type LlmSelectionInput,
+  type LlmProvider,
+} from './llmProviders';
 
 export interface AnthropicTestResult {
   ok: boolean;
@@ -13,6 +21,11 @@ export interface AnthropicTestResult {
   logs?: string[];
 }
 
+export interface LlmTestResult extends AnthropicTestResult {
+  provider?: LlmProvider;
+  providerLabel?: string;
+}
+
 const TEST_TIMEOUT_MS = 25_000;
 
 function formatError(err: unknown, model: string, route: 'direct' | 'proxy'): string {
@@ -20,31 +33,22 @@ function formatError(err: unknown, model: string, route: 'direct' | 'proxy'): st
   const lower = raw.toLowerCase();
   let hint = '';
   if (/timed out|timeout|aborted|abort/.test(lower)) {
-    hint = ' — request timed out reaching api.anthropic.com.';
+    hint = ' — request timed out.';
   } else if (/connection error|fetch failed|econnrefused|etimedout|enotfound|eai_again|socket|connect/.test(lower)) {
     hint = route === 'proxy'
-      ? ' — check ANTHROPIC_PROXY_URL in .env (host/port/auth).'
-      : ' — Docker/office networks often block direct outbound HTTPS. Try ./run.sh dev on the host, or set ANTHROPIC_PROXY_URL in .env and restart Docker.';
+      ? ' — check proxy URL in .env or config/report.json.'
+      : ' — Docker/office networks may block direct outbound HTTPS. Try host dev mode or configure proxy.';
   } else if (/self.signed|unable to verify|cert|unauthorized certificate|self signed/.test(lower)) {
-    hint = route === 'proxy'
-      ? ' — Zscaler/TLS-inspecting proxy without CA: set ANTHROPIC_PROXY_INSECURE_TLS=1 in .env, restart Docker, retry. Better long-term: get corporate CA from IT → NODE_EXTRA_CA_CERTS.'
-      : ' — TLS certificate issue; on Zscaler set HTTPS_PROXY and ANTHROPIC_PROXY_INSECURE_TLS=1.';
+    hint = ' — TLS certificate issue; configure NODE_EXTRA_CA_CERTS for the corporate CA.';
   } else if (/401|authentication|invalid x-api-key|unauthorized/.test(lower)) {
-    hint = ' — the API key is missing, invalid, or revoked. Rotate it and update .env.';
+    hint = ' — key is missing, invalid, or revoked.';
   } else if (/not_found_error|model|400|bad request/.test(lower)) {
-    hint = ` — check the model name "${model}" in config/report.json / ANTHROPIC_MODEL.`;
+    hint = ` — check the model name "${model}".`;
   }
   return `${raw.slice(0, 280)}${hint}`;
 }
 
-/**
- * Live connectivity check for the Anthropic API. Makes a minimal 1-token call
- * and returns a structured result with step-by-step logs.
- */
-export async function testAnthropicConnection(
-  apiKey: string,
-  configDir: string,
-): Promise<AnthropicTestResult> {
+export async function testAnthropicConnection(apiKey: string, configDir: string): Promise<AnthropicTestResult> {
   const started = Date.now();
   const { log, lines } = createAnthropicLogger('anthropic');
   const route = anthropicRoute();
@@ -53,59 +57,91 @@ export async function testAnthropicConnection(
   log('runtime', `node=${process.version} platform=${process.platform}`);
   log('route', route === 'proxy'
     ? `proxy via ${maskProxyUrl(getOptionalAnthropicProxyUrl()!)} (${anthropicProxySource()})`
-    : 'direct — set ANTHROPIC_PROXY_URL or HTTPS_PROXY in .env for Zscaler/office networks');
+    : 'direct — set ANTHROPIC_PROXY_URL or HTTPS_PROXY in .env for office networks');
 
   if (!apiKey) {
-    log('API key check', 'missing — set ANTHROPIC_API_KEY in .env');
-    return {
-      ok: false,
-      route,
-      elapsedMs: Date.now() - started,
-      error: 'ANTHROPIC_API_KEY is not set in .env',
-      logs: lines,
-    };
+    log('API key check', 'missing — set ANTHROPIC_API_KEY in .env or Settings');
+    return { ok: false, route, elapsedMs: Date.now() - started, error: 'ANTHROPIC_API_KEY is not configured', logs: lines };
   }
 
-  log('API key check', `present (${apiKey.slice(0, 12)}…, length=${apiKey.length})`);
-
+  log('API key check', `present (${apiKey.slice(0, 8)}…, length=${apiKey.length})`);
   const reportCfg = loadReportConfig(configDir);
-  const model = reportCfg.model;
-  log('report config loaded', `model=${model} maxTokens=${reportCfg.maxTokens}`);
+  const model = reportCfg.provider === 'anthropic' ? reportCfg.model : 'claude-haiku-4-5-20251001';
+  log('report config loaded', `model=${model}`);
 
   try {
     await probeAnthropicReachability(log);
-
     const client = createAnthropicClient(apiKey, TEST_TIMEOUT_MS, log);
-    log('calling Anthropic API', `POST /v1/messages model=${model} max_tokens=1`);
-
+    log('calling Anthropic API', `model=${model} max_tokens=1`);
     const response = await client.messages.create({
       model,
       max_tokens: 1,
       messages: [{ role: 'user', content: 'ping' }],
     });
-
-    log(
-      'Anthropic API response received',
-      `id=${response.id} type=${response.type} stop_reason=${response.stop_reason ?? 'n/a'} ` +
-      `input_tokens=${response.usage?.input_tokens ?? '?'} output_tokens=${response.usage?.output_tokens ?? '?'}`,
-    );
-
+    log('Anthropic API response received', `id=${response.id} stop_reason=${response.stop_reason ?? 'n/a'}`);
     const elapsedMs = Date.now() - started;
     log('connectivity test succeeded', `${elapsedMs}ms via ${route}`);
-
     return { ok: true, model, route, elapsedMs, logs: lines };
   } catch (err) {
     const error = formatError(err, model, route);
     log('Anthropic API error', describeFetchError(err));
     log('connectivity test failed', error);
+    return { ok: false, model, route, elapsedMs: Date.now() - started, error, logs: lines };
+  }
+}
 
+export async function testLlmConnection(selection: LlmSelectionInput, configDir: string): Promise<LlmTestResult> {
+  const started = Date.now();
+  const cfg = loadReportConfig(configDir);
+  const provider = selection.provider || cfg.provider;
+  const model = (selection.model || cfg.model).trim();
+  const userKey = provider === 'anthropic' ? selection.apiKey : selection.apiKey;
+  const apiKey = resolveProviderApiKey(provider, userKey, process.env.ANTHROPIC_API_KEY);
+  const baseUrl = selection.baseUrl || cfg.baseUrl;
+  const providerLabel = LLM_PROVIDER_LABELS[provider];
+  const logs = [`[llm] provider=${providerLabel}`, `[llm] model=${model}`];
+
+  if (provider === 'anthropic') {
+    const result = await testAnthropicConnection(apiKey, configDir);
+    return { ...result, provider, providerLabel };
+  }
+
+  if (!apiKey) {
     return {
       ok: false,
+      provider,
+      providerLabel,
       model,
-      route,
+      route: 'direct',
       elapsedMs: Date.now() - started,
-      error,
-      logs: lines,
+      error: `${envKeyForProvider(provider)} is not configured for ${providerLabel}`,
+      logs,
     };
+  }
+
+  try {
+    logs.push('[llm] calling provider health prompt');
+    await generateLlmText({
+      provider,
+      model,
+      apiKey,
+      baseUrl,
+      maxTokens: 8,
+      system: 'Reply with OK only.',
+      prompt: 'ping',
+      timeoutMs: TEST_TIMEOUT_MS,
+    });
+    logs.push('[llm] connectivity test succeeded');
+    return { ok: true, provider, providerLabel, model, route: 'direct', elapsedMs: Date.now() - started, logs };
+  } catch (err) {
+    const raw = describeFetchError(err);
+    const lower = raw.toLowerCase();
+    let hint = '';
+    if (/401|authentication|unauthorized|api key/.test(lower)) hint = ` — check ${envKeyForProvider(provider)} or the key saved in Settings.`;
+    if (/429|quota|rate limit|exceeded/.test(lower)) hint = ' — quota/rate limit reached; select another provider/model/key.';
+    if (/model|not found|400|bad request/.test(lower)) hint = ` — check selected model "${model}".`;
+    const error = `${raw.slice(0, 280)}${hint}`;
+    logs.push(`[llm] connectivity test failed: ${error}`);
+    return { ok: false, provider, providerLabel, model, route: 'direct', elapsedMs: Date.now() - started, error, logs };
   }
 }
