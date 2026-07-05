@@ -4,6 +4,27 @@ import type { JiraConnectionInput, QmetryConnectionInput } from '../types/connec
 
 const JIRA_SEARCH_PATH = '/rest/api/2/search';
 
+const DEFAULT_JIRA_FIELDS = [
+  'summary',
+  'description',
+  'assignee',
+  'status',
+  'priority',
+  'issuetype',
+  'created',
+  'updated',
+  'resolution',
+  'resolutiondate',
+  'resolved',
+  'reporter',
+  'labels',
+  'components',
+  'fixVersions',
+  'customfield_10020',
+  'customfield_10016',
+  'customfield_10028',
+];
+
 export interface BasicAuthConfig {
   type: 'basic' | 'bearer';
   emailEnv?: string;
@@ -63,7 +84,7 @@ const DEFAULT_JIRA: JiraIntegrationConfig = {
   projectKeys: ['DLM'],
   jql: 'project = DLM AND issuetype in (Story, Bug) ORDER BY updated DESC',
   pageSize: 100,
-  fields: ['summary', 'issuetype', 'status', 'priority', 'assignee', 'created', 'updated', 'resolutiondate'],
+  fields: DEFAULT_JIRA_FIELDS,
   statusDone: ['Done', 'CLOSED', 'Cancel'],
   applicationCiFieldId: null,
 };
@@ -93,7 +114,7 @@ const DEFAULTS: IntegrationsConfig = {
 
 function mergeJira(raw: Partial<JiraIntegrationConfig> | undefined, idx = 0): JiraIntegrationConfig {
   const cfg = { ...DEFAULT_JIRA, ...(raw || {}) };
-  return { ...cfg, name: cfg.name || `JIRA ${idx + 1}`, searchPath: cfg.searchPath || JIRA_SEARCH_PATH };
+  return { ...cfg, name: cfg.name || `JIRA ${idx + 1}`, searchPath: cfg.searchPath || JIRA_SEARCH_PATH, fields: cfg.fields?.length ? cfg.fields : DEFAULT_JIRA_FIELDS };
 }
 
 export function loadIntegrations(configDir: string): IntegrationsConfig {
