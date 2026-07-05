@@ -1,0 +1,33 @@
+name: Build
+
+on:
+  push:
+    branches:
+      - main
+      - 'check/**'
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build batch workspace
+        run: npm run build --workspace=apps/batch
+
+      - name: Build api workspace
+        run: npm run build --workspace=apps/api
+
+      - name: Build web workspace
+        run: npm run build --workspace=apps/web
