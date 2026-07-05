@@ -129,6 +129,10 @@ export function getAuthHeader(cfg: BasicAuthConfig): string | null {
   return basic ? `Basic ${basic}` : null;
 }
 
+function connectionSecret(conn: { apiToken?: string; credential?: string }): string {
+  return conn.apiToken || conn.credential || '';
+}
+
 export function jiraConfigFromConnection(conn: JiraConnectionInput): JiraIntegrationConfig {
   const projectKeys = conn.projectKeys?.filter(Boolean) || [];
   const jql = conn.jql?.trim() || (projectKeys.length ? `project in (${projectKeys.join(',')}) AND issuetype in (Story, Bug) ORDER BY updated DESC` : 'issuetype in (Story, Bug) ORDER BY updated DESC');
@@ -140,7 +144,7 @@ export function jiraConfigFromConnection(conn: JiraConnectionInput): JiraIntegra
     deploymentType,
     baseUrl: conn.baseUrl.replace(/\/+$/, ''),
     searchPath: conn.searchPath?.trim() || (deploymentType === 'cloud' ? '/rest/api/3/search' : '/rest/api/2/search'),
-    auth: { type: conn.authType || 'basic', email: conn.email, username: conn.username, token: conn.credential },
+    auth: { type: conn.authType || 'basic', email: conn.email, username: conn.username, token: connectionSecret(conn) },
     projectKeys,
     jql,
     applicationCiFieldId: conn.applicationCiFieldId || null,
@@ -152,7 +156,7 @@ export function qmetryConfigFromConnection(conn: QmetryConnectionInput): QmetryI
     ...DEFAULTS.qmetry,
     enabled: true,
     baseUrl: conn.baseUrl.replace(/\/+$/, ''),
-    auth: { type: 'basic', email: conn.email, token: conn.credential },
+    auth: { type: 'basic', email: conn.email, token: connectionSecret(conn) },
     authEncodedEnv: '',
     projectKey: conn.projectKey,
     projectId: conn.projectId || null,
