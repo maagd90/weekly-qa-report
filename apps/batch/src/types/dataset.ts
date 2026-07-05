@@ -1,7 +1,7 @@
 export type ExecutionResult = 'PASS' | 'FAIL' | 'BLOCKED' | 'NE' | 'NA';
 export type IssueType = 'Story' | 'Bug';
 export type IssueStatus = 'open' | 'done';
-export type DataSource = 'qmetry' | 'jira-api' | 'zephyr' | 'jira-file' | 'odl-file';
+export type DataSource = 'qmetry' | 'jira-api' | 'test-execution-file' | 'jira-file' | 'odl-file';
 
 export interface ExecutionRow {
   project: string;
@@ -52,7 +52,7 @@ export interface FileMeta {
   project: string;
   rows: number;
   status: 'parsed' | 'staged' | 'error';
-  detectedType?: 'zephyr' | 'jira' | 'odl' | 'unknown';
+  detectedType?: 'test-execution' | 'jira' | 'odl' | 'unknown';
   source: 'file' | 'jira-api' | 'qmetry-api';
 }
 
