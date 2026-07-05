@@ -9,6 +9,24 @@ import { mapJiraStatus, projectFromKey, sanitizeText } from '../utils/excel';
 
 const MAX_PAGES = 500;
 
+function snippet(body: string): string {
+  return body.replace(/\s+/g, ' ').trim().slice(0, 220);
+}
+
+async function parseJiraResponse(res: Response): Promise<{ issues?: Record<string, unknown>[]; total?: number; error?: string }> {
+  const contentType = res.headers.get('content-type') || '';
+  const body = await res.text();
+  if (!res.ok) return { error: safeApiError('JIRA API', res.status, body) };
+  if (!contentType.toLowerCase().includes('application/json')) {
+    return { error: `JIRA returned ${contentType || 'non-JSON'} instead of JSON. This usually means the API request was redirected to the login page or blocked by SSO/proxy. Final URL: ${res.url}. Preview: ${snippet(body)}` };
+  }
+  try {
+    return JSON.parse(body) as { issues?: Record<string, unknown>[]; total?: number };
+  } catch (err) {
+    return { error: `JIRA returned invalid JSON: ${(err as Error).message}. Preview: ${snippet(body)}` };
+  }
+}
+
 export async function fetchJiraIssues(cfg: IntegrationsConfig['jira']): Promise<{ issues: IssueRow[]; error?: string }> {
   if (!cfg.enabled) return { issues: [] };
   const authHeader = getAuthHeader(cfg.auth);
@@ -35,11 +53,10 @@ export async function fetchJiraIssues(cfg: IntegrationsConfig['jira']): Promise<
     } catch (err) {
       return { issues, error: `JIRA API timeout: ${(err as Error).message}` };
     }
-    if (!res.ok) {
-      const body = await res.text();
-      return { issues, error: safeApiError('JIRA API', res.status, body) };
-    }
-    const data = await res.json() as { issues?: Record<string, unknown>[]; total?: number };
+
+    const data = await parseJiraResponse(res);
+    if (data.error) return { issues, error: data.error };
+
     const batch = data.issues || [];
     for (const item of batch) {
       const fields = (item.fields || {}) as Record<string, unknown>;
@@ -79,15 +96,7 @@ export async function fetchJiraDataset(cfg: IntegrationsConfig) {
   ds.meta.fetchedAt = new Date().toISOString();
   if (error) ds.meta.warnings.push(error);
   if (issues.length) {
-    ds.files.push({
-      name: 'jira-api',
-      ext: 'API',
-      project: issues[0]?.project || 'DLM',
-      rows: issues.length,
-      status: 'parsed',
-      detectedType: 'jira',
-      source: 'jira-api',
-    });
+    ds.files.push({ name: 'jira-api', ext: 'API', project: issues[0]?.project || 'DLM', rows: issues.length, status: 'parsed', detectedType: 'jira', source: 'jira-api' });
     ds.projects = [...new Set(issues.map((i) => i.project))];
   }
   return ds;
