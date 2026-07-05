@@ -5,7 +5,7 @@
       "enabled": false,
       "deploymentType": "cloud",
       "baseUrl": "https://your-domain.atlassian.net",
-      "searchPath": "/rest/api/3/search",
+      "searchPath": "/rest/api/2/search",
       "auth": { "type": "basic", "emailEnv": "JIRA_CLOUD_EMAIL", "tokenEnv": "JIRA_CLOUD_SECRET" },
       "projectKeys": ["DLM"],
       "jql": "project = DLM AND issuetype in (Story, Bug) ORDER BY updated DESC",
