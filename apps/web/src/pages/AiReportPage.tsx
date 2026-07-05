@@ -5,7 +5,7 @@ import remarkGfm from 'remark-gfm';
 import clsx from 'clsx';
 import { Download } from 'lucide-react';
 import type { DashboardPayload } from 'qa-dashboard-batch';
-import { batchApi, apiErrorMessage, getUserLlmSelection, getReportBranding, LLM_PROVIDER_LABELS, type LlmProvider, type ReportType } from '../lib/api';
+import { batchApi, apiErrorMessage, getUserLlmSelection, getReportBranding, type ReportType } from '../lib/api';
 import type { KpiStyle } from '../theme/qaTheme';
 import { QA } from '../theme/qaTheme';
 import { AiReportCharts } from '../components/qa/AiReportCharts';
@@ -43,9 +43,6 @@ export function AiReportPage({ dashboard, kpiStyle, project, onGenerated }: AiRe
   const { data: reportData } = useQuery({ queryKey: ['report'], queryFn: batchApi.getReport, retry: false });
   const selectedProject = project && project !== 'all' ? project : undefined;
   const selectedProjectLabel = selectedProject || 'All projects';
-  const savedLlm = getUserLlmSelection();
-  const provider = (savedLlm.provider || 'anthropic') as LlmProvider;
-  const providerLabel = LLM_PROVIDER_LABELS[provider] || 'Selected LLM';
 
   useEffect(() => {
     if (!reportData) return;
@@ -121,8 +118,6 @@ export function AiReportPage({ dashboard, kpiStyle, project, onGenerated }: AiRe
               </div>
               <div className="font-mono-qa text-[10px] text-qa-muted-light mb-1.5">Project from dashboard filter</div>
               <div className="font-mono-qa text-[11.5px] bg-[#2a2825] px-2.5 py-2 mb-4">{selectedProjectLabel}</div>
-              <div className="font-mono-qa text-[10px] text-qa-muted-light mb-1.5">LLM from Settings</div>
-              <div className="font-mono-qa text-[11.5px] bg-[#2a2825] px-2.5 py-2 mb-4">{providerLabel} · {savedLlm.model || 'default model'}</div>
               <div className="font-mono-qa text-[10px] text-qa-muted-light mb-1.5">Scope</div>
               <div className="font-mono-qa text-[11.5px] bg-[#2a2825] px-2.5 py-2 mb-4">{startDate} → {endDate}</div>
               <button type="button" onClick={() => generateMutation.mutate()} disabled={generating} className="w-full py-3 border-none text-white font-mono-qa text-xs font-semibold tracking-wider uppercase disabled:cursor-wait" style={{ background: generating ? '#44423d' : QA.accent }}>
@@ -140,8 +135,8 @@ export function AiReportPage({ dashboard, kpiStyle, project, onGenerated }: AiRe
           <article className="bg-white border border-qa-border min-h-[520px]">
             {error && <div className="m-6 p-4 border border-[#ecccc2] bg-[#f8ece8] text-[#a13d2c] text-sm">{error}</div>}
             {warning && !error && <div className="m-6 p-4 border border-[#e8dcc2] bg-[#faf6ee] text-[#6a5a2c] text-sm">{warning}</div>}
-            {!generating && !hasReport && !error && <div className="flex flex-col items-center justify-center h-[520px] text-center px-10"><div className="font-spectral text-[64px] leading-none text-qa-border">¶</div><h3 className="font-spectral font-semibold text-[22px] mt-3.5 mb-2">No report generated yet</h3><p className="text-[13.5px] text-qa-muted max-w-[420px] m-0">Pick a report type and click <strong>Generate AI Report</strong>. Project comes from the dashboard Project filter. LLM comes from Settings.</p></div>}
-            {generating && <div className="p-10"><div className="font-mono-qa text-[11px] tracking-wider uppercase mb-6" style={{ color: QA.accent }}>• Generating — querying dataset</div>{['Reading staged exports', 'Parsing executions & issues', 'Building in-memory dataset', `Filtering project: ${selectedProjectLabel}`, 'Querying dataset tools', `Writing narrative with ${providerLabel}`].map((label, i) => <div key={label} className="flex items-center gap-3 py-2.5 border-b border-[#f3f0e8]"><span className="w-2 h-2 rounded-full qa-pulse" style={{ background: i === 0 ? QA.accent : '#e2ded4' }} /><span className="font-mono-qa text-xs flex-1">{label}</span><span className="font-mono-qa text-[11px] text-qa-muted-pale">{i === 0 ? 'running' : 'queued'}</span></div>)}</div>}
+            {!generating && !hasReport && !error && <div className="flex flex-col items-center justify-center h-[520px] text-center px-10"><div className="font-spectral text-[64px] leading-none text-qa-border">¶</div><h3 className="font-spectral font-semibold text-[22px] mt-3.5 mb-2">No report generated yet</h3><p className="text-[13.5px] text-qa-muted max-w-[420px] m-0">Pick a report type and click <strong>Generate AI Report</strong>. Project comes from the dashboard Project filter.</p></div>}
+            {generating && <div className="p-10"><div className="font-mono-qa text-[11px] tracking-wider uppercase mb-6" style={{ color: QA.accent }}>• Generating — querying dataset</div>{['Reading staged exports', 'Parsing executions & issues', 'Building in-memory dataset', `Filtering project: ${selectedProjectLabel}`, 'Querying dataset tools', 'Writing narrative'].map((label, i) => <div key={label} className="flex items-center gap-3 py-2.5 border-b border-[#f3f0e8]"><span className="w-2 h-2 rounded-full qa-pulse" style={{ background: i === 0 ? QA.accent : '#e2ded4' }} /><span className="font-mono-qa text-xs flex-1">{label}</span><span className="font-mono-qa text-[11px] text-qa-muted-pale">{i === 0 ? 'running' : 'queued'}</span></div>)}</div>}
             {hasReport && <div><div className="px-11 pt-7 pb-5 border-b-2 border-qa-ink flex flex-wrap items-start justify-between gap-4"><div><div className="font-mono-qa text-[10px] tracking-widest uppercase mb-2.5" style={{ color: QA.accent }}>Weekly QA Narrative · {reportType}</div><h1 className="font-spectral font-extrabold text-[32px] leading-tight tracking-tight m-0 mb-3">QA Report</h1><div className="flex gap-4 font-mono-qa text-[10.5px] text-qa-muted-light uppercase tracking-wide flex-wrap"><span>{startDate} → {endDate}</span><span>·</span><span>{hasNarrative ? 'Narrative included' : 'Metrics only'}</span><span>·</span><span>{selectedProjectLabel}</span></div></div><button type="button" onClick={handleDownloadPdf} disabled={downloading} className="inline-flex items-center gap-2 px-4 py-2.5 border border-qa-ink bg-white text-qa-ink font-mono-qa text-[11px] font-semibold tracking-wide uppercase disabled:opacity-50"><Download size={14} />{downloading ? 'Exporting…' : 'Download PDF'}</button></div><div className="px-11 py-7 bg-white">{chartData && <div className="mb-10 pb-8 border-b border-qa-border"><div className="font-mono-qa text-[10px] tracking-wider uppercase text-qa-muted-light mb-5">Metrics & Charts</div><AiReportCharts dashboard={chartData} kpiStyle={kpiStyle} reportType={reportType} /></div>}{hasNarrative && <div className="prose prose-slate max-w-none prose-headings:font-spectral"><div className="font-mono-qa text-[10px] tracking-wider uppercase text-qa-muted-light mb-5">AI Narrative</div><ReactMarkdown remarkPlugins={[remarkGfm]}>{reportMarkdown}</ReactMarkdown></div>}</div></div>}
           </article>
         </div>
