@@ -26,6 +26,7 @@ export interface IssueRow {
   createdAt: string | null;
   resolvedAt: string | null;
   updatedAt: string;
+  applicationCi?: string;
   source: DataSource;
 }
 
@@ -104,7 +105,6 @@ export interface GenerateParams extends FilterParams {
   inputDir?: string;
   outputDir?: string;
   configDir?: string;
-  /** Legacy Anthropic-only key. Prefer llm.apiKey for provider-specific keys. */
   apiKey?: string;
   llm?: import('../ai/llmProviders').LlmSelectionInput;
   connections?: import('./connections').UserConnections;
@@ -131,6 +131,7 @@ export interface GenerateResult {
   payload?: DashboardPayload;
   report?: { markdown: string; meta: ReportMeta };
   error?: string;
+  requestId?: string;
 }
 
 export interface DashboardScope extends FilterParams {
@@ -160,64 +161,13 @@ export interface DashboardPayload {
     blocked: number;
     resultMix: { code: string; label: string; count: number; pct: number; color: string }[];
     byMonth: { ym: string; label: string; pass: number; blocked: number; fail: number }[];
-    chartSeries: {
-      resultMix: { name: string; value: number; color: string }[];
-    };
+    chartSeries: { resultMix: { name: string; value: number; color: string }[] };
   };
-  testers: {
-    name: string;
-    executed: number;
-    pass: number;
-    fail: number;
-    blocked: number;
-    na: number;
-    passPct: number;
-  }[];
-  cycles: {
-    key: string;
-    name: string;
-    total: number;
-    pass: number;
-    fail: number;
-    blocked: number;
-    ne: number;
-    na: number;
-    passPct: number;
-    coverage: number;
-    status: string;
-  }[];
-  /** Cycles sorted by passPct ascending (at-risk first) — for UI table */
-  cyclesByPassPctAsc: {
-    key: string;
-    name: string;
-    total: number;
-    pass: number;
-    fail: number;
-    blocked: number;
-    ne: number;
-    na: number;
-    passPct: number;
-    coverage: number;
-    status: string;
-  }[];
-  storyBug: {
-    story: number;
-    bug: number;
-    storyOpen: number;
-    storyDone: number;
-    bugOpen: number;
-    bugDone: number;
-  };
-  traceability: {
-    area: string;
-    stories: number;
-    done: number;
-    open: number;
-    bugs: number;
-    openBugs: number;
-    completion: number;
-    status: string;
-  }[];
+  testers: { name: string; executed: number; pass: number; fail: number; blocked: number; na: number; passPct: number }[];
+  cycles: { key: string; name: string; total: number; pass: number; fail: number; blocked: number; ne: number; na: number; passPct: number; coverage: number; status: string }[];
+  cyclesByPassPctAsc: { key: string; name: string; total: number; pass: number; fail: number; blocked: number; ne: number; na: number; passPct: number; coverage: number; status: string }[];
+  storyBug: { story: number; bug: number; storyOpen: number; storyDone: number; bugOpen: number; bugDone: number };
+  traceability: { area: string; stories: number; done: number; open: number; bugs: number; openBugs: number; completion: number; status: string }[];
   defectBacklog: {
     openTotal: number;
     byPriority: { priority: string; open: number; total: number }[];
@@ -234,25 +184,17 @@ export interface DashboardPayload {
     byPriority: { priority: string; count: number }[];
     byArea: { area: string; count: number }[];
     bySubmitter: { name: string; count: number }[];
-    rows: {
-      id: string;
-      subject: string;
-      area: string;
-      priority: string;
-      status: string;
-      submitter: string;
-      submittedAt: string;
-      updatedAt: string;
-      cr: string;
-    }[];
+    rows: { id: string; subject: string; area: string; priority: string; status: string; submitter: string; submittedAt: string; updatedAt: string; cr: string; project?: string }[];
   } | null;
+  byProject?: {
+    project: string;
+    overview: DashboardPayload['overview'];
+    storyBug: DashboardPayload['storyBug'];
+    defectBacklog: DashboardPayload['defectBacklog'];
+    cycles: DashboardPayload['cycles'];
+    testers: DashboardPayload['testers'];
+    uat: DashboardPayload['uat'];
+  }[];
   files: FileMeta[];
-  meta: {
-    generatedAt: string;
-    parsedAt: string;
-    fetchedAt: string | null;
-    warnings: string[];
-    dataMin: string | null;
-    dataMax: string | null;
-  };
+  meta: { generatedAt: string; parsedAt: string; fetchedAt: string | null; warnings: string[]; dataMin: string | null; dataMax: string | null };
 }
