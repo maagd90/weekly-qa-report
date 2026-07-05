@@ -31,8 +31,6 @@ export function ReportPrintPage() {
   const project = params.get('project') || undefined;
   const logoUrl = params.get('logoUrl') || '';
   const logoAlt = params.get('logoAlt') || 'Report logo';
-  const title = params.get('title') || 'QA Sprint Report';
-  const subtitle = params.get('subtitle') || '';
   const kpiParam = params.get('kpiStyle') ?? 'editorial';
   const typeParam = params.get('reportType') ?? 'executive';
   const kpiStyle: KpiStyle = KPI_STYLES.includes(kpiParam as KpiStyle)
@@ -126,14 +124,20 @@ export function ReportPrintPage() {
   }
 
   return (
-    <ReportPrintContent
-      dashboard={dashboard}
-      kpiStyle={kpiStyle}
-      reportType={reportType}
-      narrative={reportQuery.data?.markdown ?? ''}
-      startDate={startDate}
-      endDate={endDate}
-      branding={{ logoUrl, logoAlt, title, subtitle }}
-    />
+    <div className="qa-print-brand-wrapper">
+      {logoUrl && (
+        <div className="qa-print-brand-logo">
+          <img src={logoUrl} alt={logoAlt} />
+        </div>
+      )}
+      <ReportPrintContent
+        dashboard={dashboard}
+        kpiStyle={kpiStyle}
+        reportType={reportType}
+        narrative={reportQuery.data?.markdown ?? ''}
+        startDate={startDate}
+        endDate={endDate}
+      />
+    </div>
   );
 }
