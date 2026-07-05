@@ -13,9 +13,6 @@ export function QaMasthead({ dashboard }: QaMastheadProps) {
 
   const totalCases = dashboard?.overview.totalCases ?? 0;
   const cycleCount = dashboard?.cycles.length ?? 0;
-  const fileHint = dashboard?.files?.length
-    ? dashboard.files.map((f) => f.name).slice(0, 2).join(', ')
-    : 'no files loaded';
 
   return (
     <>
@@ -40,9 +37,6 @@ export function QaMasthead({ dashboard }: QaMastheadProps) {
             {dashboard
               ? `Test execution data · ${fmt(totalCases)} records · ${cycleCount} cycles`
               : 'Awaiting data — stage files or generate report'}
-          </div>
-          <div className="font-mono-qa text-[10.5px] tracking-wide uppercase text-qa-muted-light hidden sm:block">
-            Source: {fileHint}
           </div>
         </div>
       </header>
