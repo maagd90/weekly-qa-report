@@ -18,6 +18,31 @@ const ANTHROPIC_KEY_STORAGE = 'qa_dashboard_anthropic_key';
 const JIRA_CONNECTIONS_STORAGE = 'qa_dashboard_jira_connections';
 const QMETRY_CONNECTIONS_STORAGE = 'qa_dashboard_qmetry_connections';
 
+type RequestMeta = { requestId: string; startedAt: number };
+
+function nextRequestId(): string {
+  return `web-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function safeJson(value: unknown): unknown {
+  if (!value || typeof value !== 'object') return value;
+  if (Array.isArray(value)) return value.map(safeJson);
+  const copy: Record<string, unknown> = {};
+  for (const [key, raw] of Object.entries(value as Record<string, unknown>)) {
+    const lower = key.toLowerCase();
+    if (lower.includes('key') || lower.includes('token') || lower.includes('credential') || lower.includes('password')) {
+      copy[key] = raw ? '***redacted***' : raw;
+    } else {
+      copy[key] = safeJson(raw);
+    }
+  }
+  return copy;
+}
+
+function logApi(event: string, data: Record<string, unknown>): void {
+  console.log(`[web-api] ${event}`, data);
+}
+
 export function getUserAnthropicKey(): string {
   try {
     return window.localStorage.getItem(ANTHROPIC_KEY_STORAGE) || '';
@@ -62,6 +87,11 @@ export function newConnectionId(): string {
 }
 
 api.interceptors.request.use((config) => {
+  const meta: RequestMeta = { requestId: nextRequestId(), startedAt: Date.now() };
+  (config as typeof config & { metadata?: RequestMeta }).metadata = meta;
+  config.headers = config.headers || {};
+  config.headers['x-request-id'] = meta.requestId;
+
   const key = getUserAnthropicKey();
   if (key) config.headers['x-anthropic-key'] = key;
 
@@ -71,19 +101,73 @@ api.interceptors.request.use((config) => {
     const connections: UserConnections = { jira, qmetry };
     config.headers['x-user-connections'] = JSON.stringify(connections);
   }
+
+  logApi('request', {
+    requestId: meta.requestId,
+    method: (config.method || 'GET').toUpperCase(),
+    url: `${config.baseURL || ''}${config.url || ''}`,
+    hasAnthropicKey: Boolean(key),
+    jiraConnections: jira.length,
+    qmetryConnections: qmetry.length,
+    params: config.params,
+    body: safeJson(config.data),
+  });
   return config;
 });
 
+api.interceptors.response.use(
+  (response) => {
+    const meta = (response.config as typeof response.config & { metadata?: RequestMeta }).metadata;
+    logApi('response', {
+      requestId: meta?.requestId,
+      method: (response.config.method || 'GET').toUpperCase(),
+      url: response.config.url,
+      status: response.status,
+      elapsedMs: meta ? Date.now() - meta.startedAt : undefined,
+    });
+    return response;
+  },
+  (error) => {
+    if (axios.isAxiosError(error)) {
+      const meta = (error.config as typeof error.config & { metadata?: RequestMeta } | undefined)?.metadata;
+      console.error('[web-api] error', {
+        requestId: meta?.requestId,
+        method: (error.config?.method || 'GET').toUpperCase(),
+        url: error.config?.url,
+        status: error.response?.status,
+        elapsedMs: meta ? Date.now() - meta.startedAt : undefined,
+        response: safeJson(error.response?.data),
+        message: error.message,
+      });
+    } else {
+      console.error('[web-api] non-axios error', error);
+    }
+    return Promise.reject(error);
+  },
+);
+
 function apiErrorMessage(err: unknown, fallback: string): string {
   if (axios.isAxiosError(err)) {
-    const data = err.response?.data as { error?: string; message?: string } | undefined;
+    const data = err.response?.data as { error?: string; message?: string; warnings?: string[] } | undefined;
     if (data?.error) return data.error;
     if (data?.message) return data.message;
-    if (err.response?.status === 504) return 'Report generation timed out at the gateway. Rebuild Docker or retry.';
-    if (err.code === 'ECONNABORTED') return 'Report generation timed out. Please try again.';
+    if (data?.warnings?.length) return data.warnings.join('; ');
+    if (err.response?.status) return `${fallback}: HTTP ${err.response.status}`;
+    if (err.code === 'ECONNABORTED') return 'Report generation timed out. Full reports can take 1–2 minutes — please try again.';
     return err.message || fallback;
   }
   return err instanceof Error ? err.message : fallback;
+}
+
+async function blobErrorMessage(blob: Blob, fallback: string): Promise<string> {
+  try {
+    const text = await blob.text();
+    if (!text) return fallback;
+    const payload = JSON.parse(text) as { error?: string; message?: string; warnings?: string[] };
+    return payload.error || payload.message || payload.warnings?.join('; ') || text.slice(0, 500);
+  } catch {
+    return fallback;
+  }
 }
 
 export { apiErrorMessage };
@@ -120,9 +204,13 @@ export const batchApi = {
     .then((r) => r.data as { ok: boolean; provider?: LlmProvider; providerLabel?: string; model?: string; route?: 'direct' | 'proxy'; elapsedMs?: number; error?: string; logs?: string[] })
     .catch((err) => { throw new Error(apiErrorMessage(err, 'LLM connectivity test failed')); }),
 
-  testAnthropic: () => api.get('/anthropic/test', { timeout: 35_000 }).then((r) => r.data),
+  testAnthropic: () => api.get('/anthropic/test', { timeout: 35_000 })
+    .then((r) => r.data as { ok: boolean; model?: string; route?: 'direct' | 'proxy'; elapsedMs?: number; error?: string; logs?: string[] })
+    .catch((err) => { throw new Error(apiErrorMessage(err, 'Anthropic connectivity test failed')); }),
 
-  generate: (params: GenerateParams) => api.post<GenerateResult>('/generate', params, { timeout: 300_000 }).then((r) => r.data),
+  generate: (params: GenerateParams) => api.post<GenerateResult>('/generate', params, { timeout: 300_000 })
+    .then((r) => r.data)
+    .catch((err) => { throw new Error(apiErrorMessage(err, 'Report generation failed')); }),
 
   getDashboard: (filter?: Partial<FilterParams>) => {
     const params = filter ? {
@@ -163,20 +251,23 @@ export const batchApi = {
   getCycleFolders: () => api.get('/cycles/folders', { timeout: 35_000 }).then((r) => r.data as CycleFoldersResult),
 
   downloadReportPdf: async ({ startDate, endDate, reportType, kpiStyle }: { startDate: string; endDate: string; reportType: ReportType; kpiStyle: string }) => {
-    const response = await api.post('/report/pdf', { startDate, endDate, reportType, kpiStyle }, { responseType: 'blob', timeout: 150_000 });
-    const blob = response.data as Blob;
-    if (blob.type === 'application/json') {
-      const text = await blob.text();
-      const payload = JSON.parse(text) as { error?: string };
-      throw new Error(payload.error || 'PDF export failed');
+    try {
+      const response = await api.post('/report/pdf', { startDate, endDate, reportType, kpiStyle }, { responseType: 'blob', timeout: 150_000 });
+      const blob = response.data as Blob;
+      if (blob.type === 'application/json') throw new Error(await blobErrorMessage(blob, 'PDF export failed'));
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `qa-report-${startDate}-to-${endDate}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      if (axios.isAxiosError(err) && err.response?.data instanceof Blob) {
+        throw new Error(await blobErrorMessage(err.response.data, 'PDF export failed'));
+      }
+      throw new Error(apiErrorMessage(err, 'PDF export failed'));
     }
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `qa-report-${startDate}-to-${endDate}.pdf`;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    URL.revokeObjectURL(url);
   },
 };
