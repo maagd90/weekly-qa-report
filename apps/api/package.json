@@ -4,9 +4,9 @@
   "private": true,
   "main": "dist/index.js",
   "scripts": {
-    "dev": "node --require ../../scripts/loadRepoEnv.cjs node_modules/ts-node-dev/lib/bin.js --respawn --transpile-only src/index.ts",
+    "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
     "build": "tsc",
-    "start": "node --require ../../scripts/loadRepoEnv.cjs dist/index.js"
+    "start": "node dist/index.js"
   },
   "dependencies": {
     "cors": "^2.8.5",

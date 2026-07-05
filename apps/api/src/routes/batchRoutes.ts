@@ -14,6 +14,7 @@ import {
   loadIntegrations,
   testAnthropicConnection,
 } from 'qa-dashboard-batch';
+import { getEnvStatus } from '../loadRepoEnv';
 import { generateReportPdf } from '../services/reportPdf';
 
 const router = Router();
@@ -70,8 +71,6 @@ router.get('/status', (_req: Request, res: Response) => {
 
 // GET /api/env — diagnostics for .env loading (local troubleshooting)
 router.get('/env', (_req: Request, res: Response) => {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { getEnvStatus } = require(path.join(__dirname, '../../../../scripts/loadRepoEnv.cjs'));
   res.json(getEnvStatus());
 });
 

@@ -291,11 +291,10 @@ The Vite dev server proxies `/api/*` to the API on port `3001`.
 
 ```bash
 npm install
-cp .env.example .env
-cp config/integrations.example.json config/integrations.json
-mkdir -p input output config
-npm run dev
+npm run dev            # builds batch first (predev), then starts API + UI
 ```
+
+`.env` at the repo root is loaded automatically when the API starts — do **not** use `source .env` in Git Bash.
 
 </details>
 
