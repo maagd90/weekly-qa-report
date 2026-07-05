@@ -1,15 +1,17 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import type { DashboardPayload, FilterParams } from 'qa-dashboard-batch';
+import { getActiveProject, setActiveProject } from '../lib/api';
 
 export function useFilters(dashboard: DashboardPayload | undefined) {
   const today = new Date().toISOString().slice(0, 10);
   const weekAgo = new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10);
+  const storedProject = getActiveProject();
 
   const [startDate, setStartDate] = useState(dashboard?.scope.startDate || weekAgo);
   const [endDate, setEndDate] = useState(dashboard?.scope.endDate || today);
   const [search, setSearch] = useState('');
   const [result, setResult] = useState<'all' | 'PASS' | 'FAIL' | 'BLOCKED'>('all');
-  const [project, setProject] = useState('all');
+  const [project, setProjectState] = useState(storedProject || 'all');
 
   useEffect(() => {
     if (dashboard?.scope.startDate) setStartDate(dashboard.scope.startDate);
@@ -17,11 +19,17 @@ export function useFilters(dashboard: DashboardPayload | undefined) {
   }, [dashboard?.scope.startDate, dashboard?.scope.endDate]);
 
   const projects = useMemo(() => {
-    if (dashboard?.scope.projects?.length) {
-      return ['all', ...dashboard.scope.projects];
-    }
-    return ['all'];
-  }, [dashboard?.scope.projects]);
+    const values = new Set<string>(['all']);
+    if (storedProject && storedProject !== 'all') values.add(storedProject);
+    for (const p of dashboard?.scope.projects || []) values.add(p);
+    return [...values];
+  }, [dashboard?.scope.projects, storedProject]);
+
+  const setProject = useCallback((next: string) => {
+    const value = next || 'all';
+    setProjectState(value);
+    setActiveProject(value);
+  }, []);
 
   const filterParams: FilterParams = useMemo(() => ({
     startDate,
