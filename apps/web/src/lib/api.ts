@@ -17,8 +17,23 @@ const api = axios.create({ baseURL: '/api' });
 const ANTHROPIC_KEY_STORAGE = 'qa_dashboard_anthropic_key';
 const JIRA_CONNECTIONS_STORAGE = 'qa_dashboard_jira_connections';
 const QMETRY_CONNECTIONS_STORAGE = 'qa_dashboard_qmetry_connections';
+const LLM_SELECTION_STORAGE = 'qa_dashboard_llm_selection';
 
 type RequestMeta = { requestId: string; startedAt: number };
+
+export const LLM_MODELS: Record<LlmProvider, string[]> = {
+  anthropic: ['claude-haiku-4-5-20251001', 'claude-sonnet-4-6'],
+  openai: ['gpt-5.2', 'gpt-5.2-mini'],
+  gemini: ['gemini-3.5-flash', 'gemini-3.5-pro'],
+  'openai-compatible': ['custom-model'],
+};
+
+export const LLM_PROVIDER_LABELS: Record<LlmProvider, string> = {
+  anthropic: 'Anthropic Claude',
+  openai: 'OpenAI',
+  gemini: 'Google Gemini',
+  'openai-compatible': 'Custom OpenAI-compatible',
+};
 
 function nextRequestId(): string {
   return `web-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -43,6 +58,54 @@ function logApi(event: string, data: Record<string, unknown>): void {
   console.log(`[web-api] ${event}`, data);
 }
 
+function normalizeProvider(value: unknown): LlmProvider {
+  return value === 'openai' || value === 'gemini' || value === 'openai-compatible' || value === 'anthropic'
+    ? value
+    : 'anthropic';
+}
+
+function readStoredObject<T>(key: string, fallback: T): T {
+  try {
+    const raw = window.localStorage.getItem(key);
+    return raw ? (JSON.parse(raw) as T) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function writeStoredObject<T>(key: string, value: T): void {
+  try {
+    window.localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    /* storage unavailable */
+  }
+}
+
+export function getUserLlmSelection(): LlmSelectionInput {
+  const stored = readStoredObject<Partial<LlmSelectionInput>>(LLM_SELECTION_STORAGE, {});
+  const provider = normalizeProvider(stored.provider);
+  const model = stored.model && LLM_MODELS[provider].includes(stored.model)
+    ? stored.model
+    : LLM_MODELS[provider][0];
+  return {
+    provider,
+    model,
+    baseUrl: stored.baseUrl || undefined,
+  };
+}
+
+export function setUserLlmSelection(selection: LlmSelectionInput): void {
+  const provider = normalizeProvider(selection.provider);
+  const model = selection.model && LLM_MODELS[provider].includes(selection.model)
+    ? selection.model
+    : LLM_MODELS[provider][0];
+  writeStoredObject(LLM_SELECTION_STORAGE, {
+    provider,
+    model,
+    baseUrl: selection.baseUrl || '',
+  });
+}
+
 export function getUserAnthropicKey(): string {
   try {
     return window.localStorage.getItem(ANTHROPIC_KEY_STORAGE) || '';
@@ -61,20 +124,11 @@ export function setUserAnthropicKey(key: string): void {
 }
 
 function readConnections<T>(key: string): T[] {
-  try {
-    const raw = window.localStorage.getItem(key);
-    return raw ? (JSON.parse(raw) as T[]) : [];
-  } catch {
-    return [];
-  }
+  return readStoredObject<T[]>(key, []);
 }
 
 function writeConnections<T>(key: string, value: T[]): void {
-  try {
-    window.localStorage.setItem(key, JSON.stringify(value));
-  } catch {
-    /* storage unavailable */
-  }
+  writeStoredObject(key, value);
 }
 
 export const getJiraConnections = (): JiraConnectionInput[] => readConnections(JIRA_CONNECTIONS_STORAGE);
