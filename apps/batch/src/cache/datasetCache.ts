@@ -49,7 +49,7 @@ async function buildQmetryConnectionDataset(configDir: string, connections?: Use
       ds.meta.fetchedAt = new Date().toISOString();
       if (error) ds.meta.warnings.push(`[${conn.name}] ${error}`);
       if (executions.length) {
-        ds.files.push({ name: `qmetry-api:${conn.name}`, ext: 'API', project: executions[0]?.project || conn.projectKey, rows: executions.length, status: 'parsed', detectedType: 'zephyr', source: 'qmetry-api' });
+        ds.files.push({ name: `qmetry-api:${conn.name}`, ext: 'API', project: executions[0]?.project || conn.projectKey, rows: executions.length, status: 'parsed', detectedType: 'test-execution', source: 'qmetry-api' });
         ds.projects = [...new Set(executions.map((e) => e.project))];
       }
       parts.push(ds);
@@ -90,7 +90,7 @@ export function computeFingerprint(inputDir: string, configDir: string, connecti
 export function saveRawDataset(outputDir: string, dataset: Dataset, fingerprint: string) {
   fs.mkdirSync(outputDir, { recursive: true });
   fs.writeFileSync(path.join(outputDir, 'raw-dataset.json'), JSON.stringify(dataset, null, 2));
-  fs.writeFileSync(path.join(outputDir, 'dataset-fingerprint.json'), JSON.stringify({ fingerprint, savedAt: new Date().toISOString() }, null, 2));
+  fs.writeFileSync(path.join(outputDir, 'dataset-fingerprint.txt'), fingerprint);
 }
 
 export function loadRawDataset(outputDir: string): Dataset | null {
@@ -100,7 +100,6 @@ export function loadRawDataset(outputDir: string): Dataset | null {
 }
 
 export function loadFingerprint(outputDir: string): string | null {
-  const file = path.join(outputDir, 'dataset-fingerprint.json');
-  if (!fs.existsSync(file)) return null;
-  return (JSON.parse(fs.readFileSync(file, 'utf8')) as { fingerprint: string }).fingerprint;
+  const file = path.join(outputDir, 'dataset-fingerprint.txt');
+  return fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : null;
 }
