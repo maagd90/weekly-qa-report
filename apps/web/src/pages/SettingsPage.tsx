@@ -46,11 +46,14 @@ function blankJiraConnection(): JiraConnectionInput {
     id: newConnectionId(),
     name: '',
     baseUrl: '',
-    deploymentType: 'cloud',
+    deploymentType: 'on-prem',
     authType: 'basic',
     email: '',
     apiToken: '',
-    searchPath: '/rest/api/3/search',
+    cookie: '',
+    jiraSessionId: '',
+    jiraXsrfToken: '',
+    searchPath: '/rest/api/2/search',
     projectKeys: [],
     jql: '',
   };
@@ -63,8 +66,8 @@ function blankQmetryConnection(): QmetryConnectionInput {
 interface TestResult { ok: boolean; count?: number; error?: string }
 
 function setDeployment(conn: JiraConnectionInput, deploymentType: 'cloud' | 'on-prem'): JiraConnectionInput {
-  if (deploymentType === 'cloud') return { ...conn, deploymentType, authType: 'basic', searchPath: '/rest/api/3/search' };
-  return { ...conn, deploymentType, authType: 'bearer', searchPath: '/rest/api/2/search' };
+  if (deploymentType === 'cloud') return { ...conn, deploymentType, authType: 'basic', searchPath: '/rest/api/2/search' };
+  return { ...conn, deploymentType, authType: 'basic', searchPath: '/rest/api/2/search' };
 }
 
 function withProject(conn: JiraConnectionInput, projectKey: string): JiraConnectionInput {
@@ -74,7 +77,7 @@ function withProject(conn: JiraConnectionInput, projectKey: string): JiraConnect
 
 function JiraConnectionCard({ conn, onChange, onRemove, projectOptions }: { conn: JiraConnectionInput; onChange: (next: JiraConnectionInput) => void; onRemove: () => void; projectOptions: string[] }) {
   const [testResult, setTestResult] = useState<TestResult | null>(null);
-  const deploymentType = conn.deploymentType || 'cloud';
+  const deploymentType = conn.deploymentType || 'on-prem';
   const isCloud = deploymentType === 'cloud';
   const selectedProject = conn.projectKeys?.[0] || '';
   const customProject = selectedProject && !projectOptions.includes(selectedProject) ? selectedProject : '';
@@ -86,7 +89,9 @@ function JiraConnectionCard({ conn, onChange, onRemove, projectOptions }: { conn
         <div className={labelClass}>JIRA deployment</div>
         <label className={checkLabelClass}><input type="checkbox" checked={isCloud} onChange={() => onChange(setDeployment(conn, 'cloud'))} />On-cloud JIRA</label>
         <label className={checkLabelClass}><input type="checkbox" checked={!isCloud} onChange={() => onChange(setDeployment(conn, 'on-prem'))} />On-premises JIRA</label>
-        <p className="text-[11px] text-qa-muted m-0 mt-2">{isCloud ? 'Cloud uses Jira REST API v3 with email + API token.' : 'On-premises uses Jira REST API v2 with bearer/token authentication by default.'}</p>
+        <p className="text-[11px] text-qa-muted m-0 mt-2">
+          {isCloud ? 'Cloud uses Jira REST API v2 with Authorization header.' : 'On-premises uses Jira REST API v2 with Authorization header and optional JSESSIONID/XSRF session values when SSO redirects API requests.'}
+        </p>
       </div>
       <div className="grid grid-cols-2 gap-2.5 mb-2.5">
         <div>
@@ -100,11 +105,29 @@ function JiraConnectionCard({ conn, onChange, onRemove, projectOptions }: { conn
         <Field label="Custom project key" placeholder="ABC" value={customProject} onChange={(e) => onChange(withProject(conn, e.target.value))} />
         <Field label="Connection name" placeholder={isCloud ? 'DLM Cloud' : 'DLM On-Prem'} value={conn.name} onChange={(e) => onChange({ ...conn, name: e.target.value })} />
         <Field label="Base URL" placeholder={isCloud ? 'https://company.atlassian.net' : 'https://jira.company.local'} value={conn.baseUrl} onChange={(e) => onChange({ ...conn, baseUrl: e.target.value })} />
-        <Field label={isCloud ? 'Email' : 'Username / service account'} value={conn.email} onChange={(e) => onChange({ ...conn, email: e.target.value, username: e.target.value })} />
-        <Field label={isCloud ? 'API token' : 'Bearer token / password'} type="text" value={conn.apiToken || ''} onChange={(e) => onChange({ ...conn, apiToken: e.target.value, credential: e.target.value })} />
-        <Field label="REST search path" value={conn.searchPath || (isCloud ? '/rest/api/3/search' : '/rest/api/2/search')} onChange={(e) => onChange({ ...conn, searchPath: e.target.value })} />
+        <Field label={isCloud ? 'Email / username' : 'Username / service account'} value={conn.email} onChange={(e) => onChange({ ...conn, email: e.target.value, username: e.target.value })} />
+        <Field label={isCloud ? 'Basic auth / API token' : 'Basic auth / password'} type="password" value={conn.apiToken || ''} onChange={(e) => onChange({ ...conn, apiToken: e.target.value, credential: e.target.value })} />
+        <Field label="REST search path" value={conn.searchPath || '/rest/api/2/search'} onChange={(e) => onChange({ ...conn, searchPath: e.target.value })} />
         <Field label="Application CI field (optional)" placeholder="customfield_12345" value={conn.applicationCiFieldId || ''} onChange={(e) => onChange({ ...conn, applicationCiFieldId: e.target.value })} />
       </div>
+
+      {!isCloud && (
+        <div className="border border-qa-border bg-white p-3 mb-2.5">
+          <div className={labelClass}>On-premises session cookies optional</div>
+          <p className="text-[11px] text-qa-muted m-0 mb-2">
+            Use these only if the API redirects to an HTML login/SSO page. The backend sends them as one header: JSESSIONID=value; atlassian.xsrf.token=value.
+          </p>
+          <div className="grid grid-cols-2 gap-2.5">
+            <Field label="JSESSIONID" type="password" placeholder="6B0D9467083D..." value={conn.jiraSessionId || ''} onChange={(e) => onChange({ ...conn, jiraSessionId: e.target.value })} />
+            <Field label="Atlassian XSRF token" type="password" placeholder="BRNK-BWG8-..." value={conn.jiraXsrfToken || ''} onChange={(e) => onChange({ ...conn, jiraXsrfToken: e.target.value })} />
+          </div>
+          <div className="mt-2.5">
+            <Field label="Full Cookie header alternative" type="password" placeholder="JSESSIONID=...; atlassian.xsrf.token=..." value={conn.cookie || ''} onChange={(e) => onChange({ ...conn, cookie: e.target.value })} />
+          </div>
+          <p className="text-[11px] text-qa-muted m-0 mt-2">If full Cookie header is entered, it will be used first. Otherwise JSESSIONID + XSRF token are combined.</p>
+        </div>
+      )}
+
       <label className={labelClass}>JQL override (auto-filled from project, optional)</label>
       <textarea className="w-full border border-qa-line bg-white px-2.5 py-1.5 text-[12.5px] font-mono-qa min-h-[62px]" placeholder="project = DLM AND issuetype in (Story, Bug) ORDER BY updated DESC" value={conn.jql || ''} onChange={(e) => onChange({ ...conn, jql: e.target.value })} />
       <div className="flex items-center gap-2 mt-2.5">
@@ -125,7 +148,7 @@ function QmetryConnectionCard({ conn, onChange, onRemove }: { conn: QmetryConnec
         <Field label="Connection name" value={conn.name} onChange={(e) => onChange({ ...conn, name: e.target.value })} />
         <Field label="Base URL" placeholder="https://jira.example.com" value={conn.baseUrl} onChange={(e) => onChange({ ...conn, baseUrl: e.target.value })} />
         <Field label="Email / username" value={conn.email} onChange={(e) => onChange({ ...conn, email: e.target.value })} />
-        <Field label="API token / password" type="text" value={conn.apiToken || ''} onChange={(e) => onChange({ ...conn, apiToken: e.target.value, credential: e.target.value })} />
+        <Field label="API token / password" type="password" value={conn.apiToken || ''} onChange={(e) => onChange({ ...conn, apiToken: e.target.value, credential: e.target.value })} />
         <Field label="Project key" placeholder="DLM" value={conn.projectKey} onChange={(e) => onChange({ ...conn, projectKey: e.target.value })} />
         <Field label="Project ID (optional)" placeholder="23000" value={conn.projectId || ''} onChange={(e) => onChange({ ...conn, projectId: e.target.value })} />
         <Field label="Cycle IDs (comma separated)" value={(conn.cycleIds || []).join(',')} onChange={(e) => onChange({ ...conn, cycleIds: e.target.value.split(',').map((s) => s.trim()).filter(Boolean) })} />
@@ -186,7 +209,7 @@ export function SettingsPage() {
     setReportBranding(reportBranding);
     setJiraConnections(jiraConnections);
     setQmetryConnections(qmetryConnections);
-    setSavedMsg('Saved in this browser. The selected LLM key, provider/model, report branding, and project-specific connection settings will be used on the next Generate/Test call.');
+    setSavedMsg('Saved in this browser. JIRA session values are stored locally and sent only with your API requests. No .env file is required for normal UI usage.');
     queryClient.invalidateQueries({ queryKey: ['integrations'] });
     queryClient.invalidateQueries({ queryKey: ['cycles-folders'] });
     queryClient.invalidateQueries({ queryKey: ['dashboard'] });
@@ -204,24 +227,12 @@ export function SettingsPage() {
   function handleLogoFile(event: React.ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     if (!file) return;
-    if (!file.type.startsWith('image/')) {
-      setLogoUploadMsg('Please select a PNG, JPG, SVG, or WebP image file.');
-      event.target.value = '';
-      return;
-    }
-    if (file.size > MAX_LOGO_BYTES) {
-      setLogoUploadMsg('Logo file is too large. Please use an optimized image under 1.5 MB.');
-      event.target.value = '';
-      return;
-    }
+    if (!file.type.startsWith('image/')) { setLogoUploadMsg('Please select a PNG, JPG, SVG, or WebP image file.'); event.target.value = ''; return; }
+    if (file.size > MAX_LOGO_BYTES) { setLogoUploadMsg('Logo file is too large. Please use an optimized image under 1.5 MB.'); event.target.value = ''; return; }
     const reader = new FileReader();
     reader.onload = () => {
       const dataUrl = String(reader.result || '');
-      setReportBrandingState({
-        ...reportBranding,
-        logoUrl: dataUrl,
-        logoAlt: reportBranding.logoAlt || file.name.replace(/\.[^.]+$/, ''),
-      });
+      setReportBrandingState({ ...reportBranding, logoUrl: dataUrl, logoAlt: reportBranding.logoAlt || file.name.replace(/\.[^.]+$/, '') });
       setLogoUploadMsg(`Selected ${file.name}. Click Save branding to keep it.`);
     };
     reader.onerror = () => setLogoUploadMsg('Could not read the selected logo file. Please try another image.');
@@ -234,11 +245,8 @@ export function SettingsPage() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-[22px]">
         <QaSection title="Global LLM Provider">
           <p className="text-[13px] text-qa-muted m-0 mb-3">Select the LLM once here. AI Report will use this saved provider/model/key for all generations.</p>
-          <div className="grid grid-cols-2 gap-2.5 mb-2.5">
-            <div><label className={labelClass}>Provider</label><select className={fieldClass} value={llmProvider} onChange={(e) => changeLlmProvider(e.target.value as LlmProvider)}>{(Object.keys(LLM_PROVIDER_LABELS) as LlmProvider[]).map((p) => <option key={p} value={p}>{LLM_PROVIDER_LABELS[p]}</option>)}</select></div>
-            <div><label className={labelClass}>Model</label><select className={fieldClass} value={llmModel} onChange={(e) => setLlmModel(e.target.value)}>{LLM_MODELS[llmProvider].map((m) => <option key={m} value={m}>{m}</option>)}</select></div>
-          </div>
-          <Field label={`${LLM_PROVIDER_LABELS[llmProvider]} API key`} type="text" placeholder={LLM_KEY_PLACEHOLDER[llmProvider]} value={llmApiKey} onChange={(e) => setLlmApiKey(e.target.value)} />
+          <div className="grid grid-cols-2 gap-2.5 mb-2.5"><div><label className={labelClass}>Provider</label><select className={fieldClass} value={llmProvider} onChange={(e) => changeLlmProvider(e.target.value as LlmProvider)}>{(Object.keys(LLM_PROVIDER_LABELS) as LlmProvider[]).map((p) => <option key={p} value={p}>{LLM_PROVIDER_LABELS[p]}</option>)}</select></div><div><label className={labelClass}>Model</label><select className={fieldClass} value={llmModel} onChange={(e) => setLlmModel(e.target.value)}>{LLM_MODELS[llmProvider].map((m) => <option key={m} value={m}>{m}</option>)}</select></div></div>
+          <Field label={`${LLM_PROVIDER_LABELS[llmProvider]} API key`} type="password" placeholder={LLM_KEY_PLACEHOLDER[llmProvider]} value={llmApiKey} onChange={(e) => setLlmApiKey(e.target.value)} />
           <p className="text-[11.5px] text-qa-muted m-0 mt-2">This key is saved in this browser only and sent only when you test/generate. No LLM key is required in .env for normal UI usage.</p>
           {llmProvider === 'openai-compatible' && <div className="mt-2.5"><Field label="Custom base URL" placeholder="https://provider.example.com/v1" value={llmBaseUrl} onChange={(e) => setLlmBaseUrl(e.target.value)} /></div>}
           <div className="flex items-center gap-2 mt-3"><button type="button" onClick={saveAll} className="font-mono-qa text-xs font-semibold tracking-wider uppercase px-4 py-2.5 border-none cursor-pointer text-white" style={{ background: QA.accent }}>Save</button><button type="button" onClick={() => { saveAll(); llmTest.mutate(); }} disabled={llmTest.isPending} className="font-mono-qa text-xs font-semibold tracking-wider uppercase px-4 py-2.5 border-none cursor-pointer text-white disabled:opacity-50" style={{ background: QA.accent }}>{llmTest.isPending ? 'Testing…' : 'Save & Test LLM'}</button></div>
@@ -247,24 +255,8 @@ export function SettingsPage() {
 
         <QaSection title="Report Branding">
           <p className="text-[13px] text-qa-muted m-0 mb-3">Upload the logo used in generated PDF reports. You can also paste an internal HTTPS URL or public asset path if needed.</p>
-          <div className="mb-3 border border-qa-border bg-[#faf8f2] p-3">
-            <label className={labelClass}>Browse logo file</label>
-            <div className="flex flex-wrap items-center gap-2">
-              <label className="inline-flex items-center justify-center font-mono-qa text-xs font-semibold tracking-wider uppercase px-4 py-2.5 border border-qa-border bg-white cursor-pointer">
-                Browse Logo
-                <input type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" className="hidden" onChange={handleLogoFile} />
-              </label>
-              {reportBranding.logoUrl && <button type="button" onClick={() => { setReportBrandingState({ ...reportBranding, logoUrl: '' }); setLogoUploadMsg('Logo removed. Click Save branding to keep this change.'); }} className="font-mono-qa text-xs font-semibold tracking-wider uppercase px-4 py-2.5 border border-qa-border bg-white cursor-pointer">Remove Logo</button>}
-            </div>
-            <p className="text-[11.5px] text-qa-muted m-0 mt-2">Allowed: PNG, JPG, SVG, WebP. Recommended size: under 1.5 MB.</p>
-            {logoUploadMsg && <div className="mt-2 text-[12px] text-qa-muted">{logoUploadMsg}</div>}
-          </div>
-          <div className="grid grid-cols-2 gap-2.5 mb-2.5">
-            <Field label="Logo URL / uploaded image" placeholder="Browse file or paste URL" value={reportBranding.logoUrl?.startsWith('data:image/') ? 'Uploaded logo saved in browser' : reportBranding.logoUrl || ''} onChange={(e) => setReportBrandingState({ ...reportBranding, logoUrl: e.target.value })} />
-            <Field label="Logo alt text" placeholder="Emirates" value={reportBranding.logoAlt || ''} onChange={(e) => setReportBrandingState({ ...reportBranding, logoAlt: e.target.value })} />
-            <Field label="Report title" placeholder="QA Sprint Report" value={reportBranding.title || ''} onChange={(e) => setReportBrandingState({ ...reportBranding, title: e.target.value })} />
-            <Field label="Report subtitle prefix" placeholder="Global DMC Integration" value={reportBranding.subtitle || ''} onChange={(e) => setReportBrandingState({ ...reportBranding, subtitle: e.target.value })} />
-          </div>
+          <div className="mb-3 border border-qa-border bg-[#faf8f2] p-3"><label className={labelClass}>Browse logo file</label><div className="flex flex-wrap items-center gap-2"><label className="inline-flex items-center justify-center font-mono-qa text-xs font-semibold tracking-wider uppercase px-4 py-2.5 border border-qa-border bg-white cursor-pointer">Browse Logo<input type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" className="hidden" onChange={handleLogoFile} /></label>{reportBranding.logoUrl && <button type="button" onClick={() => { setReportBrandingState({ ...reportBranding, logoUrl: '' }); setLogoUploadMsg('Logo removed. Click Save branding to keep this change.'); }} className="font-mono-qa text-xs font-semibold tracking-wider uppercase px-4 py-2.5 border border-qa-border bg-white cursor-pointer">Remove Logo</button>}</div><p className="text-[11.5px] text-qa-muted m-0 mt-2">Allowed: PNG, JPG, SVG, WebP. Recommended size: under 1.5 MB.</p>{logoUploadMsg && <div className="mt-2 text-[12px] text-qa-muted">{logoUploadMsg}</div>}</div>
+          <div className="grid grid-cols-2 gap-2.5 mb-2.5"><Field label="Logo URL / uploaded image" placeholder="Browse file or paste URL" value={reportBranding.logoUrl?.startsWith('data:image/') ? 'Uploaded logo saved in browser' : reportBranding.logoUrl || ''} onChange={(e) => setReportBrandingState({ ...reportBranding, logoUrl: e.target.value })} /><Field label="Logo alt text" placeholder="Emirates" value={reportBranding.logoAlt || ''} onChange={(e) => setReportBrandingState({ ...reportBranding, logoAlt: e.target.value })} /><Field label="Report title" placeholder="QA Sprint Report" value={reportBranding.title || ''} onChange={(e) => setReportBrandingState({ ...reportBranding, title: e.target.value })} /><Field label="Report subtitle prefix" placeholder="Global DMC Integration" value={reportBranding.subtitle || ''} onChange={(e) => setReportBrandingState({ ...reportBranding, subtitle: e.target.value })} /></div>
           {reportBranding.logoUrl && <div className="mt-3 border border-qa-border bg-[#faf8f2] p-3"><div className={labelClass}>Logo preview</div><img src={reportBranding.logoUrl} alt={reportBranding.logoAlt || 'Report logo'} className="max-h-16 max-w-[220px] object-contain bg-white p-2 border border-qa-border" /></div>}
           <button type="button" onClick={saveAll} className="mt-3 font-mono-qa text-xs font-semibold tracking-wider uppercase px-4 py-2.5 border-none cursor-pointer text-white" style={{ background: QA.accent }}>Save branding</button>
         </QaSection>
@@ -276,7 +268,7 @@ export function SettingsPage() {
           {savedMsg && <div className="mt-3 p-3 text-[13px] border border-[#cfe0d4] bg-[#eef4ef] text-[#2f6a48]">{savedMsg}</div>}
         </QaSection>
 
-        <QaSection title="JIRA connections" className="lg:col-span-2"><p className="text-[13px] text-qa-muted m-0 mb-3">Add one JIRA connection per project. Select the project from the dropdown so DLM, ABC, and other project data stay separated in the main dashboard filter.</p>{jiraConnections.map((conn, idx) => <JiraConnectionCard key={conn.id} conn={conn} projectOptions={projectOptions} onChange={(next) => setJiraConnectionsState(jiraConnections.map((c, i) => (i === idx ? next : c)))} onRemove={() => setJiraConnectionsState(jiraConnections.filter((_, i) => i !== idx))} />)}<button type="button" onClick={() => setJiraConnectionsState([...jiraConnections, blankJiraConnection()])} className="font-mono-qa text-xs font-semibold tracking-wider uppercase px-4 py-2.5 border border-qa-border bg-white cursor-pointer">+ Add JIRA connection</button></QaSection>
+        <QaSection title="JIRA connections" className="lg:col-span-2"><p className="text-[13px] text-qa-muted m-0 mb-3">Add one JIRA connection per project. For on-prem JIRA, enter Basic Authorization and optional JSESSIONID/XSRF values directly here. No .env file is required.</p>{jiraConnections.map((conn, idx) => <JiraConnectionCard key={conn.id} conn={conn} projectOptions={projectOptions} onChange={(next) => setJiraConnectionsState(jiraConnections.map((c, i) => (i === idx ? next : c)))} onRemove={() => setJiraConnectionsState(jiraConnections.filter((_, i) => i !== idx))} />)}<button type="button" onClick={() => setJiraConnectionsState([...jiraConnections, blankJiraConnection()])} className="font-mono-qa text-xs font-semibold tracking-wider uppercase px-4 py-2.5 border border-qa-border bg-white cursor-pointer">+ Add JIRA connection</button></QaSection>
         <QaSection title="QMetry connections" className="lg:col-span-2"><p className="text-[13px] text-qa-muted m-0 mb-3">Add QMetry connections to fetch test cycles/test case executions. Cycle IDs are optional if Project ID can list cycles.</p>{qmetryConnections.map((conn, idx) => <QmetryConnectionCard key={conn.id} conn={conn} onChange={(next) => setQmetryConnectionsState(qmetryConnections.map((c, i) => (i === idx ? next : c)))} onRemove={() => setQmetryConnectionsState(qmetryConnections.filter((_, i) => i !== idx))} />)}<button type="button" onClick={() => setQmetryConnectionsState([...qmetryConnections, blankQmetryConnection()])} className="font-mono-qa text-xs font-semibold tracking-wider uppercase px-4 py-2.5 border border-qa-border bg-white cursor-pointer">+ Add QMetry connection</button></QaSection>
         <QaSection title="Cycle / Folder list" className="lg:col-span-2"><p className="text-[13px] text-qa-muted m-0 mb-3">Used for filtering/report selection. Live QMetry cycles are shown when available; otherwise imported cycle names are listed.</p><div className="text-[12px] text-qa-muted mb-2">Source: <span className="font-mono-qa text-qa-ink">{cycles?.source || 'not loaded'}</span>{cycles?.connection ? ` · ${cycles.connection}` : ''}</div><div className="grid grid-cols-1 md:grid-cols-2 gap-2 max-h-72 overflow-y-auto">{(cycles?.cycles || []).map((c) => <div key={c.id} className="border border-qa-border bg-[#faf8f2] px-3 py-2 font-mono-qa text-[11px]"><span className="text-qa-muted-light">{c.id}</span> · {c.name}</div>)}{!cycles?.cycles?.length && <div className="text-[13px] text-qa-muted">No cycles found yet. Configure QMetry or generate a report from imported files.</div>}</div></QaSection>
         <QaSection title="Folder paths"><ul className="text-[13px] text-qa-muted m-0 p-0 list-none space-y-2 font-mono-qa"><li><span className="text-qa-ink">input/</span> — staged Excel exports</li><li><span className="text-qa-ink">output/</span> — dashboard-data.json, report.md</li><li><span className="text-qa-ink">config/</span> — fallback integrations.json</li></ul></QaSection>
