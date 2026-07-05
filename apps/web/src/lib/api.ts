@@ -19,8 +19,16 @@ const JIRA_CONNECTIONS_STORAGE = 'qa_dashboard_jira_connections';
 const QMETRY_CONNECTIONS_STORAGE = 'qa_dashboard_qmetry_connections';
 const LLM_SELECTION_STORAGE = 'qa_dashboard_llm_selection';
 const ACTIVE_PROJECT_STORAGE = 'qa_dashboard_active_project';
+const REPORT_BRANDING_STORAGE = 'qa_dashboard_report_branding';
 
 type RequestMeta = { requestId: string; startedAt: number };
+
+export interface ReportBranding {
+  logoUrl?: string;
+  logoAlt?: string;
+  title?: string;
+  subtitle?: string;
+}
 
 export const LLM_MODELS: Record<LlmProvider, string[]> = {
   anthropic: ['claude-haiku-4-5-20251001', 'claude-sonnet-4-6'],
@@ -80,6 +88,24 @@ function writeStoredObject<T>(key: string, value: T): void {
   } catch {
     /* storage unavailable */
   }
+}
+
+export function getReportBranding(): ReportBranding {
+  return readStoredObject<ReportBranding>(REPORT_BRANDING_STORAGE, {
+    logoUrl: '',
+    logoAlt: 'Report logo',
+    title: 'QA Sprint Report',
+    subtitle: '',
+  });
+}
+
+export function setReportBranding(branding: ReportBranding): void {
+  writeStoredObject(REPORT_BRANDING_STORAGE, {
+    logoUrl: branding.logoUrl?.trim() || '',
+    logoAlt: branding.logoAlt?.trim() || 'Report logo',
+    title: branding.title?.trim() || 'QA Sprint Report',
+    subtitle: branding.subtitle?.trim() || '',
+  });
 }
 
 export function getActiveProject(): string {
@@ -179,6 +205,7 @@ api.interceptors.request.use((config) => {
     url: `${config.baseURL || ''}${config.url || ''}`,
     activeProject: getActiveProject(),
     hasAnthropicKey: Boolean(key),
+    hasReportLogo: Boolean(getReportBranding().logoUrl),
     jiraConnections: jira.length,
     qmetryConnections: qmetry.length,
     params: config.params,
@@ -322,9 +349,10 @@ export const batchApi = {
 
   getCycleFolders: () => api.get('/cycles/folders', { timeout: 35_000 }).then((r) => r.data as CycleFoldersResult),
 
-  downloadReportPdf: async ({ startDate, endDate, reportType, kpiStyle, project }: { startDate: string; endDate: string; reportType: ReportType; kpiStyle: string; project?: string }) => {
+  downloadReportPdf: async ({ startDate, endDate, reportType, kpiStyle, project, branding }: { startDate: string; endDate: string; reportType: ReportType; kpiStyle: string; project?: string; branding?: ReportBranding }) => {
     try {
-      const response = await api.post('/report/pdf', { startDate, endDate, reportType, kpiStyle, project }, { responseType: 'blob', timeout: 150_000 });
+      const selectedBranding = branding || getReportBranding();
+      const response = await api.post('/report/pdf', { startDate, endDate, reportType, kpiStyle, project, branding: selectedBranding }, { responseType: 'blob', timeout: 150_000 });
       const blob = response.data as Blob;
       if (blob.type === 'application/json') throw new Error(await blobErrorMessage(blob, 'PDF export failed'));
       const url = URL.createObjectURL(blob);
