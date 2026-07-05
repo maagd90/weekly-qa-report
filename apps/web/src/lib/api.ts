@@ -49,19 +49,26 @@ function nextRequestId(): string {
   return `web-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
+function shouldRedactField(key: string): boolean {
+  const lower = key.toLowerCase();
+  return lower.includes('key')
+    || lower.includes('token')
+    || lower.includes('credential')
+    || lower.includes('password')
+    || lower.includes('cookie')
+    || lower.includes('session')
+    || lower.includes('xsrf')
+    || lower.includes('jsession');
+}
+
 function safeJson(value: unknown): unknown {
   if (!value || typeof value !== 'object') return value;
   if (Array.isArray(value)) return value.map(safeJson);
   const copy: Record<string, unknown> = {};
   for (const [key, raw] of Object.entries(value as Record<string, unknown>)) {
-    const lower = key.toLowerCase();
-    if (typeof raw === 'string' && raw.startsWith('data:image/')) {
-      copy[key] = '***image-data-url-redacted***';
-    } else if (lower.includes('key') || lower.includes('token') || lower.includes('credential') || lower.includes('password')) {
-      copy[key] = raw ? '***redacted***' : raw;
-    } else {
-      copy[key] = safeJson(raw);
-    }
+    if (typeof raw === 'string' && raw.startsWith('data:image/')) copy[key] = '***image-data-url-redacted***';
+    else if (shouldRedactField(key)) copy[key] = raw ? '***redacted***' : raw;
+    else copy[key] = safeJson(raw);
   }
   return copy;
 }
@@ -71,9 +78,7 @@ function logApi(event: string, data: Record<string, unknown>): void {
 }
 
 function normalizeProvider(value: unknown): LlmProvider {
-  return value === 'openai' || value === 'gemini' || value === 'openai-compatible' || value === 'anthropic'
-    ? value
-    : 'anthropic';
+  return value === 'openai' || value === 'gemini' || value === 'openai-compatible' || value === 'anthropic' ? value : 'anthropic';
 }
 
 function readStoredObject<T>(key: string, fallback: T): T {
@@ -94,12 +99,7 @@ function writeStoredObject<T>(key: string, value: T): void {
 }
 
 export function getReportBranding(): ReportBranding {
-  return readStoredObject<ReportBranding>(REPORT_BRANDING_STORAGE, {
-    logoUrl: '',
-    logoAlt: 'Report logo',
-    title: 'QA Sprint Report',
-    subtitle: '',
-  });
+  return readStoredObject<ReportBranding>(REPORT_BRANDING_STORAGE, { logoUrl: '', logoAlt: 'Report logo', title: 'QA Sprint Report', subtitle: '' });
 }
 
 export function setReportBranding(branding: ReportBranding): void {
@@ -112,30 +112,18 @@ export function setReportBranding(branding: ReportBranding): void {
 }
 
 export function getActiveProject(): string {
-  try {
-    return window.localStorage.getItem(ACTIVE_PROJECT_STORAGE) || 'all';
-  } catch {
-    return 'all';
-  }
+  try { return window.localStorage.getItem(ACTIVE_PROJECT_STORAGE) || 'all'; } catch { return 'all'; }
 }
 
 export function setActiveProject(project: string): void {
-  try {
-    window.localStorage.setItem(ACTIVE_PROJECT_STORAGE, project || 'all');
-  } catch {
-    /* storage unavailable */
-  }
+  try { window.localStorage.setItem(ACTIVE_PROJECT_STORAGE, project || 'all'); } catch { /* storage unavailable */ }
 }
 
 export function getUserLlmKey(provider: LlmProvider): string {
   const keys = readStoredObject<Record<string, string>>(LLM_KEYS_STORAGE, {});
   if (keys[provider]) return keys[provider];
   if (provider === 'anthropic') {
-    try {
-      return window.localStorage.getItem(ANTHROPIC_KEY_STORAGE) || '';
-    } catch {
-      return '';
-    }
+    try { return window.localStorage.getItem(ANTHROPIC_KEY_STORAGE) || ''; } catch { return ''; }
   }
   return '';
 }
@@ -150,64 +138,35 @@ export function setUserLlmKey(provider: LlmProvider, value: string): void {
     try {
       if (clean) window.localStorage.setItem(ANTHROPIC_KEY_STORAGE, clean);
       else window.localStorage.removeItem(ANTHROPIC_KEY_STORAGE);
-    } catch {
-      /* storage unavailable */
-    }
+    } catch { /* storage unavailable */ }
   }
 }
 
 export function getUserLlmSelection(): LlmSelectionInput {
   const stored = readStoredObject<Partial<LlmSelectionInput>>(LLM_SELECTION_STORAGE, {});
   const provider = normalizeProvider(stored.provider);
-  const model = stored.model && LLM_MODELS[provider].includes(stored.model)
-    ? stored.model
-    : LLM_MODELS[provider][0];
+  const model = stored.model && LLM_MODELS[provider].includes(stored.model) ? stored.model : LLM_MODELS[provider][0];
   const apiKey = getUserLlmKey(provider);
-  return {
-    provider,
-    model,
-    baseUrl: stored.baseUrl || undefined,
-    apiKey: apiKey || undefined,
-  };
+  return { provider, model, baseUrl: stored.baseUrl || undefined, apiKey: apiKey || undefined };
 }
 
 export function setUserLlmSelection(selection: LlmSelectionInput): void {
   const provider = normalizeProvider(selection.provider);
-  const model = selection.model && LLM_MODELS[provider].includes(selection.model)
-    ? selection.model
-    : LLM_MODELS[provider][0];
-  writeStoredObject(LLM_SELECTION_STORAGE, {
-    provider,
-    model,
-    baseUrl: selection.baseUrl || '',
-  });
+  const model = selection.model && LLM_MODELS[provider].includes(selection.model) ? selection.model : LLM_MODELS[provider][0];
+  writeStoredObject(LLM_SELECTION_STORAGE, { provider, model, baseUrl: selection.baseUrl || '' });
   setUserLlmKey(provider, selection.apiKey || '');
 }
 
-export function getUserAnthropicKey(): string {
-  return getUserLlmKey('anthropic');
-}
+export function getUserAnthropicKey(): string { return getUserLlmKey('anthropic'); }
+export function setUserAnthropicKey(key: string): void { setUserLlmKey('anthropic', key); }
 
-export function setUserAnthropicKey(key: string): void {
-  setUserLlmKey('anthropic', key);
-}
-
-function readConnections<T>(key: string): T[] {
-  return readStoredObject<T[]>(key, []);
-}
-
-function writeConnections<T>(key: string, value: T[]): void {
-  writeStoredObject(key, value);
-}
-
+function readConnections<T>(key: string): T[] { return readStoredObject<T[]>(key, []); }
+function writeConnections<T>(key: string, value: T[]): void { writeStoredObject(key, value); }
 export const getJiraConnections = (): JiraConnectionInput[] => readConnections(JIRA_CONNECTIONS_STORAGE);
 export const setJiraConnections = (conns: JiraConnectionInput[]): void => writeConnections(JIRA_CONNECTIONS_STORAGE, conns);
 export const getQmetryConnections = (): QmetryConnectionInput[] => readConnections(QMETRY_CONNECTIONS_STORAGE);
 export const setQmetryConnections = (conns: QmetryConnectionInput[]): void => writeConnections(QMETRY_CONNECTIONS_STORAGE, conns);
-
-export function newConnectionId(): string {
-  return `c${Date.now()}${Math.random().toString(36).slice(2, 8)}`;
-}
+export function newConnectionId(): string { return `c${Date.now()}${Math.random().toString(36).slice(2, 8)}`; }
 
 api.interceptors.request.use((config) => {
   const meta: RequestMeta = { requestId: nextRequestId(), startedAt: Date.now() };
@@ -236,7 +195,7 @@ api.interceptors.request.use((config) => {
     hasReportLogo: Boolean(getReportBranding().logoUrl),
     jiraConnections: jira.length,
     qmetryConnections: qmetry.length,
-    params: config.params,
+    params: safeJson(config.params),
     body: safeJson(config.data),
   });
   return config;
@@ -292,9 +251,7 @@ async function blobErrorMessage(blob: Blob, fallback: string): Promise<string> {
     if (!text) return fallback;
     const payload = JSON.parse(text) as { error?: string; message?: string; warnings?: string[] };
     return payload.error || payload.message || payload.warnings?.join('; ') || text.slice(0, 500);
-  } catch {
-    return fallback;
-  }
+  } catch { return fallback; }
 }
 
 export { apiErrorMessage };
@@ -303,80 +260,34 @@ export type { DashboardPayload, FilterParams, ReportType, GenerateParams, Genera
 export interface IntegrationsStatus {
   jira: { enabled: boolean; baseUrl: string; configured: boolean; profiles?: unknown[] };
   qmetry: { enabled: boolean; baseUrl: string; configured: boolean; cycleIds: number };
-  config: {
-    jira: { enabled: boolean; projectKeys: string[]; jql: string };
-    qmetry: { enabled: boolean; projectKey: string; cycleIds: string[] };
-  };
-  userConnections?: {
-    jira: { id: string; name: string; baseUrl: string }[];
-    qmetry: { id: string; name: string; baseUrl: string }[];
-  };
+  config: { jira: { enabled: boolean; projectKeys: string[]; jql: string }; qmetry: { enabled: boolean; projectKey: string; cycleIds: string[] } };
+  userConnections?: { jira: { id: string; name: string; baseUrl: string }[]; qmetry: { id: string; name: string; baseUrl: string }[] };
 }
 
-export interface CycleFolder {
-  id: string;
-  name: string;
-}
-
-export interface CycleFoldersResult {
-  source: 'qmetry-live' | 'imported';
-  connection?: string;
-  cycles: CycleFolder[];
-}
+export interface CycleFolder { id: string; name: string; }
+export interface CycleFoldersResult { source: 'qmetry-live' | 'imported'; connection?: string; cycles: CycleFolder[]; }
 
 export const batchApi = {
   getStatus: () => api.get('/status').then((r) => r.data as { apiKeyConfigured: boolean; jiraConfigured: boolean; llmProvidersConfigured?: Record<string, boolean> }),
-
   testLlm: (selection: LlmSelectionInput) => api.post('/llm/test', selection, { timeout: 35_000 })
     .then((r) => r.data as { ok: boolean; provider?: LlmProvider; providerLabel?: string; model?: string; route?: 'direct' | 'proxy'; elapsedMs?: number; error?: string; logs?: string[] })
     .catch((err) => { throw new Error(apiErrorMessage(err, 'LLM connectivity test failed')); }),
-
   testAnthropic: () => api.get('/anthropic/test', { timeout: 35_000 })
     .then((r) => r.data as { ok: boolean; model?: string; route?: 'direct' | 'proxy'; elapsedMs?: number; error?: string; logs?: string[] })
     .catch((err) => { throw new Error(apiErrorMessage(err, 'Anthropic connectivity test failed')); }),
-
-  generate: (params: GenerateParams) => api.post<GenerateResult>('/generate', params, { timeout: 300_000 })
-    .then((r) => r.data)
-    .catch((err) => { throw new Error(apiErrorMessage(err, 'Report generation failed')); }),
-
+  generate: (params: GenerateParams) => api.post<GenerateResult>('/generate', params, { timeout: 300_000 }).then((r) => r.data).catch((err) => { throw new Error(apiErrorMessage(err, 'Report generation failed')); }),
   getDashboard: (filter?: Partial<FilterParams>) => {
-    const params = filter ? {
-      startDate: filter.startDate,
-      endDate: filter.endDate,
-      search: filter.search,
-      result: filter.result,
-      project: filter.project,
-    } : undefined;
-    return api.get('/dashboard', { params }).then((r) => r.data as DashboardPayload).catch((err) => {
-      if (axios.isAxiosError(err) && err.response?.status === 404) return null;
-      throw err;
-    });
+    const params = filter ? { startDate: filter.startDate, endDate: filter.endDate, search: filter.search, result: filter.result, project: filter.project } : undefined;
+    return api.get('/dashboard', { params }).then((r) => r.data as DashboardPayload).catch((err) => { if (axios.isAxiosError(err) && err.response?.status === 404) return null; throw err; });
   },
-
-  getReport: () => api.get('/report').then((r) => r.data).catch((err) => {
-    if (axios.isAxiosError(err) && err.response?.status === 404) return null;
-    throw err;
-  }),
-
-  upload: (file: File) => {
-    const form = new FormData();
-    form.append('file', file);
-    return api.post('/upload', form, { headers: { 'Content-Type': 'multipart/form-data' } }).then((r) => r.data);
-  },
-
+  getReport: () => api.get('/report').then((r) => r.data).catch((err) => { if (axios.isAxiosError(err) && err.response?.status === 404) return null; throw err; }),
+  upload: (file: File) => { const form = new FormData(); form.append('file', file); return api.post('/upload', form, { headers: { 'Content-Type': 'multipart/form-data' } }).then((r) => r.data); },
   listInputFiles: () => api.get('/input/files').then((r) => r.data as { name: string; size: number; modifiedAt: string }[]),
   deleteInputFile: (filename: string) => api.delete(`/input/${encodeURIComponent(filename)}`).then((r) => r.data),
-
   getIntegrations: () => api.get('/integrations').then((r) => r.data as IntegrationsStatus),
   testIntegrations: () => api.post('/integrations/test').then((r) => r.data),
-
-  testConnection: (type: 'jira' | 'qmetry', connection: JiraConnectionInput | QmetryConnectionInput) =>
-    api.post('/integrations/test-connection', { type, connection }, { timeout: 35_000 })
-      .then((r) => r.data as { ok: boolean; count?: number; error?: string })
-      .catch((err) => ({ ok: false, error: apiErrorMessage(err, 'Connection test failed') })),
-
+  testConnection: (type: 'jira' | 'qmetry', connection: JiraConnectionInput | QmetryConnectionInput) => api.post('/integrations/test-connection', { type, connection }, { timeout: 35_000 }).then((r) => r.data as { ok: boolean; count?: number; error?: string }).catch((err) => ({ ok: false, error: apiErrorMessage(err, 'Connection test failed') })),
   getCycleFolders: () => api.get('/cycles/folders', { timeout: 35_000 }).then((r) => r.data as CycleFoldersResult),
-
   downloadReportPdf: async ({ startDate, endDate, reportType, kpiStyle, project, branding }: { startDate: string; endDate: string; reportType: ReportType; kpiStyle: string; project?: string; branding?: ReportBranding }) => {
     try {
       const selectedBranding = branding || getReportBranding();
@@ -393,9 +304,7 @@ export const batchApi = {
       link.remove();
       URL.revokeObjectURL(url);
     } catch (err) {
-      if (axios.isAxiosError(err) && err.response?.data instanceof Blob) {
-        throw new Error(await blobErrorMessage(err.response.data, 'PDF export failed'));
-      }
+      if (axios.isAxiosError(err) && err.response?.data instanceof Blob) throw new Error(await blobErrorMessage(err.response.data, 'PDF export failed'));
       throw new Error(apiErrorMessage(err, 'PDF export failed'));
     }
   },
