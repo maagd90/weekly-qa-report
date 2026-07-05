@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import React from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import type { JiraConnectionInput, QmetryConnectionInput } from 'qa-dashboard-batch';
-import type { LlmProvider, LlmSelectionInput } from '../lib/api';
+import type { LlmProvider, LlmSelectionInput, ReportBranding } from '../lib/api';
 import {
   batchApi,
   getJiraConnections,
@@ -12,6 +12,8 @@ import {
   newConnectionId,
   getUserLlmSelection,
   setUserLlmSelection,
+  getReportBranding,
+  setReportBranding,
   LLM_MODELS,
   LLM_PROVIDER_LABELS,
 } from '../lib/api';
@@ -232,9 +234,11 @@ function QmetryConnectionCard({
 export function SettingsPage() {
   const queryClient = useQueryClient();
   const initialLlm = getUserLlmSelection();
+  const initialBranding = getReportBranding();
   const [llmProvider, setLlmProvider] = useState<LlmProvider>((initialLlm.provider || 'anthropic') as LlmProvider);
   const [llmModel, setLlmModel] = useState(initialLlm.model || LLM_MODELS[(initialLlm.provider || 'anthropic') as LlmProvider][0]);
   const [llmBaseUrl, setLlmBaseUrl] = useState(initialLlm.baseUrl || '');
+  const [reportBranding, setReportBrandingState] = useState<ReportBranding>(initialBranding);
   const [llmTestMsg, setLlmTestMsg] = useState<string | null>(null);
   const [jiraConnections, setJiraConnectionsState] = useState<JiraConnectionInput[]>(getJiraConnections());
   const [qmetryConnections, setQmetryConnectionsState] = useState<QmetryConnectionInput[]>(getQmetryConnections());
@@ -291,9 +295,10 @@ export function SettingsPage() {
 
   function saveAll() {
     setUserLlmSelection(currentLlmSelection());
+    setReportBranding(reportBranding);
     setJiraConnections(jiraConnections);
     setQmetryConnections(qmetryConnections);
-    setSavedMsg('Saved in this browser. The selected LLM and project-specific connection settings will be used on the next Generate/Test call.');
+    setSavedMsg('Saved in this browser. The selected LLM, report branding, and project-specific connection settings will be used on the next Generate/Test call.');
     queryClient.invalidateQueries({ queryKey: ['integrations'] });
     queryClient.invalidateQueries({ queryKey: ['cycles-folders'] });
     queryClient.invalidateQueries({ queryKey: ['dashboard'] });
@@ -310,7 +315,7 @@ export function SettingsPage() {
   return (
     <QaPageShell
       title="Settings"
-      intro="Configure the global LLM provider and your project-specific JIRA/QMetry integrations. Select a project in the dashboard filter to view only that project's live or uploaded data."
+      intro="Configure the global LLM provider, report branding, and your project-specific JIRA/QMetry integrations. Select a project in the dashboard filter to view only that project's live or uploaded data."
     >
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-[22px]">
         <QaSection title="Global LLM Provider">
@@ -341,6 +346,25 @@ export function SettingsPage() {
             <button type="button" onClick={() => { saveAll(); llmTest.mutate(); }} disabled={llmTest.isPending} className="font-mono-qa text-xs font-semibold tracking-wider uppercase px-4 py-2.5 border-none cursor-pointer text-white disabled:opacity-50" style={{ background: QA.accent }}>{llmTest.isPending ? 'Testing…' : 'Save & Test LLM'}</button>
           </div>
           {llmTestMsg && <div className="mt-3 p-3 text-[13px] border border-qa-border bg-[#faf8f2] text-qa-ink">{llmTestMsg}</div>}
+        </QaSection>
+
+        <QaSection title="Report Branding">
+          <p className="text-[13px] text-qa-muted m-0 mb-3">
+            Configure the logo used in generated PDF reports. Use an internal HTTPS URL or a public asset path such as <span className="font-mono-qa">/assets/emirates-logo.png</span>.
+          </p>
+          <div className="grid grid-cols-2 gap-2.5 mb-2.5">
+            <Field label="Logo URL / asset path" placeholder="/assets/emirates-logo.png" value={reportBranding.logoUrl || ''} onChange={(e) => setReportBrandingState({ ...reportBranding, logoUrl: e.target.value })} />
+            <Field label="Logo alt text" placeholder="Emirates" value={reportBranding.logoAlt || ''} onChange={(e) => setReportBrandingState({ ...reportBranding, logoAlt: e.target.value })} />
+            <Field label="Report title" placeholder="QA Sprint Report" value={reportBranding.title || ''} onChange={(e) => setReportBrandingState({ ...reportBranding, title: e.target.value })} />
+            <Field label="Report subtitle prefix" placeholder="Global DMC Integration" value={reportBranding.subtitle || ''} onChange={(e) => setReportBrandingState({ ...reportBranding, subtitle: e.target.value })} />
+          </div>
+          {reportBranding.logoUrl && (
+            <div className="mt-3 border border-qa-border bg-[#faf8f2] p-3">
+              <div className={labelClass}>Logo preview</div>
+              <img src={reportBranding.logoUrl} alt={reportBranding.logoAlt || 'Report logo'} className="max-h-16 max-w-[220px] object-contain bg-white p-2 border border-qa-border" />
+            </div>
+          )}
+          <button type="button" onClick={saveAll} className="mt-3 font-mono-qa text-xs font-semibold tracking-wider uppercase px-4 py-2.5 border-none cursor-pointer text-white" style={{ background: QA.accent }}>Save branding</button>
         </QaSection>
 
         <QaSection title="Active connection summary">
