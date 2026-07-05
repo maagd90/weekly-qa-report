@@ -1,23 +1,33 @@
-import Anthropic from '@anthropic-ai/sdk';
 import type { Dataset, FilterParams, GenerateParams, ReportType } from '../types/dataset';
 import { AI_TOOLS, executeTool } from './datasetTools';
-import { createAnthropicClient } from './anthropicClient';
+import { loadReportConfig } from '../config/loadReportConfig';
+import { generateLlmText, resolveProviderApiKey, type LlmResolvedConfig } from './llmProviders';
 
-const DEFAULT_REPORT_MODEL = 'claude-sonnet-4-6';
+const SYSTEM = 'Write a concise markdown QA report from the provided verified JSON metrics. Use only the supplied metrics.';
 
-const SYSTEM = `You are a QA metrics report writer. You MUST call the provided tools to get real numbers.
-Never invent or estimate metrics. If a tool returns empty data, say "No data available for this period."
-Write clear markdown with headings. Include only facts from tool results.`;
-
-function reportPrompt(reportType: ReportType, filter: FilterParams): string {
+function reportPrompt(reportType: ReportType, filter: FilterParams, metricsJson: string): string {
   const scope = `${filter.startDate || 'all'} to ${filter.endDate || 'all'}`;
-  const typeGuide: Record<ReportType, string> = {
-    full: 'Write a full report: executive summary, execution overview, testers, cycles, story/bug split, traceability, defect backlog.',
-    executive: 'Write a 1-page executive summary only.',
-    testers: 'Focus on tester performance and execution volume.',
-    cycles: 'Focus on test cycle health, coverage gaps, and at-risk cycles.',
-  };
-  return `Generate a ${reportType} QA report for ${scope}. ${typeGuide[reportType]}`;
+  return `Generate a ${reportType} QA report for ${scope}. Verified metrics JSON:\n${metricsJson}`;
+}
+
+function collectToolMetrics(dataset: Dataset, filter: FilterParams) {
+  const toolCalls: { toolName: string; rowCount: number }[] = [];
+  const metrics: Record<string, unknown> = {};
+  for (const tool of AI_TOOLS) {
+    const result = executeTool(tool.name, dataset, filter);
+    metrics[tool.name] = result;
+    toolCalls.push({ toolName: tool.name, rowCount: Array.isArray(result) ? result.length : 1 });
+  }
+  return { metrics, toolCalls };
+}
+
+export function resolveReportLlmConfig(params: GenerateParams, configDir: string, legacyApiKey?: string): LlmResolvedConfig {
+  const reportCfg = loadReportConfig(configDir);
+  const provider = params.llm?.provider || reportCfg.provider;
+  const model = (params.llm?.model || reportCfg.model).trim();
+  const userOrLegacyKey = provider === 'anthropic' ? (params.llm?.apiKey || legacyApiKey) : params.llm?.apiKey;
+  const apiKey = resolveProviderApiKey(provider, userOrLegacyKey, process.env.ANTHROPIC_API_KEY);
+  return { provider, model, apiKey, baseUrl: params.llm?.baseUrl || reportCfg.baseUrl, maxTokens: reportCfg.maxTokens };
 }
 
 export async function generateReportFromDataset(
@@ -25,54 +35,18 @@ export async function generateReportFromDataset(
   params: GenerateParams,
   apiKey: string,
   filter: FilterParams,
-): Promise<{ markdown: string; toolCalls: { toolName: string; rowCount: number }[] }> {
-  const client = createAnthropicClient(apiKey, 120_000);
-  const model = process.env.ANTHROPIC_MODEL || DEFAULT_REPORT_MODEL;
-  const toolCalls: { toolName: string; rowCount: number }[] = [];
-
-  const tools = AI_TOOLS.map((t) => ({
-    name: t.name,
-    description: t.description,
-    input_schema: { type: 'object' as const, properties: {}, required: [] as string[] },
-  }));
-
-  const messages: Anthropic.MessageParam[] = [
-    { role: 'user', content: reportPrompt(params.reportType, filter) },
-  ];
-
-  let markdown = '';
-  for (let round = 0; round < 8; round++) {
-    const response = await client.messages.create({
-      model,
-      max_tokens: 4096,
-      system: SYSTEM,
-      tools,
-      messages,
-    });
-
-    const toolUseBlocks = response.content.filter((b): b is Anthropic.ToolUseBlock => b.type === 'tool_use');
-    if (!toolUseBlocks.length) {
-      for (const block of response.content) {
-        if (block.type === 'text') markdown += block.text;
-      }
-      break;
-    }
-
-    messages.push({ role: 'assistant', content: response.content });
-    const toolResults: Anthropic.ToolResultBlockParam[] = [];
-
-    for (const tu of toolUseBlocks) {
-      const result = executeTool(tu.name, dataset, filter);
-      const rowCount = Array.isArray(result) ? result.length : 1;
-      toolCalls.push({ toolName: tu.name, rowCount });
-      toolResults.push({
-        type: 'tool_result',
-        tool_use_id: tu.id,
-        content: JSON.stringify(result),
-      });
-    }
-    messages.push({ role: 'user', content: toolResults });
-  }
-
-  return { markdown: markdown || '# Report\n\nNo content generated.', toolCalls };
+): Promise<{ markdown: string; toolCalls: { toolName: string; rowCount: number }[]; llm: Omit<LlmResolvedConfig, 'apiKey'> }> {
+  const configDir = params.configDir || process.env.CONFIG_DIR || 'config';
+  const llm = resolveReportLlmConfig(params, configDir, apiKey);
+  const { metrics, toolCalls } = collectToolMetrics(dataset, filter);
+  const markdown = await generateLlmText({
+    ...llm,
+    system: SYSTEM,
+    prompt: reportPrompt(params.reportType, filter, JSON.stringify({ scope: filter, metrics }, null, 2)),
+  });
+  return {
+    markdown: markdown || '# Report\n\nNo content generated.',
+    toolCalls,
+    llm: { provider: llm.provider, model: llm.model, baseUrl: llm.baseUrl, maxTokens: llm.maxTokens },
+  };
 }
