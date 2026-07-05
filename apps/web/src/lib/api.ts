@@ -18,6 +18,7 @@ const ANTHROPIC_KEY_STORAGE = 'qa_dashboard_anthropic_key';
 const JIRA_CONNECTIONS_STORAGE = 'qa_dashboard_jira_connections';
 const QMETRY_CONNECTIONS_STORAGE = 'qa_dashboard_qmetry_connections';
 const LLM_SELECTION_STORAGE = 'qa_dashboard_llm_selection';
+const ACTIVE_PROJECT_STORAGE = 'qa_dashboard_active_project';
 
 type RequestMeta = { requestId: string; startedAt: number };
 
@@ -76,6 +77,22 @@ function readStoredObject<T>(key: string, fallback: T): T {
 function writeStoredObject<T>(key: string, value: T): void {
   try {
     window.localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    /* storage unavailable */
+  }
+}
+
+export function getActiveProject(): string {
+  try {
+    return window.localStorage.getItem(ACTIVE_PROJECT_STORAGE) || 'all';
+  } catch {
+    return 'all';
+  }
+}
+
+export function setActiveProject(project: string): void {
+  try {
+    window.localStorage.setItem(ACTIVE_PROJECT_STORAGE, project || 'all');
   } catch {
     /* storage unavailable */
   }
@@ -160,6 +177,7 @@ api.interceptors.request.use((config) => {
     requestId: meta.requestId,
     method: (config.method || 'GET').toUpperCase(),
     url: `${config.baseURL || ''}${config.url || ''}`,
+    activeProject: getActiveProject(),
     hasAnthropicKey: Boolean(key),
     jiraConnections: jira.length,
     qmetryConnections: qmetry.length,
@@ -304,15 +322,16 @@ export const batchApi = {
 
   getCycleFolders: () => api.get('/cycles/folders', { timeout: 35_000 }).then((r) => r.data as CycleFoldersResult),
 
-  downloadReportPdf: async ({ startDate, endDate, reportType, kpiStyle }: { startDate: string; endDate: string; reportType: ReportType; kpiStyle: string }) => {
+  downloadReportPdf: async ({ startDate, endDate, reportType, kpiStyle, project }: { startDate: string; endDate: string; reportType: ReportType; kpiStyle: string; project?: string }) => {
     try {
-      const response = await api.post('/report/pdf', { startDate, endDate, reportType, kpiStyle }, { responseType: 'blob', timeout: 150_000 });
+      const response = await api.post('/report/pdf', { startDate, endDate, reportType, kpiStyle, project }, { responseType: 'blob', timeout: 150_000 });
       const blob = response.data as Blob;
       if (blob.type === 'application/json') throw new Error(await blobErrorMessage(blob, 'PDF export failed'));
       const url = URL.createObjectURL(blob);
+      const suffix = project && project !== 'all' ? `-${project}` : '';
       const link = document.createElement('a');
       link.href = url;
-      link.download = `qa-report-${startDate}-to-${endDate}.pdf`;
+      link.download = `qa-report${suffix}-${startDate}-to-${endDate}.pdf`;
       document.body.appendChild(link);
       link.click();
       link.remove();
