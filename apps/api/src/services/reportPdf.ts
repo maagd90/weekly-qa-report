@@ -6,6 +6,7 @@ const DEFAULT_PRINT_URL = 'http://dashboard-web/print/report';
 const DEFAULT_CHROMIUM = '/usr/bin/chromium';
 const DEFAULT_RENDER_TIMEOUT_MS = 90_000;
 const MAX_CONCURRENT_PDF = 2;
+const INLINE_LOGO_PATH = '/__report-logo';
 
 let cachedBrowser: Browser | null = null;
 let activePdfJobs = 0;
@@ -17,6 +18,11 @@ export interface ReportBrandingPayload {
   logoAlt?: string;
   title?: string;
   subtitle?: string;
+}
+
+interface InlineLogoAsset {
+  mimeType: string;
+  buffer: Buffer;
 }
 
 function pdfLog(message: string, data?: Record<string, unknown>): void {
@@ -47,6 +53,32 @@ function resolveChromiumPath(): string {
     throw new Error(`Chromium not found at "${executablePath}". Set PUPPETEER_EXECUTABLE_PATH in .env to your Chrome/Edge path or run via Docker.`);
   }
   return executablePath;
+}
+
+function inlineLogoFromDataUrl(value?: string): InlineLogoAsset | null {
+  if (!value || !value.startsWith('data:image/')) return null;
+  const match = value.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
+  if (!match) return null;
+  const buffer = Buffer.from(match[2], 'base64');
+  if (!buffer.length) return null;
+  return { mimeType: match[1], buffer };
+}
+
+async function attachInlineLogoInterceptor(page: Page, inlineLogo: InlineLogoAsset | null): Promise<void> {
+  if (!inlineLogo) return;
+  await page.setRequestInterception(true);
+  page.on('request', async (request) => {
+    try {
+      const reqUrl = new URL(request.url());
+      if (reqUrl.pathname === INLINE_LOGO_PATH) {
+        await request.respond({ status: 200, contentType: inlineLogo.mimeType, body: inlineLogo.buffer });
+        return;
+      }
+      await request.continue();
+    } catch {
+      await request.continue();
+    }
+  });
 }
 
 function registerShutdownHooks(): void {
@@ -123,12 +155,13 @@ async function waitForPrintSignal(page: Page, selectorTimeout: number): Promise<
   pdfLog('print page ready');
 }
 
-async function renderPdfPage(page: Page, url: string, gotoTimeout: number, selectorTimeout: number): Promise<Buffer> {
+async function renderPdfPage(page: Page, url: string, gotoTimeout: number, selectorTimeout: number, inlineLogo: InlineLogoAsset | null): Promise<Buffer> {
   page.on('console', (msg) => pdfLog(`browser console:${msg.type()}`, { text: msg.text() }));
   page.on('pageerror', (err) => pdfError('browser page error', err));
   page.on('requestfailed', (req) => pdfLog('browser request failed', { url: req.url(), failure: req.failure()?.errorText }));
+  await attachInlineLogoInterceptor(page, inlineLogo);
   await page.setViewport({ width: 794, height: 1123, deviceScaleFactor: 2 });
-  pdfLog('opening print page', { url, gotoTimeout, selectorTimeout });
+  pdfLog('opening print page', { url, gotoTimeout, selectorTimeout, hasInlineLogo: Boolean(inlineLogo) });
   await page.goto(url, { waitUntil: 'networkidle0', timeout: gotoTimeout });
   await waitForPrintSignal(page, selectorTimeout);
   pdfLog('rendering PDF');
@@ -142,22 +175,24 @@ export async function generateReportPdf(startDate: string, endDate: string, repo
   const gotoTimeout = Math.floor(totalTimeout * 0.6);
   const selectorTimeout = Math.floor(totalTimeout * 0.35);
   const baseUrl = process.env.PDF_PRINT_URL || DEFAULT_PRINT_URL;
+  const inlineLogo = inlineLogoFromDataUrl(branding?.logoUrl);
   const qs = new URLSearchParams({ startDate, endDate, reportType, kpiStyle });
   if (project && project !== 'all') qs.set('project', project);
-  if (branding?.logoUrl) qs.set('logoUrl', branding.logoUrl);
+  if (inlineLogo) qs.set('logoUrl', INLINE_LOGO_PATH);
+  else if (branding?.logoUrl) qs.set('logoUrl', branding.logoUrl);
   if (branding?.logoAlt) qs.set('logoAlt', branding.logoAlt);
   if (branding?.title) qs.set('title', branding.title);
   if (branding?.subtitle) qs.set('subtitle', branding.subtitle);
   const url = `${baseUrl}?${qs.toString()}`;
   const executablePath = resolveChromiumPath();
 
-  pdfLog('generateReportPdf:start', { startDate, endDate, reportType, kpiStyle, project: project || 'all', hasLogo: Boolean(branding?.logoUrl), baseUrl, totalTimeout });
+  pdfLog('generateReportPdf:start', { startDate, endDate, reportType, kpiStyle, project: project || 'all', hasLogo: Boolean(branding?.logoUrl), hasInlineLogo: Boolean(inlineLogo), baseUrl, totalTimeout });
   await acquirePdfSlot();
   let page: Page | null = null;
   try {
     const browser = await getBrowser(executablePath);
     page = await browser.newPage();
-    return await renderPdfPage(page, url, gotoTimeout, selectorTimeout);
+    return await renderPdfPage(page, url, gotoTimeout, selectorTimeout, inlineLogo);
   } catch (err) {
     pdfError('generateReportPdf:failed', err, { startDate, endDate, reportType, kpiStyle, project });
     throw err;
