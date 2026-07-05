@@ -13,6 +13,8 @@ export interface BasicAuthConfig {
 
 export interface JiraIntegrationConfig {
   enabled: boolean;
+  name?: string;
+  deploymentType?: 'cloud' | 'on-prem';
   baseUrl: string;
   searchPath: string;
   auth: BasicAuthConfig;
@@ -45,22 +47,28 @@ export interface QmetryIntegrationConfig {
 
 export interface IntegrationsConfig {
   jira: JiraIntegrationConfig;
+  jiraProfiles: JiraIntegrationConfig[];
   qmetry: QmetryIntegrationConfig;
 }
 
+const DEFAULT_JIRA: JiraIntegrationConfig = {
+  enabled: false,
+  name: 'Default JIRA',
+  deploymentType: 'on-prem',
+  baseUrl: '',
+  searchPath: '/rest/api/2/search',
+  auth: { type: 'basic', emailEnv: 'JIRA_EMAIL', tokenEnv: 'JIRA_API_TOKEN' },
+  projectKeys: ['DLM'],
+  jql: 'project = DLM AND issuetype in (Story, Bug) ORDER BY updated DESC',
+  pageSize: 100,
+  fields: ['summary', 'issuetype', 'status', 'priority', 'assignee', 'created', 'updated', 'resolutiondate'],
+  statusDone: ['Done', 'CLOSED', 'Cancel'],
+  applicationCiFieldId: null,
+};
+
 const DEFAULTS: IntegrationsConfig = {
-  jira: {
-    enabled: false,
-    baseUrl: '',
-    searchPath: '/rest/api/2/search',
-    auth: { type: 'basic', emailEnv: 'JIRA_EMAIL', tokenEnv: 'JIRA_API_TOKEN' },
-    projectKeys: ['DLM'],
-    jql: 'project = DLM AND issuetype in (Story, Bug) ORDER BY updated DESC',
-    pageSize: 100,
-    fields: ['summary', 'issuetype', 'status', 'priority', 'assignee', 'created', 'updated', 'resolutiondate'],
-    statusDone: ['Done', 'CLOSED', 'Cancel'],
-    applicationCiFieldId: null,
-  },
+  jira: DEFAULT_JIRA,
+  jiraProfiles: [],
   qmetry: {
     enabled: false,
     baseUrl: '',
@@ -81,13 +89,24 @@ const DEFAULTS: IntegrationsConfig = {
   },
 };
 
+function mergeJira(raw: Partial<JiraIntegrationConfig> | undefined, idx = 0): JiraIntegrationConfig {
+  const cfg = { ...DEFAULT_JIRA, ...(raw || {}) };
+  const deploymentType = cfg.deploymentType || 'on-prem';
+  return {
+    ...cfg,
+    name: cfg.name || `JIRA ${idx + 1}`,
+    searchPath: cfg.searchPath || (deploymentType === 'cloud' ? '/rest/api/3/search' : '/rest/api/2/search'),
+  };
+}
+
 export function loadIntegrations(configDir: string): IntegrationsConfig {
   const file = path.join(configDir, 'integrations.json');
   if (!fs.existsSync(file)) return structuredClone(DEFAULTS);
   try {
     const raw = JSON.parse(fs.readFileSync(file, 'utf8'));
     return {
-      jira: { ...DEFAULTS.jira, ...raw.jira },
+      jira: mergeJira(raw.jira),
+      jiraProfiles: Array.isArray(raw.jiraProfiles) ? raw.jiraProfiles.map((p: Partial<JiraIntegrationConfig>, i: number) => mergeJira(p, i)) : [],
       qmetry: { ...DEFAULTS.qmetry, ...raw.qmetry },
     };
   } catch (err) {
@@ -112,18 +131,16 @@ export function getAuthHeader(cfg: BasicAuthConfig): string | null {
 
 export function jiraConfigFromConnection(conn: JiraConnectionInput): JiraIntegrationConfig {
   const projectKeys = conn.projectKeys?.filter(Boolean) || [];
-  const jql = conn.jql?.trim() || (projectKeys.length
-    ? `project in (${projectKeys.join(',')}) AND issuetype in (Story, Bug) ORDER BY updated DESC`
-    : 'issuetype in (Story, Bug) ORDER BY updated DESC');
+  const jql = conn.jql?.trim() || (projectKeys.length ? `project in (${projectKeys.join(',')}) AND issuetype in (Story, Bug) ORDER BY updated DESC` : 'issuetype in (Story, Bug) ORDER BY updated DESC');
   const deploymentType = conn.deploymentType || 'cloud';
-  const authType = conn.authType || 'basic';
-  const searchPath = conn.searchPath?.trim() || (deploymentType === 'cloud' ? '/rest/api/3/search' : '/rest/api/2/search');
   return {
-    ...DEFAULTS.jira,
+    ...DEFAULT_JIRA,
     enabled: true,
+    name: conn.name,
+    deploymentType,
     baseUrl: conn.baseUrl.replace(/\/+$/, ''),
-    searchPath,
-    auth: { type: authType, email: conn.email, username: conn.username, token: conn.credential },
+    searchPath: conn.searchPath?.trim() || (deploymentType === 'cloud' ? '/rest/api/3/search' : '/rest/api/2/search'),
+    auth: { type: conn.authType || 'basic', email: conn.email, username: conn.username, token: conn.credential },
     projectKeys,
     jql,
     applicationCiFieldId: conn.applicationCiFieldId || null,
@@ -149,17 +166,16 @@ export function getEncodedAuth(envKey: string): string | null {
   return val ? val.trim() : null;
 }
 
+export function configuredJiraProfiles(cfg: IntegrationsConfig): JiraIntegrationConfig[] {
+  return cfg.jiraProfiles.length ? cfg.jiraProfiles.filter((p) => p.enabled) : (cfg.jira.enabled ? [cfg.jira] : []);
+}
+
 export function integrationsSummary(configDir: string) {
   const cfg = loadIntegrations(configDir);
+  const profiles = configuredJiraProfiles(cfg);
   const hasAuth = !!getBasicAuth(cfg.qmetry.auth) || !!getEncodedAuth(cfg.qmetry.authEncodedEnv);
   return {
-    jira: { enabled: cfg.jira.enabled, baseUrl: cfg.jira.baseUrl, configured: !!getAuthHeader(cfg.jira.auth) },
-    qmetry: {
-      enabled: cfg.qmetry.enabled,
-      baseUrl: cfg.qmetry.baseUrl,
-      configured: hasAuth,
-      cycleIds: cfg.qmetry.cycleIds.length,
-      projectId: cfg.qmetry.projectId,
-    },
+    jira: { enabled: profiles.length > 0, baseUrl: profiles.map((p) => p.baseUrl).filter(Boolean).join(', '), configured: profiles.some((p) => !!getAuthHeader(p.auth)), profiles: profiles.map((p) => ({ name: p.name, deploymentType: p.deploymentType, baseUrl: p.baseUrl, projectKeys: p.projectKeys })) },
+    qmetry: { enabled: cfg.qmetry.enabled, baseUrl: cfg.qmetry.baseUrl, configured: hasAuth, cycleIds: cfg.qmetry.cycleIds.length, projectId: cfg.qmetry.projectId },
   };
 }
