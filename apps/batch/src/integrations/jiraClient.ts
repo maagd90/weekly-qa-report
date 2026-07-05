@@ -9,16 +9,18 @@ import { mapJiraStatus, projectFromKey, sanitizeText } from '../utils/excel';
 
 const MAX_PAGES = 500;
 
-function cleanCookieValue(value: string): string {
+function cleanHeaderValue(value: string): string {
   return value.replace(/^Cookie:\s*/i, '').trim();
 }
 
-function jiraSessionHeader(): string | null {
-  const fullHeader = process.env.JIRA_SESSION_HEADER || process.env.JIRA_COOKIE;
-  if (fullHeader?.trim()) return cleanCookieValue(fullHeader);
+function jiraSessionHeader(cfg: IntegrationsConfig['jira']): string | null {
+  const uiFull = cfg.cookie;
+  const envFull = process.env.JIRA_SESSION_HEADER || process.env.JIRA_COOKIE;
+  const full = uiFull || envFull;
+  if (full?.trim()) return cleanHeaderValue(full);
 
-  const sessionId = process.env.JIRA_SESSION_ID?.trim();
-  const xsrf = process.env.JIRA_XSRF_TOKEN?.trim() || process.env.ATLASSIAN_XSRF_TOKEN?.trim();
+  const sessionId = cfg.jiraSessionId?.trim() || process.env.JIRA_SESSION_ID?.trim();
+  const xsrf = cfg.jiraXsrfToken?.trim() || process.env.JIRA_XSRF_TOKEN?.trim() || process.env.ATLASSIAN_XSRF_TOKEN?.trim();
   const parts: string[] = [];
   if (sessionId) parts.push(`JSESSIONID=${sessionId}`);
   if (xsrf) parts.push(`atlassian.xsrf.token=${xsrf}`);
@@ -47,7 +49,7 @@ export async function fetchJiraIssues(cfg: IntegrationsConfig['jira']): Promise<
   if (!cfg.enabled) return { issues: [] };
   const authHeader = getAuthHeader(cfg.auth);
   if (!authHeader) return { issues: [], error: 'JIRA credentials not configured' };
-  const sessionHeader = jiraSessionHeader();
+  const sessionHeader = jiraSessionHeader(cfg);
 
   const issues: IssueRow[] = [];
   let startAt = 0;
