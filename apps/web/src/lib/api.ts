@@ -24,12 +24,8 @@ const REPORT_BRANDING_STORAGE = 'qa_dashboard_report_branding';
 
 type RequestMeta = { requestId: string; startedAt: number };
 
-export interface ReportBranding {
-  logoUrl?: string;
-  logoAlt?: string;
-  title?: string;
-  subtitle?: string;
-}
+export interface ReportBranding { logoUrl?: string; logoAlt?: string; title?: string; subtitle?: string }
+export interface SyncInputResult { ok: boolean; rebuilt: boolean; rowCounts: { executions: number; issues: number; uat: number }; removed?: string[]; warnings?: string[]; projects?: string[]; error?: string }
 
 export const LLM_MODELS: Record<LlmProvider, string[]> = {
   anthropic: ['claude-haiku-4-5-20251001', 'claude-sonnet-4-6'],
@@ -45,127 +41,32 @@ export const LLM_PROVIDER_LABELS: Record<LlmProvider, string> = {
   'openai-compatible': 'Custom OpenAI-compatible',
 };
 
-function nextRequestId(): string {
-  return `web-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-}
+function nextRequestId(): string { return `web-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`; }
+function shouldRedactField(key: string): boolean { const lower = key.toLowerCase(); return lower.includes('key') || lower.includes('token') || lower.includes('credential') || lower.includes('password') || lower.includes('cookie') || lower.includes('session') || lower.includes('xsrf') || lower.includes('jsession'); }
+function safeJson(value: unknown): unknown { if (!value || typeof value !== 'object') return value; if (Array.isArray(value)) return value.map(safeJson); const copy: Record<string, unknown> = {}; for (const [key, raw] of Object.entries(value as Record<string, unknown>)) { if (typeof raw === 'string' && raw.startsWith('data:image/')) copy[key] = '***image-data-url-redacted***'; else if (shouldRedactField(key)) copy[key] = raw ? '***redacted***' : raw; else copy[key] = safeJson(raw); } return copy; }
+function logApi(event: string, data: Record<string, unknown>): void { console.log(`[web-api] ${event}`, data); }
+function normalizeProvider(value: unknown): LlmProvider { return value === 'openai' || value === 'gemini' || value === 'openai-compatible' || value === 'anthropic' ? value : 'anthropic'; }
+function readStoredObject<T>(key: string, fallback: T): T { try { const raw = window.localStorage.getItem(key); return raw ? (JSON.parse(raw) as T) : fallback; } catch { return fallback; } }
+function writeStoredObject<T>(key: string, value: T): void { try { window.localStorage.setItem(key, JSON.stringify(value)); } catch { /* storage unavailable */ } }
 
-function shouldRedactField(key: string): boolean {
-  const lower = key.toLowerCase();
-  return lower.includes('key')
-    || lower.includes('token')
-    || lower.includes('credential')
-    || lower.includes('password')
-    || lower.includes('cookie')
-    || lower.includes('session')
-    || lower.includes('xsrf')
-    || lower.includes('jsession');
-}
+export function getReportBranding(): ReportBranding { return readStoredObject<ReportBranding>(REPORT_BRANDING_STORAGE, { logoUrl: '', logoAlt: 'Report logo', title: 'QA Sprint Report', subtitle: '' }); }
+export function setReportBranding(branding: ReportBranding): void { writeStoredObject(REPORT_BRANDING_STORAGE, { logoUrl: branding.logoUrl?.trim() || '', logoAlt: branding.logoAlt?.trim() || 'Report logo', title: branding.title?.trim() || 'QA Sprint Report', subtitle: branding.subtitle?.trim() || '' }); }
+export function getActiveProject(): string { try { return window.localStorage.getItem(ACTIVE_PROJECT_STORAGE) || 'all'; } catch { return 'all'; } }
+export function setActiveProject(project: string): void { try { window.localStorage.setItem(ACTIVE_PROJECT_STORAGE, project || 'all'); } catch { /* storage unavailable */ } }
 
-function safeJson(value: unknown): unknown {
-  if (!value || typeof value !== 'object') return value;
-  if (Array.isArray(value)) return value.map(safeJson);
-  const copy: Record<string, unknown> = {};
-  for (const [key, raw] of Object.entries(value as Record<string, unknown>)) {
-    if (typeof raw === 'string' && raw.startsWith('data:image/')) copy[key] = '***image-data-url-redacted***';
-    else if (shouldRedactField(key)) copy[key] = raw ? '***redacted***' : raw;
-    else copy[key] = safeJson(raw);
-  }
-  return copy;
-}
-
-function logApi(event: string, data: Record<string, unknown>): void {
-  console.log(`[web-api] ${event}`, data);
-}
-
-function normalizeProvider(value: unknown): LlmProvider {
-  return value === 'openai' || value === 'gemini' || value === 'openai-compatible' || value === 'anthropic' ? value : 'anthropic';
-}
-
-function readStoredObject<T>(key: string, fallback: T): T {
-  try {
-    const raw = window.localStorage.getItem(key);
-    return raw ? (JSON.parse(raw) as T) : fallback;
-  } catch {
-    return fallback;
-  }
-}
-
-function writeStoredObject<T>(key: string, value: T): void {
-  try {
-    window.localStorage.setItem(key, JSON.stringify(value));
-  } catch {
-    /* storage unavailable */
-  }
-}
-
-export function getReportBranding(): ReportBranding {
-  return readStoredObject<ReportBranding>(REPORT_BRANDING_STORAGE, { logoUrl: '', logoAlt: 'Report logo', title: 'QA Sprint Report', subtitle: '' });
-}
-
-export function setReportBranding(branding: ReportBranding): void {
-  writeStoredObject(REPORT_BRANDING_STORAGE, {
-    logoUrl: branding.logoUrl?.trim() || '',
-    logoAlt: branding.logoAlt?.trim() || 'Report logo',
-    title: branding.title?.trim() || 'QA Sprint Report',
-    subtitle: branding.subtitle?.trim() || '',
-  });
-}
-
-export function getActiveProject(): string {
-  try { return window.localStorage.getItem(ACTIVE_PROJECT_STORAGE) || 'all'; } catch { return 'all'; }
-}
-
-export function setActiveProject(project: string): void {
-  try { window.localStorage.setItem(ACTIVE_PROJECT_STORAGE, project || 'all'); } catch { /* storage unavailable */ }
-}
-
-export function getUserLlmKey(provider: LlmProvider): string {
-  const keys = readStoredObject<Record<string, string>>(LLM_KEYS_STORAGE, {});
-  if (keys[provider]) return keys[provider];
-  if (provider === 'anthropic') {
-    try { return window.localStorage.getItem(ANTHROPIC_KEY_STORAGE) || ''; } catch { return ''; }
-  }
-  return '';
-}
-
-export function setUserLlmKey(provider: LlmProvider, value: string): void {
-  const keys = readStoredObject<Record<string, string>>(LLM_KEYS_STORAGE, {});
-  const clean = value.trim();
-  if (clean) keys[provider] = clean;
-  else delete keys[provider];
-  writeStoredObject(LLM_KEYS_STORAGE, keys);
-  if (provider === 'anthropic') {
-    try {
-      if (clean) window.localStorage.setItem(ANTHROPIC_KEY_STORAGE, clean);
-      else window.localStorage.removeItem(ANTHROPIC_KEY_STORAGE);
-    } catch { /* storage unavailable */ }
-  }
-}
-
-export function getUserLlmSelection(): LlmSelectionInput {
-  const stored = readStoredObject<Partial<LlmSelectionInput>>(LLM_SELECTION_STORAGE, {});
-  const provider = normalizeProvider(stored.provider);
-  const model = stored.model && LLM_MODELS[provider].includes(stored.model) ? stored.model : LLM_MODELS[provider][0];
-  const apiKey = getUserLlmKey(provider);
-  return { provider, model, baseUrl: stored.baseUrl || undefined, apiKey: apiKey || undefined };
-}
-
-export function setUserLlmSelection(selection: LlmSelectionInput): void {
-  const provider = normalizeProvider(selection.provider);
-  const model = selection.model && LLM_MODELS[provider].includes(selection.model) ? selection.model : LLM_MODELS[provider][0];
-  writeStoredObject(LLM_SELECTION_STORAGE, { provider, model, baseUrl: selection.baseUrl || '' });
-  setUserLlmKey(provider, selection.apiKey || '');
-}
-
+export function getUserLlmKey(provider: LlmProvider): string { const keys = readStoredObject<Record<string, string>>(LLM_KEYS_STORAGE, {}); if (keys[provider]) return keys[provider]; if (provider === 'anthropic') { try { return window.localStorage.getItem(ANTHROPIC_KEY_STORAGE) || ''; } catch { return ''; } } return ''; }
+export function setUserLlmKey(provider: LlmProvider, value: string): void { const keys = readStoredObject<Record<string, string>>(LLM_KEYS_STORAGE, {}); const clean = value.trim(); if (clean) keys[provider] = clean; else delete keys[provider]; writeStoredObject(LLM_KEYS_STORAGE, keys); if (provider === 'anthropic') { try { if (clean) window.localStorage.setItem(ANTHROPIC_KEY_STORAGE, clean); else window.localStorage.removeItem(ANTHROPIC_KEY_STORAGE); } catch { /* storage unavailable */ } } }
+export function getUserLlmSelection(): LlmSelectionInput { const stored = readStoredObject<Partial<LlmSelectionInput>>(LLM_SELECTION_STORAGE, {}); const provider = normalizeProvider(stored.provider); const model = stored.model && LLM_MODELS[provider].includes(stored.model) ? stored.model : LLM_MODELS[provider][0]; const apiKey = getUserLlmKey(provider); return { provider, model, baseUrl: stored.baseUrl || undefined, apiKey: apiKey || undefined }; }
+export function setUserLlmSelection(selection: LlmSelectionInput): void { const provider = normalizeProvider(selection.provider); const model = selection.model && LLM_MODELS[provider].includes(selection.model) ? selection.model : LLM_MODELS[provider][0]; writeStoredObject(LLM_SELECTION_STORAGE, { provider, model, baseUrl: selection.baseUrl || '' }); setUserLlmKey(provider, selection.apiKey || ''); }
 export function getUserAnthropicKey(): string { return getUserLlmKey('anthropic'); }
 export function setUserAnthropicKey(key: string): void { setUserLlmKey('anthropic', key); }
 
 function readConnections<T>(key: string): T[] { return readStoredObject<T[]>(key, []); }
 function writeConnections<T>(key: string, value: T[]): void { writeStoredObject(key, value); }
-export const getJiraConnections = (): JiraConnectionInput[] => readConnections(JIRA_CONNECTIONS_STORAGE);
+export const getJiraConnections = (): JiraConnectionInput[] => readConnections<JiraConnectionInput>(JIRA_CONNECTIONS_STORAGE);
 export const setJiraConnections = (conns: JiraConnectionInput[]): void => writeConnections(JIRA_CONNECTIONS_STORAGE, conns);
-export const getQmetryConnections = (): QmetryConnectionInput[] => readConnections(QMETRY_CONNECTIONS_STORAGE);
-export const setQmetryConnections = (conns: QmetryConnectionInput[]): void => writeConnections(QMETRY_CONNECTIONS_STORAGE, conns);
+export const getQmetryConnections = (): QmetryConnectionInput[] => readConnections<QmetryConnectionInput>(QMETRY_CONNECTIONS_STORAGE).map((c) => ({ ...c, cycleIds: [] }));
+export const setQmetryConnections = (conns: QmetryConnectionInput[]): void => writeConnections(QMETRY_CONNECTIONS_STORAGE, conns.map((c) => ({ ...c, cycleIds: [] })));
 export function newConnectionId(): string { return `c${Date.now()}${Math.random().toString(36).slice(2, 8)}`; }
 
 api.interceptors.request.use((config) => {
@@ -173,121 +74,46 @@ api.interceptors.request.use((config) => {
   (config as typeof config & { metadata?: RequestMeta }).metadata = meta;
   config.headers = config.headers || {};
   config.headers['x-request-id'] = meta.requestId;
-
   const selectedLlm = getUserLlmSelection();
   const anthropicKey = getUserAnthropicKey();
   if (anthropicKey) config.headers['x-anthropic-key'] = anthropicKey;
-
   const jira = getJiraConnections();
   const qmetry = getQmetryConnections();
-  if (jira.length || qmetry.length) {
-    const connections: UserConnections = { jira, qmetry };
-    config.headers['x-user-connections'] = JSON.stringify(connections);
-  }
-
-  logApi('request', {
-    requestId: meta.requestId,
-    method: (config.method || 'GET').toUpperCase(),
-    url: `${config.baseURL || ''}${config.url || ''}`,
-    activeProject: getActiveProject(),
-    llmProvider: selectedLlm.provider,
-    hasSelectedLlmKey: Boolean(selectedLlm.apiKey),
-    hasReportLogo: Boolean(getReportBranding().logoUrl),
-    jiraConnections: jira.length,
-    qmetryConnections: qmetry.length,
-    params: safeJson(config.params),
-    body: safeJson(config.data),
-  });
+  if (jira.length || qmetry.length) config.headers['x-user-connections'] = JSON.stringify({ jira, qmetry } satisfies UserConnections);
+  logApi('request', { requestId: meta.requestId, method: (config.method || 'GET').toUpperCase(), url: `${config.baseURL || ''}${config.url || ''}`, activeProject: getActiveProject(), llmProvider: selectedLlm.provider, hasSelectedLlmKey: Boolean(selectedLlm.apiKey), hasReportLogo: Boolean(getReportBranding().logoUrl), jiraConnections: jira.length, qmetryConnections: qmetry.length, params: safeJson(config.params), body: safeJson(config.data) });
   return config;
 });
 
-api.interceptors.response.use(
-  (response) => {
-    const meta = (response.config as typeof response.config & { metadata?: RequestMeta }).metadata;
-    logApi('response', {
-      requestId: meta?.requestId,
-      method: (response.config.method || 'GET').toUpperCase(),
-      url: response.config.url,
-      status: response.status,
-      elapsedMs: meta ? Date.now() - meta.startedAt : undefined,
-    });
-    return response;
-  },
-  (error) => {
-    if (axios.isAxiosError(error)) {
-      const meta = (error.config as typeof error.config & { metadata?: RequestMeta } | undefined)?.metadata;
-      console.error('[web-api] error', {
-        requestId: meta?.requestId,
-        method: (error.config?.method || 'GET').toUpperCase(),
-        url: error.config?.url,
-        status: error.response?.status,
-        elapsedMs: meta ? Date.now() - meta.startedAt : undefined,
-        response: safeJson(error.response?.data),
-        message: error.message,
-      });
-    } else {
-      console.error('[web-api] non-axios error', error);
-    }
-    return Promise.reject(error);
-  },
-);
+api.interceptors.response.use((response) => { const meta = (response.config as typeof response.config & { metadata?: RequestMeta }).metadata; logApi('response', { requestId: meta?.requestId, method: (response.config.method || 'GET').toUpperCase(), url: response.config.url, status: response.status, elapsedMs: meta ? Date.now() - meta.startedAt : undefined }); return response; }, (error) => { if (axios.isAxiosError(error)) { const meta = (error.config as typeof error.config & { metadata?: RequestMeta } | undefined)?.metadata; console.error('[web-api] error', { requestId: meta?.requestId, method: (error.config?.method || 'GET').toUpperCase(), url: error.config?.url, status: error.response?.status, elapsedMs: meta ? Date.now() - meta.startedAt : undefined, response: safeJson(error.response?.data), message: error.message }); } else console.error('[web-api] non-axios error', error); return Promise.reject(error); });
 
-function apiErrorMessage(err: unknown, fallback: string): string {
-  if (axios.isAxiosError(err)) {
-    const data = err.response?.data as { error?: string; message?: string; warnings?: string[] } | undefined;
-    if (data?.error) return data.error;
-    if (data?.message) return data.message;
-    if (data?.warnings?.length) return data.warnings.join('; ');
-    if (err.response?.status) return `${fallback}: HTTP ${err.response.status}`;
-    if (err.code === 'ECONNABORTED') return 'Report generation timed out. Full reports can take 1–2 minutes — please try again.';
-    return err.message || fallback;
-  }
-  return err instanceof Error ? err.message : fallback;
-}
-
-async function blobErrorMessage(blob: Blob, fallback: string): Promise<string> {
-  try {
-    const text = await blob.text();
-    if (!text) return fallback;
-    const payload = JSON.parse(text) as { error?: string; message?: string; warnings?: string[] };
-    return payload.error || payload.message || payload.warnings?.join('; ') || text.slice(0, 500);
-  } catch { return fallback; }
-}
+function apiErrorMessage(err: unknown, fallback: string): string { if (axios.isAxiosError(err)) { const data = err.response?.data as { error?: string; message?: string; warnings?: string[] } | undefined; if (data?.error) return data.error; if (data?.message) return data.message; if (data?.warnings?.length) return data.warnings.join('; '); if (err.response?.status) return `${fallback}: HTTP ${err.response.status}`; if (err.code === 'ECONNABORTED') return 'Report generation timed out. Full reports can take 1-2 minutes - please try again.'; return err.message || fallback; } return err instanceof Error ? err.message : fallback; }
+async function blobErrorMessage(blob: Blob, fallback: string): Promise<string> { try { const text = await blob.text(); if (!text) return fallback; const payload = JSON.parse(text) as { error?: string; message?: string; warnings?: string[] }; return payload.error || payload.message || payload.warnings?.join('; ') || text.slice(0, 500); } catch { return fallback; } }
 
 export { apiErrorMessage };
 export type { DashboardPayload, FilterParams, ReportType, GenerateParams, GenerateResult, LlmSelectionInput, LlmProvider };
 
-export interface IntegrationsStatus {
-  jira: { enabled: boolean; baseUrl: string; configured: boolean; profiles?: unknown[] };
-  qmetry: { enabled: boolean; baseUrl: string; configured: boolean; cycleIds: number };
-  config: { jira: { enabled: boolean; projectKeys: string[]; jql: string }; qmetry: { enabled: boolean; projectKey: string; cycleIds: string[] } };
-  userConnections?: { jira: { id: string; name: string; baseUrl: string }[]; qmetry: { id: string; name: string; baseUrl: string }[] };
-}
-
-export interface CycleFolder { id: string; name: string; }
-export interface CycleFoldersResult { source: 'qmetry-live' | 'imported'; connection?: string; cycles: CycleFolder[]; }
+export interface IntegrationsStatus { jira: { enabled: boolean; baseUrl: string; configured: boolean; profiles?: unknown[] }; qmetry: { enabled: boolean; baseUrl: string; configured: boolean; cycleIds?: number }; config: { jira: { enabled: boolean; projectKeys: string[]; jql: string }; qmetry: { enabled: boolean; projectKey: string; cycleIds?: string[]; projectId?: string | null } }; userConnections?: { jira: { id: string; name: string; baseUrl: string }[]; qmetry: { id: string; name: string; baseUrl: string }[] } }
+export interface CycleFolder { id: string; name: string; parentId?: string; path?: string }
+export interface CycleHealth { key: string; name: string; total: number; pass: number; fail: number; blocked: number; ne: number; na: number; passPct: number; coverage: number; status: string }
+export interface CycleFoldersResult { source: 'qmetry-live' | 'imported'; connection?: string; connectionId?: string; folders: CycleFolder[]; cycles: CycleFolder[] }
+export interface FolderCycleHealthResult { source: 'qmetry-live' | 'imported'; connection?: string; connectionId?: string; folderId: string; cycles: CycleHealth[]; warnings?: string[] }
 
 export const batchApi = {
   getStatus: () => api.get('/status').then((r) => r.data as { apiKeyConfigured: boolean; jiraConfigured: boolean; llmProvidersConfigured?: Record<string, boolean> }),
-  testLlm: (selection: LlmSelectionInput) => api.post('/llm/test', selection, { timeout: 35_000 })
-    .then((r) => r.data as { ok: boolean; provider?: LlmProvider; providerLabel?: string; model?: string; route?: 'direct' | 'proxy'; elapsedMs?: number; error?: string; logs?: string[] })
-    .catch((err) => { throw new Error(apiErrorMessage(err, 'LLM connectivity test failed')); }),
-  testAnthropic: () => api.get('/anthropic/test', { timeout: 35_000 })
-    .then((r) => r.data as { ok: boolean; model?: string; route?: 'direct' | 'proxy'; elapsedMs?: number; error?: string; logs?: string[] })
-    .catch((err) => { throw new Error(apiErrorMessage(err, 'Anthropic connectivity test failed')); }),
+  testLlm: (selection: LlmSelectionInput) => api.post('/llm/test', selection, { timeout: 35_000 }).then((r) => r.data as { ok: boolean; provider?: LlmProvider; providerLabel?: string; model?: string; route?: 'direct' | 'proxy'; elapsedMs?: number; error?: string; logs?: string[] }).catch((err) => { throw new Error(apiErrorMessage(err, 'LLM connectivity test failed')); }),
+  testAnthropic: () => api.get('/anthropic/test', { timeout: 35_000 }).then((r) => r.data as { ok: boolean; model?: string; route?: 'direct' | 'proxy'; elapsedMs?: number; error?: string; logs?: string[] }).catch((err) => { throw new Error(apiErrorMessage(err, 'Anthropic connectivity test failed')); }),
   generate: (params: GenerateParams) => api.post<GenerateResult>('/generate', params, { timeout: 300_000 }).then((r) => r.data).catch((err) => { throw new Error(apiErrorMessage(err, 'Report generation failed')); }),
-  getDashboard: (filter?: Partial<FilterParams>) => {
-    const params = filter ? { startDate: filter.startDate, endDate: filter.endDate, search: filter.search, result: filter.result, project: filter.project } : undefined;
-    return api.get('/dashboard', { params }).then((r) => r.data as DashboardPayload).catch((err) => { if (axios.isAxiosError(err) && err.response?.status === 404) return null; throw err; });
-  },
+  getDashboard: (filter?: Partial<FilterParams>) => { const params = filter ? { startDate: filter.startDate, endDate: filter.endDate, search: filter.search, result: filter.result, project: filter.project } : undefined; return api.get('/dashboard', { params }).then((r) => r.data as DashboardPayload).catch((err) => { if (axios.isAxiosError(err) && err.response?.status === 404) return null; throw err; }); },
   getReport: () => api.get('/report').then((r) => r.data).catch((err) => { if (axios.isAxiosError(err) && err.response?.status === 404) return null; throw err; }),
   upload: (file: File) => { const form = new FormData(); form.append('file', file); return api.post('/upload', form, { headers: { 'Content-Type': 'multipart/form-data' } }).then((r) => r.data); },
+  syncInputFiles: () => api.post('/input/sync', {}, { timeout: 180_000 }).then((r) => r.data as SyncInputResult).catch((err) => { throw new Error(apiErrorMessage(err, 'Import/API sync failed')); }),
   listInputFiles: () => api.get('/input/files').then((r) => r.data as { name: string; size: number; modifiedAt: string }[]),
   deleteInputFile: (filename: string) => api.delete(`/input/${encodeURIComponent(filename)}`).then((r) => r.data),
   getIntegrations: () => api.get('/integrations').then((r) => r.data as IntegrationsStatus),
   testIntegrations: () => api.post('/integrations/test').then((r) => r.data),
   testConnection: (type: 'jira' | 'qmetry', connection: JiraConnectionInput | QmetryConnectionInput) => api.post('/integrations/test-connection', { type, connection }, { timeout: 35_000 }).then((r) => r.data as { ok: boolean; count?: number; error?: string }).catch((err) => ({ ok: false, error: apiErrorMessage(err, 'Connection test failed') })),
-  getCycleFolders: () => api.get('/cycles/folders', { timeout: 35_000 }).then((r) => r.data as CycleFoldersResult),
+  getCycleFolders: () => api.get('/cycles/folders', { timeout: 45_000 }).then((r) => r.data as CycleFoldersResult),
+  getCyclesByFolder: (folderId: string, connectionId?: string) => api.get('/cycles/by-folder', { params: { folderId, connectionId }, timeout: 180_000 }).then((r) => r.data as FolderCycleHealthResult),
   downloadReportPdf: async ({ startDate, endDate, reportType, kpiStyle, project, branding }: { startDate: string; endDate: string; reportType: ReportType; kpiStyle: string; project?: string; branding?: ReportBranding }) => {
     try {
       const selectedBranding = branding || getReportBranding();
@@ -296,16 +122,7 @@ export const batchApi = {
       if (blob.type === 'application/json') throw new Error(await blobErrorMessage(blob, 'PDF export failed'));
       const url = URL.createObjectURL(blob);
       const suffix = project && project !== 'all' ? `-${project}` : '';
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `qa-report${suffix}-${startDate}-to-${endDate}.pdf`;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      URL.revokeObjectURL(url);
-    } catch (err) {
-      if (axios.isAxiosError(err) && err.response?.data instanceof Blob) throw new Error(await blobErrorMessage(err.response.data, 'PDF export failed'));
-      throw new Error(apiErrorMessage(err, 'PDF export failed'));
-    }
+      const link = document.createElement('a'); link.href = url; link.download = `qa-report${suffix}-${startDate}-to-${endDate}.pdf`; document.body.appendChild(link); link.click(); link.remove(); URL.revokeObjectURL(url);
+    } catch (err) { if (axios.isAxiosError(err) && err.response?.data instanceof Blob) throw new Error(await blobErrorMessage(err.response.data, 'PDF export failed')); throw new Error(apiErrorMessage(err, 'PDF export failed')); }
   },
 };
