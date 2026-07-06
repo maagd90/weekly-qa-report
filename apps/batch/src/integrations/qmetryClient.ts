@@ -88,7 +88,6 @@ function extractItems(data: unknown): Record<string, unknown>[] {
     results?: Record<string, unknown>[];
     testCycles?: Record<string, unknown>[];
     testCases?: Record<string, unknown>[];
-    total?: number;
   };
   if (Array.isArray(data)) return data as Record<string, unknown>[];
   return payload.data || payload.values || payload.items || payload.results || payload.testCycles || payload.testCases || [];
@@ -106,8 +105,12 @@ function normalizeCycle(item: Record<string, unknown>): QmetryCycleSummary | nul
   const key = sanitizeText(item.key || item.cycleKey || item.testCycleKey);
   const name = sanitizeText(item.name || item.summary || item.cycleName || item.testCycleName || item.folderName) || key || id;
   const status = sanitizeText(item.status || item.executionStatus);
-  if (!id && !key) return null;
-  return { id: id || key, key: key || undefined, name, status: status || undefined };
+  const resolvedId = id || key;
+  if (!resolvedId) return null;
+  const cycle: QmetryCycleSummary = { id: resolvedId, name };
+  if (key) cycle.key = key;
+  if (status) cycle.status = status;
+  return cycle;
 }
 
 function cycleSearchBody(cfg: QmetryIntegrationConfig): Record<string, unknown> {
@@ -140,14 +143,13 @@ export async function searchQmetryTestCycles(
   const path = cycleSearchPath(cfg, startAt, maxResults);
   const body = cycleSearchBody(cfg);
   const { ok, data, error } = await qmetryFetch(cfg, 'POST', path, body);
-  if (!ok) return { cycles: [], total: 0, error };
+  if (!ok) return { cycles: [], total: 0, error: error || 'QMetry test cycle search failed' };
 
   const items = extractItems(data);
-  const cycles = items.map(normalizeCycle).filter((c): c is QmetryCycleSummary => Boolean(c));
+  const cycles = items.map(normalizeCycle).filter((cycle): cycle is QmetryCycleSummary => Boolean(cycle));
   return { cycles, total: extractTotal(data, cycles.length) };
 }
 
-/** List test cycle IDs for a QMetry project/folder. */
 async function fetchProjectCycleIds(cfg: QmetryIntegrationConfig): Promise<{ ids: string[]; error?: string }> {
   const ids: string[] = [];
   let startAt = 0;
@@ -156,7 +158,7 @@ async function fetchProjectCycleIds(cfg: QmetryIntegrationConfig): Promise<{ ids
   while (pages < cfg.maxPages) {
     const result = await searchQmetryTestCycles(cfg, { startAt, maxResults: cfg.pageSize });
     if (result.error) return { ids, error: result.error };
-    ids.push(...result.cycles.map((cycle) => cycle.id).filter(Boolean));
+    ids.push(...result.cycles.map((cycle) => cycle.id).filter((id): id is string => Boolean(id)));
     startAt += result.cycles.length;
     pages++;
     if (!result.cycles.length || startAt >= result.total) break;
@@ -166,7 +168,6 @@ async function fetchProjectCycleIds(cfg: QmetryIntegrationConfig): Promise<{ ids
   return { ids };
 }
 
-/** List test cycle {id, name} pairs for a QMetry project/folder — used for the live dropdown. */
 export async function fetchProjectCycles(cfg: QmetryIntegrationConfig): Promise<{ id: string; name: string }[]> {
   const cycles: { id: string; name: string }[] = [];
   let startAt = 0;
@@ -187,7 +188,6 @@ export async function fetchProjectCycles(cfg: QmetryIntegrationConfig): Promise<
   return cycles;
 }
 
-/** Fetch executions for one test cycle — POST search (matches QmetryPublisher Java pattern) */
 async function fetchCycleExecutions(
   cfg: QmetryIntegrationConfig,
   cycleId: string,
@@ -270,7 +270,7 @@ export async function fetchQmetryExecutions(cfg: QmetryIntegrationConfig): Promi
 
 export async function fetchQmetryDataset(cfg: IntegrationsConfig) {
   const ds = emptyDataset();
-  const { executions, cycleMeta, error } = await fetchQmetryExecutions(cfg.qmetry);
+  const { executions, error } = await fetchQmetryExecutions(cfg.qmetry);
   ds.executions = executions;
   ds.meta.integrations.qmetry = true;
   ds.meta.fetchedAt = new Date().toISOString();
@@ -280,5 +280,5 @@ export async function fetchQmetryDataset(cfg: IntegrationsConfig) {
     ds.projects = [...new Set(executions.map((e) => e.project))];
     ds.meta.sourceFiles.push(`qmetry-api:${cfg.qmetry.cycleIds.join(',') || 'project'}`);
   }
-  return { ...ds, cycleMeta };
+  return ds;
 }
