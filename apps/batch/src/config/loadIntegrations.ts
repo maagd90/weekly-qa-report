@@ -3,6 +3,7 @@ import path from 'path';
 import type { JiraConnectionInput, QmetryConnectionInput } from '../types/connections';
 
 const JIRA_SEARCH_PATH = '/rest/api/2/search';
+const QMETRY_TEST_CYCLES_SEARCH_PATH = '/testcycles/search';
 
 const DEFAULT_JIRA_FIELDS = [
   'summary', 'description', 'assignee', 'status', 'priority', 'issuetype',
@@ -88,7 +89,7 @@ const DEFAULTS: IntegrationsConfig = {
     authEncodedEnv: 'QMETRY_BASIC_AUTH',
     projectKey: 'DLM',
     projectId: null,
-    testCyclesSearchPath: '/projects/{projectId}/testcycles/search',
+    testCyclesSearchPath: QMETRY_TEST_CYCLES_SEARCH_PATH,
     testCyclesSearchBody: null,
     testCasesSearchPath: '/testcycles/{cycleId}/testcases/search',
     testCasesSearchBody: { filter: { filter: { folderId: -1 } } },
@@ -105,6 +106,16 @@ function mergeJira(raw: Partial<JiraIntegrationConfig> | undefined, idx = 0): Ji
   return { ...cfg, name: cfg.name || `JIRA ${idx + 1}`, searchPath: cfg.searchPath || JIRA_SEARCH_PATH, fields: cfg.fields?.length ? cfg.fields : DEFAULT_JIRA_FIELDS };
 }
 
+function mergeQmetry(raw: Partial<QmetryIntegrationConfig> | undefined): QmetryIntegrationConfig {
+  const cfg = { ...DEFAULTS.qmetry, ...(raw || {}) };
+  return {
+    ...cfg,
+    testCyclesSearchPath: cfg.testCyclesSearchPath || QMETRY_TEST_CYCLES_SEARCH_PATH,
+    testCasesSearchPath: cfg.testCasesSearchPath || DEFAULTS.qmetry.testCasesSearchPath,
+    cycleIds: Array.isArray(cfg.cycleIds) ? cfg.cycleIds : [],
+  };
+}
+
 export function loadIntegrations(configDir: string): IntegrationsConfig {
   const file = path.join(configDir, 'integrations.json');
   if (!fs.existsSync(file)) return structuredClone(DEFAULTS);
@@ -113,7 +124,7 @@ export function loadIntegrations(configDir: string): IntegrationsConfig {
     return {
       jira: mergeJira(raw.jira),
       jiraProfiles: Array.isArray(raw.jiraProfiles) ? raw.jiraProfiles.map((p: Partial<JiraIntegrationConfig>, i: number) => mergeJira(p, i)) : [],
-      qmetry: { ...DEFAULTS.qmetry, ...raw.qmetry },
+      qmetry: mergeQmetry(raw.qmetry),
     };
   } catch (err) {
     console.error('[integrations] Failed to parse integrations.json:', (err as Error).message);
@@ -180,7 +191,16 @@ export function jiraConfigFromConnection(conn: JiraConnectionInput): JiraIntegra
   };
 }
 
+function qmetryCycleSearchBody(projectId: string | null, folderId?: string): Record<string, unknown> | null {
+  if (!projectId && !folderId?.trim()) return null;
+  const filter: Record<string, unknown> = {};
+  if (projectId) filter.projectId = /^\d+$/.test(projectId) ? Number(projectId) : projectId;
+  if (folderId?.trim()) filter.folderId = folderId.trim();
+  return { filter };
+}
+
 export function qmetryConfigFromConnection(conn: QmetryConnectionInput): QmetryIntegrationConfig {
+  const projectId = conn.projectId?.trim() || null;
   return {
     ...DEFAULTS.qmetry,
     enabled: true,
@@ -188,9 +208,11 @@ export function qmetryConfigFromConnection(conn: QmetryConnectionInput): QmetryI
     auth: { type: 'basic', email: conn.email, token: connectionSecret(conn) },
     authEncodedEnv: '',
     projectKey: conn.projectKey,
-    projectId: conn.projectId || null,
+    projectId,
+    testCyclesSearchPath: QMETRY_TEST_CYCLES_SEARCH_PATH,
+    testCyclesSearchBody: qmetryCycleSearchBody(projectId, conn.folderId),
     cycleIds: conn.cycleIds?.filter(Boolean) || [],
-    testCasesSearchBody: conn.folderId ? { filter: { filter: { folderId: conn.folderId } } } : DEFAULTS.qmetry.testCasesSearchBody,
+    testCasesSearchBody: DEFAULTS.qmetry.testCasesSearchBody,
   };
 }
 
