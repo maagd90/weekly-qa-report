@@ -7,11 +7,11 @@ cd "$ROOT"
 echo "==> Creating data directories"
 mkdir -p input output config
 
-if [[ ! -f .env ]]; then
-  cp .env.example .env
-  echo "==> Created .env from .env.example — edit it to add API keys"
+if [[ ! -f config/runtime.json ]]; then
+  cp config/runtime.example.json config/runtime.json
+  echo "==> Created config/runtime.json from example — edit it only if server-side runtime defaults are needed"
 else
-  echo "==> .env already exists"
+  echo "==> config/runtime.json already exists"
 fi
 
 if [[ ! -f config/integrations.json ]]; then
