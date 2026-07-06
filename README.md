@@ -1,400 +1,474 @@
 <div align="center">
 
-# Weekly QA Metrics Dashboard
+# Weekly QA Report Dashboard
 
-**Turn scattered QA exports into a single weekly dashboard — with AI-written summaries and one-click PDF reports.**
+**A file-based QA intelligence dashboard for test execution, defect tracking, traceability, AI summaries, and PDF reporting.**
 
 [![Node](https://img.shields.io/badge/Node-%E2%89%A520-339933?logo=node.js&logoColor=white)](https://nodejs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.4-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org)
 [![React](https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=black)](https://react.dev)
 [![Vite](https://img.shields.io/badge/Vite-5-646CFF?logo=vite&logoColor=white)](https://vitejs.dev)
 [![Docker](https://img.shields.io/badge/Docker-ready-2496ED?logo=docker&logoColor=white)](https://www.docker.com)
-[![No database](https://img.shields.io/badge/database-none-lightgrey)](#overview)
+[![No database](https://img.shields.io/badge/database-none-lightgrey)](#architecture)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 </div>
 
-QA teams generate valuable data every week — test executions, bug counts, cycle health, UAT status — but it
-lives scattered across Zephyr exports, JIRA, QMetry, and spreadsheets. This tool ingests those sources,
-computes every metric on the **backend**, and serves a clean React dashboard plus an AI-written executive
-summary and a downloadable PDF. It is **file-based — no database to install or run.**
+QA teams usually collect weekly quality data from many places: test execution exports, JIRA issues, QMetry cycles, vendor-portal bugs, and manual spreadsheets. This project consolidates those sources into a single dashboard, computes the metrics on the backend, generates an AI-written management report, and exports a print-ready PDF.
+
+The application is intentionally **stateless and file-based**. It does not require a database. Runtime state is stored in local folders such as `input/`, `output/`, and `config/`.
 
 <div align="center">
 
-<!-- Replace with a real screenshot of the running dashboard (recommended: docs/screenshot.png, ~1400px wide) -->
 ![Dashboard screenshot](docs/screenshot.png)
 
-<sub>Add a screenshot at <code>docs/screenshot.png</code> — the single biggest polish item for this README.</sub>
+<sub>Add or replace <code>docs/screenshot.png</code> with a screenshot from your running dashboard.</sub>
 
 </div>
-
----
-
-## Quick start
-
-```bash
-git clone <repo-url> && cd weekly-qa-report
-./run.sh setup          # Mac/Linux — creates .env, config, folders; installs deps
-./run.sh dev            # web on http://localhost:3000, API on http://localhost:3001
-```
-
-**Windows (CMD or PowerShell):**
-
-```bat
-run.bat setup
-run.bat dev
-```
-
-`.env` is loaded automatically — do **not** run `source .env` in Git Bash.
-
-Then open <http://localhost:3000>, stage an Excel export under **Import Data**, and click **Generate Report**.
-No API keys are needed for the core dashboard — only for AI summaries. Full details below.
 
 ---
 
 ## Table of contents
 
-1. [Overview](#overview)
-2. [Features](#features)
-3. [Prerequisites](#prerequisites)
-4. [Project structure](#project-structure)
-5. [Configuration](#configuration)
-6. [Running locally](#running-locally)
-7. [Running with Docker](#running-with-docker)
-8. [AI reports](#ai-reports)
-9. [PDF export](#pdf-export)
-10. [Data sources](#data-sources)
-11. [Using the dashboard](#using-the-dashboard)
-12. [CLI & tests](#cli--tests)
-13. [API reference](#api-reference)
-14. [Architecture](#architecture)
-15. [Troubleshooting](#troubleshooting)
-16. [Security](#security)
-17. [Contributing](#contributing)
-18. [License](#license)
+1. [What this project does](#what-this-project-does)
+2. [Current implementation](#current-implementation)
+3. [Features](#features)
+4. [Prerequisites](#prerequisites)
+5. [Quick start](#quick-start)
+6. [Project structure](#project-structure)
+7. [Configuration](#configuration)
+8. [Live JIRA and QMetry integration](#live-jira-and-qmetry-integration)
+9. [AI report configuration](#ai-report-configuration)
+10. [PDF export](#pdf-export)
+11. [Data sources](#data-sources)
+12. [Using the dashboard](#using-the-dashboard)
+13. [CLI and tests](#cli-and-tests)
+14. [API reference](#api-reference)
+15. [Architecture](#architecture)
+16. [Troubleshooting](#troubleshooting)
+17. [Security](#security)
+18. [Contributing](#contributing)
+19. [License](#license)
 
 ---
 
-## Overview
+## What this project does
 
-| Source | Data ingested |
+This project converts QA execution data into a management-ready weekly report.
+
+It supports:
+
+- Excel-based imports for test execution, JIRA issue exports, and vendor-portal/UAT bug logs.
+- Live JIRA issue fetch using `/rest/api/2/search`.
+- Live QMetry test-cycle/test-case fetch using QTM4J UI API endpoints.
+- Backend aggregation for result mix, pass rate, tester productivity, test-cycle health, story/bug split, defect backlog, traceability, and vendor-portal bugs.
+- AI-generated QA sprint reports using configurable LLM providers.
+- PDF export using a print-optimized React route rendered by headless Chromium.
+- Docker and local development modes.
+
+---
+
+## Current implementation
+
+The current implementation has three main applications:
+
+| App | Location | Responsibility |
+|---|---|---|
+| Batch/core | `apps/batch` | Parse files, call integrations, merge data, aggregate metrics, generate AI report text |
+| API | `apps/api` | Express API for dashboard data, generation, uploads, integrations, status, and PDF export |
+| Web | `apps/web` | React/Vite dashboard UI, import screen, settings, AI report screen, and print route |
+
+The dashboard is backend-driven. The React app renders the JSON returned by the API; it does not calculate the core QA metrics in the browser.
+
+Current backend flow:
+
+```text
+Excel files + live integrations
+          ↓
+parse and normalize dataset
+          ↓
+raw-dataset.json
+          ↓
+apply date/search/result/project filters
+          ↓
+buildDashboardPayload
+          ↓
+dashboard-data.json
+          ↓
+React dashboard + AI report + PDF export
+```
+
+Current dashboard areas:
+
+| Area | Description |
 |---|---|
-| **Zephyr / QMetry** | Test-cycle executions (PASS / FAIL / BLOCKED / NOT EXECUTED / NOT APPLICABLE) |
-| **JIRA** | Stories and Bugs |
-| **ODL** | UAT issues (optional) |
+| Overview | KPIs, result mix, pass rate, story/bug split, defect backlog, trend charts |
+| Testers | Per-tester execution count, pass/fail/block status, productivity indicators |
+| Test Cycles | Cycle-level health, coverage, pass percentage, at-risk cycles |
+| Traceability | Story/bug/test coverage view with sprint and issue details where available |
+| Vendor Portal Bugs | UAT/vendor-portal issue view when matching data is loaded |
+| Import Data | Upload and manage Excel files staged in `input/` |
+| AI Report | Generate a business-ready QA report and export it to PDF |
+| Settings | Configure integrations, LLM provider/model, and connection checks |
 
-All metrics are computed in `apps/batch` (`buildDashboardPayload`); the React UI only renders JSON from
-`GET /api/dashboard`. See [`docs/AGGREGATION.md`](docs/AGGREGATION.md) for the exact aggregation rules and
-[`TECH_STACK.md`](TECH_STACK.md) for the full stack and architecture diagram.
+Recent implementation details included in this README:
 
-> **Date filtering:** rows updated within the selected range appear even if created earlier, so a period
-> reflects activity in that window.
+- JIRA search path defaults to `/rest/api/2/search` for on-prem and cloud-style profiles.
+- JIRA authentication supports email/token Basic auth, raw base64 Basic auth, full `Basic ...` header, and full `Bearer ...` header.
+- Optional JIRA session cookie support is available through `JIRA_SESSION_HEADER` for on-prem instances that redirect unauthenticated REST calls to HTML login pages.
+- Default JIRA fields are aligned with common Postman/JIRA search requests, including summary, status, assignee, reporter, labels, priority, resolution, components, fix versions, and common custom fields.
+- AI report generation supports multiple LLM providers: Anthropic, OpenAI, Gemini, and OpenAI-compatible endpoints.
+- Vendor-specific naming has been generalized in the UI and documentation.
 
 ---
 
 ## Features
 
-- **Multi-source ingestion** — Zephyr, JIRA, and ODL Excel exports, or live JIRA/QMetry REST APIs, or both merged.
-- **Backend-computed metrics** — result mix, pass rate, tester stats, cycle health, story/bug split, defect backlog, traceability, UAT.
-- **AI executive summary** — Claude drafts a VP-ready brief using dataset-query tools only (no invented numbers).
-- **One-click PDF export** — server-side Chromium renders a print-optimized report.
-- **File-based** — no database; state lives in `input/`, `output/`, and `config/`.
-- **Runs anywhere** — local dev (`run.sh dev`) or Docker (`run.sh docker`).
+- **Multi-source ingestion** — combine Excel exports and live API data.
+- **No database** — runtime files are stored locally and can be mounted into Docker.
+- **Backend-computed metrics** — consistent calculations across dashboard, report, CLI, and PDF.
+- **Live JIRA integration** — configurable JQL, project keys, pagination, field list, and auth strategy.
+- **Live QMetry integration** — fetch test cycles and test cases through QTM4J UI API endpoints.
+- **Traceability view** — connects work items, bugs, sprint details, and execution health where data exists.
+- **Vendor Portal Bugs view** — tracks UAT/vendor-portal defect data separately from general JIRA bugs.
+- **AI report generation** — produces management-ready report sections from the current dataset.
+- **PDF export** — renders the report through headless Chromium for consistent output.
+- **Docker-ready** — API and web containers run with mounted `input/`, `output/`, and `config/` folders.
+- **Security-aware defaults** — secrets stay in `.env`; real exports and integration configs are gitignored.
 
 ---
 
 ## Prerequisites
 
 | Tool | Version | Required for |
-|---|---|---|
-| **Node.js** | ≥ 20 | Local development |
-| **npm** | ≥ 9 | Local development |
-| **Docker Desktop** | latest | Docker deployment |
-| **Docker Compose** | v2+ | Docker deployment (bundled with Docker Desktop) |
-| **Chrome / Chromium** | any recent | PDF export in **local** dev (Docker bundles it) |
+|---|---:|---|
+| Node.js | 20+ | Local development |
+| npm | 9+ | Local development |
+| Docker Desktop | Latest | Docker deployment |
+| Docker Compose | v2+ | Docker deployment |
+| Chrome or Chromium | Recent version | Local PDF export only; Docker image includes Chromium |
 
-Optional integrations:
+Optional accounts/credentials:
 
-- A JIRA/QMetry account + API token — for live API fetch.
-- An Anthropic API key — for AI report summaries only.
+- JIRA account or token for live issue fetch.
+- QMetry/QTM4J access for live test-cycle/test-case fetch.
+- LLM provider API key for AI report generation.
+
+---
+
+## Quick start
+
+### Mac/Linux
+
+```bash
+chmod +x run.sh
+git clone <repo-url>
+cd weekly-qa-report
+./run.sh setup
+./run.sh dev
+```
+
+Then open:
+
+```text
+http://localhost:3000
+```
+
+### Windows
+
+Use CMD or PowerShell:
+
+```bat
+run.bat setup
+run.bat dev
+```
+
+Then open:
+
+```text
+http://localhost:3000
+```
+
+Core dashboard usage:
+
+1. Open **Import Data**.
+2. Upload one or more Excel exports.
+3. Click **Generate Report**.
+4. Review the dashboard tabs.
+5. Open **AI Report** to generate a narrative report and export PDF.
+
+No API key is required for Excel-only dashboard usage. API keys are only required for live integrations or AI summaries.
 
 ---
 
 ## Project structure
 
-```
+```text
 weekly-qa-report/
 ├── apps/
-│   ├── batch/                      # Parse, merge, aggregate, AI tools, CLI (core library)
-│   ├── api/                        # Express API (file server, dashboard, PDF endpoints)
-│   └── web/                        # React UI (display-only)
+│   ├── batch/                      # Parser, integration clients, aggregation, AI report logic, CLI
+│   ├── api/                        # Express API, upload routes, dashboard routes, PDF routes
+│   └── web/                        # React/Vite dashboard UI
 ├── config/
-│   ├── integrations.example.json   # Template — copy to integrations.json
-│   ├── integrations.json           # Your JIRA/QMetry settings (gitignored)
-│   └── report.json                 # AI report model & token settings
-├── input/                          # Staged Excel exports (gitignored)
-├── output/                         # Generated dashboard-data.json, raw-dataset.json, report.md (gitignored)
+│   ├── integrations.example.json   # Template for JIRA/QMetry settings
+│   ├── integrations.json           # Local integration settings; gitignored
+│   └── report.json                 # LLM provider/model/token settings
+├── input/                          # Uploaded/staged Excel exports; gitignored
+├── output/                         # Generated JSON/report artifacts; gitignored
 ├── fixtures/
-│   ├── synthetic/                  # Committed fixtures that power `npm test`
-│   └── input/                      # Real exports for local runs (gitignored)
+│   ├── synthetic/                  # Safe committed test fixtures
+│   └── input/                      # Optional real local exports; gitignored
 ├── docs/
-│   └── AGGREGATION.md              # Backend metric rules
-├── run.sh                          # Entry script (setup, dev, docker, generate, test)
-├── docker-compose.yml              # API + web containers
-├── TECH_STACK.md                   # Stack overview + architecture diagram
-├── .env.example                    # Template for .env
-└── .env                            # Secrets & env vars (gitignored)
+│   └── AGGREGATION.md              # Metric definitions and aggregation rules
+├── run.sh                          # Mac/Linux helper script
+├── run.bat                         # Windows helper script
+├── docker-compose.yml              # API and web containers
+├── TECH_STACK.md                   # Stack overview and architecture notes
+├── .env.example                    # Environment variable template
+└── .env                            # Local secrets; gitignored
 ```
 
 ---
 
 ## Configuration
 
-### Step 1 — First-time setup
+### 1. First-time setup
 
 ```bash
-chmod +x run.sh
 ./run.sh setup
 ```
 
-Creates `input/`, `output/`, `config/`; copies `.env` and `config/integrations.json` from their templates
-(if missing); and installs npm dependencies (local dev only).
+The setup command creates required folders, copies template config files where missing, and installs dependencies for local development.
 
-### Step 2 — Environment variables (`.env`)
+### 2. Environment variables
+
+Create your local `.env` file:
 
 ```bash
 cp .env.example .env
 ```
 
-| Variable | Required | Description |
+Common variables:
+
+| Variable | Required for | Description |
 |---|---|---|
-| `PORT` | No | API port (default `3001`). Docker sets this internally. |
-| `ANTHROPIC_API_KEY` | AI report | Claude API key for the **AI Report** tab. Dashboard works without it. |
-| `ANTHROPIC_MODEL` | No | Override the report model. Otherwise taken from `config/report.json`. |
-| `JIRA_EMAIL` | Live API | Email for JIRA/QMetry Basic auth. |
-| `JIRA_API_TOKEN` | Live API | JIRA personal access token. |
-| `QMETRY_BASIC_AUTH` | No | Pre-encoded `Basic <base64>` header (alternative to email+token). |
-| `PUPPETEER_EXECUTABLE_PATH` | PDF (local) | Path to a Chrome/Chromium binary. Docker sets this. |
-| `PDF_PRINT_URL` | PDF (local) | URL of the web app's `/print/report` route. Docker sets this. |
-| `INPUT_DIR` / `OUTPUT_DIR` / `CONFIG_DIR` / `PROJECT_ROOT` | No | Path overrides. |
+| `NODE_ENV` | Runtime | Usually `development` locally |
+| `PORT` | API | API port; default is `4000` or the configured project value |
+| `WEB_PORT` | Web | Web app port; default is `3000` |
+| `PROJECT_ROOT` | Runtime | Root folder override |
+| `INPUT_DIR` | Runtime | Input folder override |
+| `OUTPUT_DIR` | Runtime | Output folder override |
+| `CONFIG_DIR` | Runtime | Config folder override |
+| `LLM_PROVIDER` | AI report | `anthropic`, `openai`, `gemini`, or `openai-compatible` |
+| `LLM_MODEL` | AI report | Default model used when provider-specific override is not set |
+| `ANTHROPIC_API_KEY` | AI report | Anthropic credential |
+| `OPENAI_API_KEY` | AI report | OpenAI credential |
+| `GEMINI_API_KEY` | AI report | Gemini credential |
+| `CUSTOM_LLM_API_KEY` | AI report | Credential for OpenAI-compatible providers |
+| `CUSTOM_LLM_BASE_URL` | AI report | Base URL for OpenAI-compatible providers |
+| `JIRA_EMAIL` | Live JIRA/QMetry | Username/email for Basic auth when using email + token |
+| `JIRA_API_TOKEN` | Live JIRA/QMetry | Token/password or full `Basic ...` / `Bearer ...` header |
+| `JIRA_ONPREM_SECRET` | Live JIRA | Optional on-prem secret used by configured profiles |
+| `JIRA_SESSION_HEADER` | Live JIRA | Optional cookie string for on-prem JIRA behind SSO/session redirect |
+| `QMETRY_BASIC_AUTH` | Live QMetry | Pre-encoded Basic auth header for QMetry calls |
+| `PUPPETEER_EXECUTABLE_PATH` | PDF export | Local Chrome/Chromium path |
+| `PDF_PRINT_URL` | PDF export | Print route URL used by PDF renderer |
 
-> **Never commit `.env`.** Only `.env.example` is tracked. See [Security](#security).
+Do not commit `.env`.
 
-### Step 3 — Integrations (`config/integrations.json`)
+### 3. Integration config
 
-Only needed for **live API** fetch. For Excel-only use, leave both `enabled` flags `false`.
+Copy the example config:
 
 ```bash
 cp config/integrations.example.json config/integrations.json
 ```
 
-Replace `https://your-jira-host` below with your real JIRA/QMetry host.
+Use `config/integrations.json` for local JIRA/QMetry settings only. The file should stay gitignored.
 
-**JIRA fields**
+---
 
-| Field | Description |
+## Live JIRA and QMetry integration
+
+Live integrations are optional. Excel-only usage works with both integrations disabled.
+
+### JIRA search
+
+The JIRA client posts to:
+
+```text
+/rest/api/2/search
+```
+
+The request body follows the standard JIRA search shape:
+
+```json
+{
+  "jql": "project = QA AND issuetype in (Story, Bug) ORDER BY updated DESC",
+  "startAt": 0,
+  "maxResults": 100,
+  "fields": [
+    "summary",
+    "description",
+    "assignee",
+    "status",
+    "priority",
+    "issuetype",
+    "created",
+    "updated",
+    "resolution",
+    "resolutiondate",
+    "resolved",
+    "reporter",
+    "labels",
+    "components",
+    "fixVersions",
+    "customfield_10020",
+    "customfield_10016",
+    "customfield_10028"
+  ]
+}
+```
+
+Supported JIRA auth formats:
+
+| Input style | Example value |
 |---|---|
-| `enabled` | `true` to fetch issues from the JIRA API at generate time |
-| `baseUrl` | e.g. `https://your-jira-host` |
-| `searchPath` | `/rest/api/2/search` |
-| `projectKeys` | e.g. `["DLM"]` |
-| `jql` | JQL for Stories and Bugs |
-| `pageSize` | Results per page (default `100`) |
-| `statusDone` | Statuses treated as done, e.g. `["Done", "CLOSED", "Cancel"]` |
+| Email + token | `JIRA_EMAIL=user@example.com`, `JIRA_API_TOKEN=<token>` |
+| Raw base64 Basic value | `JIRA_API_TOKEN=<base64-user-colon-token>` |
+| Full Basic header | `JIRA_API_TOKEN=Basic <base64-user-colon-token>` |
+| Full Bearer header | `JIRA_API_TOKEN=Bearer <token>` |
 
-**QMetry fields** (QMetry Test Management / qtm4j UI API)
+For on-prem JIRA instances that return an HTML login page instead of JSON, an optional session cookie can be supplied:
 
-| Field | Description |
-|---|---|
-| `enabled` | `true` to fetch test executions from the QMetry API |
-| `baseUrl` | JIRA host, e.g. `https://your-jira-host` |
-| `apiPrefix` | `/rest/qtm4j/ui/latest` |
-| `projectKey` | JIRA project key for display (e.g. `DLM`) |
-| `projectId` | Numeric QMetry project ID — used to discover cycles when `cycleIds` is empty |
-| `cycleIds` | Explicit test-cycle IDs to fetch. If set, skips discovery |
-| `testCasesSearchPath` | `/testcycles/{cycleId}/testcases/search` |
-| `testCaseFields` | Comma-separated API fields |
-| `pageSize` | Results per page (default `50`, QMetry max) |
-| `maxPages` | Pagination limit per cycle (default `200`) |
+```bash
+JIRA_SESSION_HEADER=JSESSIONID=<value>; atlassian.xsrf.token=<value>
+```
 
-**Authentication** — either email + token (`JIRA_EMAIL` / `JIRA_API_TOKEN`) or a pre-encoded
-`QMETRY_BASIC_AUTH=Basic <base64>` in `.env`.
+Important notes about `JIRA_SESSION_HEADER`:
 
-<details>
-<summary><b>Example — both APIs enabled</b></summary>
+- Use the cookie value only, without the `Cookie:` prefix.
+- Treat it as a secret.
+- Do not commit it.
+- It is session-based and can expire.
+- Prefer proper Basic or Bearer authentication when the server allows it.
+
+### JIRA config example
 
 ```json
 {
   "jira": {
     "enabled": true,
+    "name": "Primary JIRA",
+    "deploymentType": "on-prem",
     "baseUrl": "https://your-jira-host",
     "searchPath": "/rest/api/2/search",
-    "projectKeys": ["DLM"],
-    "jql": "project = DLM AND issuetype in (Story, Bug) ORDER BY updated DESC",
+    "projectKeys": ["QA"],
+    "jql": "project = QA AND issuetype in (Story, Bug) ORDER BY updated DESC",
     "pageSize": 100,
-    "statusDone": ["Done", "CLOSED", "Cancel"]
-  },
+    "statusDone": ["Done", "Closed", "Resolved", "Cancel"]
+  }
+}
+```
+
+### QMetry/QTM4J config example
+
+```json
+{
   "qmetry": {
     "enabled": true,
     "baseUrl": "https://your-jira-host",
     "apiPrefix": "/rest/qtm4j/ui/latest",
-    "projectKey": "DLM",
-    "projectId": "23000",
+    "projectKey": "QA",
+    "projectId": "12345",
+    "testCyclesSearchPath": "/projects/{projectId}/testcycles/search",
     "testCasesSearchPath": "/testcycles/{cycleId}/testcases/search",
-    "testCaseFields": "seqNo,key,summary,priority,status,executionResult,executedBy,executedOn,lastModified",
-    "cycleIds": ["REPLACE_WITH_CYCLE_ID"],
+    "testCaseFields": "seqNo,key,versionNo,summary,priority,status,environment,executionResult,executionAssignee,executedOn,executedBy,lastModified,build",
+    "cycleIds": [],
     "pageSize": 50,
     "maxPages": 200
   }
 }
 ```
 
-</details>
-
-### Step 4 — Sample data (optional)
-
-Committed synthetic fixtures under `fixtures/synthetic/` power `npm test` on a clean clone. For local runs
-with **real** exports, drop them into `input/`:
-
-```bash
-cp fixtures/input/*.xlsx input/   # fixtures/input/ is gitignored — never commit real exports
-```
-
 ---
 
-## Running locally
+## AI report configuration
+
+The AI report is generated from the current dataset. The report prompt is designed to produce a structured QA sprint report with sections such as objective, validation focus, defect verification summary, test execution summary, test-cycle health, risks, upcoming plan, and final summary.
+
+Supported providers:
+
+| Provider | Environment key | Notes |
+|---|---|---|
+| Anthropic | `ANTHROPIC_API_KEY` | Default provider in the template |
+| OpenAI | `OPENAI_API_KEY` | Uses configured OpenAI model |
+| Gemini | `GEMINI_API_KEY` | Uses configured Gemini model |
+| OpenAI-compatible | `CUSTOM_LLM_API_KEY` | Requires `CUSTOM_LLM_BASE_URL` |
+
+Example `.env`:
 
 ```bash
-./run.sh dev
+LLM_PROVIDER=anthropic
+LLM_MODEL=claude-haiku-4-5-20251001
+ANTHROPIC_API_KEY=<your-key>
 ```
 
-| Service | URL |
-|---|---|
-| **Web UI** | <http://localhost:3000> |
-| **API** | <http://localhost:3001> |
-| **Health** | <http://localhost:3001/health> |
-
-The Vite dev server proxies `/api/*` to the API on port `3001`.
-
-**Other commands**
-
-```bash
-./run.sh setup                                 # first-time setup
-./run.sh build                                 # production build (batch + api + web)
-./run.sh test                                  # parser + filter tests
-./run.sh generate 2026-06-24 2026-06-30 full   # CLI report generation
-./run.sh help                                  # all commands
-```
-
-<details>
-<summary><b>Manual start (without run.sh)</b></summary>
-
-```bash
-npm install
-npm run dev            # builds batch first (predev), then starts API + UI
-```
-
-`.env` at the repo root is loaded automatically when the API starts — do **not** use `source .env` in Git Bash.
-
-</details>
-
----
-
-## Running with Docker
-
-Docker runs two containers — **API** (Node.js + Chromium) and **Web** (nginx). Your `input/`, `output/`,
-and `config/` folders are mounted as volumes, so data persists across restarts.
-
-```
-Browser → http://localhost:3000 (nginx / web)
-              ↓ proxies /api/*
-          dashboard-api:3001 (Node.js + Chromium)
-              ↓ reads/writes
-          ./input   ./output   ./config   (host volumes)
-```
-
-```bash
-chmod +x run.sh && ./run.sh setup   # then edit .env / integrations.json
-./run.sh docker                     # build & start (detached)
-```
-
-| Service | URL |
-|---|---|
-| **Web UI** | <http://localhost:3000> |
-| **API (direct)** | <http://localhost:3001/health> |
-
-**Docker commands**
-
-```bash
-./run.sh docker              # build and start (detached)
-./run.sh docker down         # stop and remove containers
-./run.sh docker logs         # follow logs
-./run.sh docker restart      # rebuild and restart
-
-# Or with docker compose directly:
-docker compose up --build -d
-docker compose down
-docker compose logs -f
-```
-
-Changes to `config/integrations.json` or files in `input/` are visible inside the container immediately
-(no rebuild). Rebuild only after **code** changes.
-
----
-
-## AI reports
-
-The **AI Report** tab drafts an executive summary with Claude. Set `ANTHROPIC_API_KEY` in `.env`; the model
-comes from `config/report.json` (override with `ANTHROPIC_MODEL`):
+Example `config/report.json`:
 
 ```json
-{ "model": "claude-sonnet-4-6", "maxTokens": 768 }
+{
+  "provider": "anthropic",
+  "model": "claude-haiku-4-5-20251001",
+  "maxTokens": 1200
+}
 ```
 
-Use **Settings → Test Anthropic connection** to verify your API key and network reachability to
-`api.anthropic.com`. Step-by-step logs appear in the UI and the API console.
+The AI report must not invent numbers. It should only summarize metrics available in the parsed dataset.
 
 ---
 
 ## PDF export
 
-**Export PDF** on the report renders a print-optimized page server-side via headless Chromium.
+The PDF export renders the report through the web app print route and headless Chromium.
 
-- **In Docker:** works out of the box — the API image installs Chromium and sets `PUPPETEER_EXECUTABLE_PATH`
-  and `PDF_PRINT_URL` automatically.
-- **In local dev:** point the API at a local Chrome and the running web app (add to `.env`; `npm run dev` loads it on Mac and Windows):
+In Docker, Chromium is bundled in the API image.
 
-  ```bash
-  # Mac
-  PUPPETEER_EXECUTABLE_PATH="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+For local development, configure Chrome/Chromium manually if needed:
 
-  # Windows — quote paths with spaces; forward slashes are fine
-  PUPPETEER_EXECUTABLE_PATH="C:/Program Files/Google/Chrome/Application/chrome.exe"
+```bash
+# macOS
+PUPPETEER_EXECUTABLE_PATH="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 
-  PDF_PRINT_URL=http://localhost:3000/print/report
-  ```
+# Windows
+PUPPETEER_EXECUTABLE_PATH="C:/Program Files/Google/Chrome/Application/chrome.exe"
 
-If the binary is missing you'll get a clear `Chromium not found at ...` error rather than a crash.
+PDF_PRINT_URL=http://localhost:3000/print/report
+```
+
+If the browser binary is missing, the API returns a clear PDF export error instead of failing silently.
 
 ---
 
 ## Data sources
 
-Use **files**, **APIs**, or **both**:
+The dashboard can use files, APIs, or both.
 
 | Mode | Setup |
 |---|---|
-| **Excel only** | Copy/upload `.xlsx` to `input/`; integrations `enabled: false` |
-| **API only** | Integrations `enabled: true`; credentials in `.env`; QMetry `cycleIds` set |
-| **Mixed** | Enable APIs and keep Excel in `input/` — data is merged |
+| Excel only | Upload `.xlsx` files through the UI or copy them into `input/`; keep integrations disabled |
+| API only | Enable integrations and provide credentials in `.env` |
+| Mixed | Keep files in `input/` and enable integrations; the dataset is merged |
 
-**Expected Excel types**
+Expected Excel/export categories:
 
-| File | Detection headers | Sheet |
+| Source type | Typical headers | Purpose |
 |---|---|---|
-| Zephyr export | `Test Cycle Key`, `Testcase/Teststep Execution Result` | `Data` or first |
-| JIRA export | `Issue Type`, `Key` (header ~row 4) | `general_report` |
-| ODL UAT | `TicketID`, `odlPriorityDescription` | first |
+| Test execution export | `Test Cycle Key`, `Testcase/Teststep Execution Result` | Test execution metrics and cycle health |
+| JIRA export | `Issue Type`, `Key`, `Status`, `Priority`, `Assignee` | Story/bug metrics and traceability |
+| Vendor Portal/UAT bug log | `TicketID`, priority/status-like columns | Separate UAT/vendor defect tracking |
+
+Uploaded files should not contain secrets. Real exports should remain in gitignored local folders only.
 
 ---
 
@@ -402,30 +476,57 @@ Use **files**, **APIs**, or **both**:
 
 | Tab | Content |
 |---|---|
-| **Overview** | Result mix, pass rate, story/bug split, defect backlog, monthly chart |
-| **Testers** | Per-tester execution stats |
-| **Test Cycles** | Cycle health, coverage, pass % (at-risk first) |
-| **Traceability** | Feature-area matrix (stories, bugs, completion) |
-| **UAT** | ODL UAT issues (shown when ODL data is loaded) |
-| **Import Data** | Upload Excel to `input/` |
-| **AI Report** | Generate the Claude narrative + PDF export |
-| **Settings** | Integration status and env hints |
+| Overview | High-level QA KPIs, trend charts, story/bug status, backlog summary |
+| Testers | Tester-wise execution and result breakdown |
+| Test Cycles | Cycle coverage, pass rate, health indicators, at-risk cycles |
+| Traceability | Work item and defect traceability with sprint/issue details when available |
+| Vendor Portal Bugs | Vendor/UAT bugs and their status distribution |
+| Import Data | Upload Excel files and inspect staged input files |
+| AI Report | Generate report narrative and export PDF |
+| Settings | Configure integrations, credentials status, and LLM provider/model |
 
-**Global filters** (top bar) call `GET /api/dashboard` with `startDate`, `endDate`, `search`,
-`result` (PASS/FAIL/BLOCKED/all), and `project`. All tabs render from the same backend-filtered payload.
+Global dashboard filters:
+
+- Start date
+- End date
+- Search text
+- Result status
+- Project
+
+Filters are applied by the backend before the payload is returned to the UI.
 
 ---
 
-## CLI & tests
+## CLI and tests
+
+Common commands:
 
 ```bash
-# CLI report generation
+./run.sh setup
+./run.sh dev
+./run.sh build
+./run.sh test
 ./run.sh generate 2026-06-24 2026-06-30 full
-npm run generate -- --start-date 2026-06-24 --end-date 2026-06-30 --report-type full
-# Report types: full | executive | testers | cycles
+./run.sh docker
+./run.sh docker down
+./run.sh docker logs
+./run.sh docker restart
+```
 
-# Tests (parser regressions + filter acceptance)
+Manual npm commands:
+
+```bash
+npm install
+npm run dev
+npm run build
 npm test
+npm run generate -- --start-date 2026-06-24 --end-date 2026-06-30 --report-type full
+```
+
+Report types:
+
+```text
+full | executive | testers | cycles
 ```
 
 ---
@@ -435,78 +536,115 @@ npm test
 | Method | Path | Description |
 |---|---|---|
 | `GET` | `/health` | API health check |
-| `GET` | `/api/status` | API key & JIRA credential status |
-| `GET` | `/api/dashboard?startDate&endDate&search&result&project` | Filtered dashboard payload |
-| `POST` | `/api/generate` | Parse/fetch, write JSON + optional AI report |
+| `GET` | `/api/status` | Runtime status and credential availability summary |
+| `GET` | `/api/dashboard` | Filtered dashboard payload |
+| `POST` | `/api/generate` | Parse/fetch data, aggregate metrics, write output artifacts, optionally generate AI report |
 | `GET` | `/api/report` | Last generated markdown report |
-| `POST` | `/api/report/pdf` | Server-rendered PDF of the report |
-| `GET` | `/api/integrations` | Integration config summary |
-| `POST` | `/api/integrations/test` | Test JIRA/QMetry fetch |
-| `POST` | `/api/upload` | Stage an Excel file to `input/` |
-| `GET` | `/api/input/files` | List staged files |
-| `DELETE` | `/api/input/:filename` | Remove a staged file |
+| `POST` | `/api/report/pdf` | Generate PDF using the print route |
+| `GET` | `/api/integrations` | Integration configuration summary |
+| `POST` | `/api/integrations/test` | Test live JIRA/QMetry connectivity |
+| `POST` | `/api/integrations/test-connection` | Test a user-provided connection from Settings |
+| `POST` | `/api/upload` | Upload an Excel file into `input/` |
+| `GET` | `/api/input/files` | List staged input files |
+| `DELETE` | `/api/input/:filename` | Delete a staged input file |
+
+Dashboard query parameters:
+
+| Parameter | Description |
+|---|---|
+| `startDate` | Include records active/updated from this date |
+| `endDate` | Include records active/updated up to this date |
+| `search` | Search text across supported fields |
+| `result` | Execution result filter such as PASS, FAIL, BLOCKED, or all |
+| `project` | Project key/name filter |
 
 ---
 
 ## Architecture
 
-```
-input/ + integrations → parse → raw-dataset.json (cache)
-                                      ↓
-                          applyFilters (date, search, result, project)
-                                      ↓
-                          buildDashboardPayload → dashboard-data.json
-                                      ↓
-                   React UI (render only) · AI report · PDF · CLI
+```text
+             ┌────────────────────────┐
+             │ Excel exports / uploads │
+             └───────────┬────────────┘
+                         │
+             ┌───────────▼────────────┐
+             │ Live JIRA/QMetry APIs   │
+             └───────────┬────────────┘
+                         │
+             ┌───────────▼────────────┐
+             │ apps/batch              │
+             │ parse + normalize       │
+             │ merge + aggregate       │
+             └───────────┬────────────┘
+                         │
+          ┌──────────────▼──────────────┐
+          │ output/dashboard-data.json   │
+          │ output/raw-dataset.json      │
+          │ output/report.md             │
+          └──────────────┬──────────────┘
+                         │
+       ┌─────────────────▼─────────────────┐
+       │ apps/api                           │
+       │ dashboard, generate, upload, PDF   │
+       └─────────────────┬─────────────────┘
+                         │
+       ┌─────────────────▼─────────────────┐
+       │ apps/web                           │
+       │ React dashboard + print route      │
+       └───────────────────────────────────┘
 ```
 
-The React app performs **no aggregation** — it renders backend JSON. See [`TECH_STACK.md`](TECH_STACK.md)
-for the full stack and a diagram, and [`docs/AGGREGATION.md`](docs/AGGREGATION.md) for metric definitions.
+Design principles:
 
-The AI report gives Claude six read-only dataset tools so numbers are never invented:
-`get_result_mix`, `get_tester_stats`, `get_cycle_health`, `get_story_bug_split`, `get_defect_backlog`,
-`get_traceability`.
+- Keep aggregation logic in the backend.
+- Keep the UI display-only where possible.
+- Keep secrets out of source code.
+- Keep generated files out of Git.
+- Keep the product portable across teams and organizations.
 
 ---
 
 ## Troubleshooting
 
-| Problem | Fix |
-|---|---|
-| **AI report: `Connection error` (Docker)** | The container may not reach `api.anthropic.com` directly. Use `./run.sh dev` on the host, or set `ANTHROPIC_PROXY_URL` in `.env` and `./run.sh docker restart`. |
-| **AI report: 401 / auth error** | `ANTHROPIC_API_KEY` is missing, invalid, or revoked — rotate and update `.env`. |
-| **PDF export fails locally** | Set `PUPPETEER_EXECUTABLE_PATH` and `PDF_PRINT_URL` (see [PDF export](#pdf-export)). |
-| **Empty dashboard** | Stage files in `input/` or enable integrations, then **Generate Report**. |
-| **JIRA API errors** | Check `JIRA_EMAIL` / `JIRA_API_TOKEN` and `enabled: true` in `integrations.json`. |
-| **Port 3000/3001 in use** | Stop the conflicting process or change ports (`vite.config.ts` / `docker-compose.yml`). |
-| **`.env` not loaded (Docker)** | Ensure `.env` exists in the repo root before `docker compose up`. |
-| **`.env` not loaded (local dev)** | Run `npm run dev` or `run.bat dev` from the repo root — `.env` loads automatically on Mac and Windows. Check `GET http://localhost:3001/api/env` for diagnostics. Do **not** use `source .env` in Git Bash. Quote paths with spaces in `.env`. |
-| **`docker: command not found`** | Install [Docker Desktop](https://www.docker.com/products/docker-desktop/). |
-| **Changes not reflected (Docker)** | `./run.sh docker restart` after code changes. |
+| Problem | Likely cause | Fix |
+|---|---|---|
+| Empty dashboard | No data loaded | Upload Excel files or enable integrations, then generate again |
+| JIRA returns HTML instead of JSON | REST call is redirected to login/SSO page | Verify auth header; use `JIRA_SESSION_HEADER` only if required by your on-prem setup |
+| JIRA 401 | Credentials rejected | Recreate token/password/header and update `.env` |
+| JIRA 403 | User lacks permission | Confirm project browse/search permissions |
+| JIRA search returns no issues | JQL too narrow or project key mismatch | Test the JQL in JIRA first, then update config |
+| QMetry returns no cycles | Project ID or cycle IDs are wrong | Check `projectId`, `cycleIds`, and QTM4J endpoint access |
+| AI report fails with auth error | Missing/invalid provider key | Update the correct provider API key in `.env` |
+| AI report connection error | Network/proxy issue | Configure corporate proxy variables if needed |
+| PDF export fails locally | Chrome path missing | Set `PUPPETEER_EXECUTABLE_PATH` and `PDF_PRINT_URL` |
+| Docker changes not visible | Code changed after image build | Run `./run.sh docker restart` |
+| Port already in use | Another process is using the port | Stop the process or change the port |
+| `.env` not loaded | Command was not run from repo root | Run scripts from the repo root; do not use `source .env` in Git Bash |
 
 ---
 
 ## Security
 
-- **Never commit secrets.** `.env`, `config/integrations.json`, and `fixtures/input/` are gitignored. Only
-  `*.example` templates are tracked.
-- **Secrets live in the environment**, not in source — API keys and tokens go in `.env`.
-- **If a secret is ever exposed** (committed, pasted, logged), treat it as compromised and **rotate it**
-  immediately — revoke and reissue the key/token. Scrubbing history does not un-leak it.
-- **Use placeholders in docs and examples** — no real hostnames, emails, or IDs in tracked files.
+- Never commit `.env`.
+- Never commit `config/integrations.json` if it contains real hosts, credentials, project IDs, or JQL tied to private data.
+- Never commit real Excel exports.
+- Keep `.env.example` and `config/integrations.example.json` placeholder-only.
+- Treat API keys, Basic auth headers, Bearer tokens, and session cookies as secrets.
+- If a secret is pasted, logged, or committed, rotate it immediately.
+- Do not hardcode `JSESSIONID` or XSRF cookies in source code or README examples.
+- Prefer stable token-based auth over browser/session cookies where your JIRA instance supports it.
 
 ---
 
 ## Contributing
 
-Contributions are welcome. In short:
-
-1. Branch from `main` (`feature/<short-name>`).
-2. `npm install`, make your change, and keep it type-safe (`npm run build`).
-3. Run `npm test` before opening a PR.
-4. Don't commit secrets or real data exports.
-
-See [`CONTRIBUTING.md`](CONTRIBUTING.md) for details.
+1. Create a feature branch from `main`.
+2. Run `npm install`.
+3. Make the change with TypeScript-safe code.
+4. Run `npm run build`.
+5. Run `npm test`.
+6. Do not commit secrets, generated output, or real exports.
+7. Open a pull request with a clear summary and test evidence.
 
 ---
 
