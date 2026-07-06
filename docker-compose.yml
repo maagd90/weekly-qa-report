@@ -3,7 +3,7 @@ services:
     build:
       context: .
       dockerfile: apps/api/Dockerfile
-    container_name: dlm-dashboard-api
+    container_name: qa-dashboard-api
     restart: unless-stopped
     env_file:
       - .env
@@ -19,6 +19,10 @@ services:
       HTTP_PROXY: ${HTTP_PROXY:-}
       ANTHROPIC_PROXY_URL: ${ANTHROPIC_PROXY_URL:-}
       NODE_EXTRA_CA_CERTS: ${NODE_EXTRA_CA_CERTS:-}
+      # Office/on-prem integrations sometimes use a self-signed/intercepted TLS chain.
+      # Default true for local Docker so JIRA/QMetry work the same way as tested host mode.
+      INTEGRATION_ALLOW_SELF_SIGNED_CERTS: ${INTEGRATION_ALLOW_SELF_SIGNED_CERTS:-true}
+      JIRA_ALLOW_SELF_SIGNED: ${JIRA_ALLOW_SELF_SIGNED:-true}
     volumes:
       - ./input:/data/input
       - ./output:/data/output
@@ -36,7 +40,7 @@ services:
     build:
       context: .
       dockerfile: apps/web/Dockerfile
-    container_name: dlm-dashboard-web
+    container_name: qa-dashboard-web
     restart: unless-stopped
     ports:
       - "3000:80"
