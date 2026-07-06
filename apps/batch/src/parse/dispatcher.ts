@@ -12,7 +12,7 @@ export type FileFormat = 'xlsx' | 'unknown';
 
 const SHEET_PREFS: Record<string, string[]> = {
   odl: [],
-  jira: ['general_report'],
+  jira: ['general_report', 'Jira'],
   execution: ['Data'],
 };
 
@@ -89,7 +89,7 @@ export function parseAllFiles(filePaths: string[]): Dataset {
 
 export function sniffFileType(filePath: string): 'test-execution' | 'jira' | 'odl' | 'unknown' {
   try {
-    const { rows } = readWorkbookRows(filePath, ['general_report', 'Data']);
+    const { rows } = readWorkbookRows(filePath, ['general_report', 'Jira', 'Data']);
     if (isOdlFile(rows)) return 'odl';
     if (isJiraExport(rows)) return 'jira';
     if (isExecutionExportFile(rows)) return 'test-execution';
