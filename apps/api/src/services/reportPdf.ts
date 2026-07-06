@@ -3,7 +3,6 @@ import path from 'path';
 import puppeteer, { type Browser, type Page } from 'puppeteer-core';
 
 const DEFAULT_PRINT_URL = 'http://dashboard-web/print/report';
-const DEFAULT_CHROMIUM = '/usr/bin/chromium';
 const DEFAULT_RENDER_TIMEOUT_MS = 90_000;
 const MAX_CONCURRENT_PDF = 2;
 const INLINE_LOGO_PATH = '/__report-logo';
@@ -38,21 +37,79 @@ function renderTimeoutMs(): number {
   return Number.isFinite(raw) && raw > 10_000 ? raw : DEFAULT_RENDER_TIMEOUT_MS;
 }
 
+function stripQuotes(value: string): string {
+  const p = value.trim();
+  if ((p.startsWith('"') && p.endsWith('"')) || (p.startsWith("'") && p.endsWith("'"))) return p.slice(1, -1);
+  return p;
+}
+
+function expandWindowsEnv(value: string): string {
+  return value.replace(/%([^%]+)%/g, (_, name) => process.env[name] ?? `%${name}%`);
+}
+
 function normalizeExecutablePath(raw: string): string {
-  let p = raw.trim();
-  if ((p.startsWith('"') && p.endsWith('"')) || (p.startsWith("'") && p.endsWith("'"))) p = p.slice(1, -1);
-  if (process.platform === 'win32') p = p.replace(/%([^%]+)%/g, (_, name) => process.env[name] ?? `%${name}%`);
+  let p = stripQuotes(raw);
+  if (!p) return '';
+  if (process.platform === 'win32') {
+    p = expandWindowsEnv(p);
+    if (/^\/[a-z0-9_-]+\//i.test(p)) return p;
+  }
   return path.normalize(p);
 }
 
-function resolveChromiumPath(): string {
-  const raw = process.env.PUPPETEER_EXECUTABLE_PATH || DEFAULT_CHROMIUM;
-  const executablePath = normalizeExecutablePath(raw);
-  pdfLog('resolve chromium', { executablePath, exists: fs.existsSync(executablePath) });
-  if (!fs.existsSync(executablePath)) {
-    throw new Error(`Chromium not found at "${executablePath}". Set PUPPETEER_EXECUTABLE_PATH in .env to your Chrome/Edge path or run via Docker.`);
+function existingPath(value?: string): string | null {
+  if (!value?.trim()) return null;
+  const executablePath = normalizeExecutablePath(value);
+  return executablePath && fs.existsSync(executablePath) ? executablePath : null;
+}
+
+function candidateBrowserPaths(): string[] {
+  const candidates = new Set<string>();
+  const configured = process.env.PUPPETEER_EXECUTABLE_PATH;
+  if (configured) candidates.add(configured);
+
+  if (process.platform === 'win32') {
+    const programFiles = process.env.PROGRAMFILES || 'C:\\Program Files';
+    const programFilesX86 = process.env['PROGRAMFILES(X86)'] || 'C:\\Program Files (x86)';
+    const localAppData = process.env.LOCALAPPDATA;
+    const chrome = 'Google\\Chrome\\Application\\chrome.exe';
+    const edge = 'Microsoft\\Edge\\Application\\msedge.exe';
+    candidates.add(path.join(programFiles, chrome));
+    candidates.add(path.join(programFilesX86, chrome));
+    candidates.add(path.join(programFiles, edge));
+    candidates.add(path.join(programFilesX86, edge));
+    if (localAppData) candidates.add(path.join(localAppData, chrome));
+  } else if (process.platform === 'darwin') {
+    candidates.add('/Applications/Google Chrome.app/Contents/MacOS/Google Chrome');
+    candidates.add('/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge');
+    candidates.add('/Applications/Chromium.app/Contents/MacOS/Chromium');
+  } else {
+    candidates.add('/usr/bin/chromium');
+    candidates.add('/usr/bin/chromium-browser');
+    candidates.add('/usr/bin/google-chrome');
+    candidates.add('/usr/bin/google-chrome-stable');
+    candidates.add('/snap/bin/chromium');
   }
-  return executablePath;
+
+  return [...candidates].map(normalizeExecutablePath).filter(Boolean);
+}
+
+function resolveChromiumPath(): string {
+  const candidates = candidateBrowserPaths();
+  for (const executablePath of candidates) {
+    if (fs.existsSync(executablePath)) {
+      pdfLog('resolve browser executable', { executablePath, source: executablePath === normalizeExecutablePath(process.env.PUPPETEER_EXECUTABLE_PATH || '') ? 'configured' : 'auto-detected' });
+      return executablePath;
+    }
+  }
+
+  pdfLog('browser executable not found', { platform: process.platform, candidates });
+  throw new Error(
+    `Chromium/Chrome/Edge executable not found. ` +
+    `Checked: ${candidates.join(', ') || '(none)'}. ` +
+    `For Docker, rebuild the API image so Chromium is installed. ` +
+    `For local Windows, install Chrome/Edge or set paths.puppeteerExecutablePath in config/runtime.json to your chrome.exe/msedge.exe path.`,
+  );
 }
 
 function inlineLogoFromDataUrl(value?: string): InlineLogoAsset | null {
