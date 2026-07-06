@@ -9,6 +9,12 @@ import { mapJiraStatus, projectFromKey, sanitizeText } from '../utils/excel';
 
 const MAX_PAGES = 500;
 
+export interface JiraSearchScope {
+  startDate?: string;
+  endDate?: string;
+  project?: string;
+}
+
 function cleanHeaderValue(value: string): string {
   return value.replace(/^Cookie:\s*/i, '').trim();
 }
@@ -31,6 +37,37 @@ function snippet(body: string): string {
   return body.replace(/\s+/g, ' ').trim().slice(0, 220);
 }
 
+function splitOrderBy(jql: string): { base: string; orderBy: string } {
+  const match = jql.match(/\s+ORDER\s+BY\s+[\s\S]*$/i);
+  if (!match || match.index === undefined) return { base: jql.trim(), orderBy: '' };
+  return { base: jql.slice(0, match.index).trim(), orderBy: match[0].trim() };
+}
+
+function quoteJqlDate(date: string, endOfDay = false): string {
+  const clean = date.slice(0, 10);
+  return endOfDay ? `"${clean} 23:59"` : `"${clean}"`;
+}
+
+function normalizeProjectKey(project?: string): string | null {
+  const clean = (project || '').trim();
+  if (!clean || clean === 'all') return null;
+  return /^[A-Z][A-Z0-9_]*$/i.test(clean) ? clean.toUpperCase() : null;
+}
+
+function scopedJql(originalJql: string, scope?: JiraSearchScope): string {
+  const conditions: string[] = [];
+  const project = normalizeProjectKey(scope?.project);
+  if (project) conditions.push(`project = ${project}`);
+  if (scope?.startDate && scope?.endDate) {
+    conditions.push(`updated >= ${quoteJqlDate(scope.startDate)} AND updated <= ${quoteJqlDate(scope.endDate, true)}`);
+  }
+  if (!conditions.length) return originalJql;
+
+  const { base, orderBy } = splitOrderBy(originalJql || 'ORDER BY updated DESC');
+  const scoped = `${base ? `(${base}) AND ` : ''}${conditions.map((c) => `(${c})`).join(' AND ')}`;
+  return orderBy ? `${scoped} ${orderBy}` : `${scoped} ORDER BY updated DESC`;
+}
+
 async function parseJiraResponse(res: Response): Promise<{ issues?: Record<string, unknown>[]; total?: number; error?: string }> {
   const contentType = res.headers.get('content-type') || '';
   const body = await res.text();
@@ -45,11 +82,12 @@ async function parseJiraResponse(res: Response): Promise<{ issues?: Record<strin
   }
 }
 
-export async function fetchJiraIssues(cfg: IntegrationsConfig['jira']): Promise<{ issues: IssueRow[]; error?: string }> {
+export async function fetchJiraIssues(cfg: IntegrationsConfig['jira'], scope?: JiraSearchScope): Promise<{ issues: IssueRow[]; error?: string; jql?: string }> {
   if (!cfg.enabled) return { issues: [] };
   const authHeader = getAuthHeader(cfg.auth);
   if (!authHeader) return { issues: [], error: 'JIRA credentials not configured' };
   const sessionHeader = jiraSessionHeader(cfg);
+  const jql = scopedJql(cfg.jql, scope);
 
   const issues: IssueRow[] = [];
   let startAt = 0;
@@ -69,14 +107,14 @@ export async function fetchJiraIssues(cfg: IntegrationsConfig['jira']): Promise<
       res = await fetchWithTimeout(url, {
         method: 'POST',
         headers,
-        body: JSON.stringify({ jql: cfg.jql, startAt, maxResults, fields: cfg.fields }),
+        body: JSON.stringify({ jql, startAt, maxResults, fields: cfg.fields }),
       });
     } catch (err) {
-      return { issues, error: `JIRA API request failed: ${describeFetchError(err)}` };
+      return { issues, error: `JIRA API request failed: ${describeFetchError(err)}`, jql };
     }
 
     const data = await parseJiraResponse(res);
-    if (data.error) return { issues, error: data.error };
+    if (data.error) return { issues, error: data.error, jql };
 
     const batch = data.issues || [];
     for (const item of batch) {
@@ -105,13 +143,13 @@ export async function fetchJiraIssues(cfg: IntegrationsConfig['jira']): Promise<
     pages++;
     if (!batch.length || startAt >= (data.total || 0)) break;
   }
-  if (pages >= MAX_PAGES) return { issues, error: 'JIRA API pagination limit reached' };
-  return { issues };
+  if (pages >= MAX_PAGES) return { issues, error: 'JIRA API pagination limit reached', jql };
+  return { issues, jql };
 }
 
-export async function fetchJiraDataset(cfg: IntegrationsConfig) {
+export async function fetchJiraDataset(cfg: IntegrationsConfig, scope?: JiraSearchScope) {
   const ds = emptyDataset();
-  const { issues, error } = await fetchJiraIssues(cfg.jira);
+  const { issues, error } = await fetchJiraIssues(cfg.jira, scope);
   ds.issues = issues;
   ds.meta.integrations.jira = true;
   ds.meta.fetchedAt = new Date().toISOString();
