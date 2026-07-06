@@ -23,6 +23,7 @@ interface RuntimeConfig {
     pdfPrintUrl?: RuntimeConfigValue;
   };
   network?: {
+    officeProxyUrl?: RuntimeConfigValue;
     httpsProxy?: RuntimeConfigValue;
     httpProxy?: RuntimeConfigValue;
     anthropicProxyUrl?: RuntimeConfigValue;
@@ -140,9 +141,10 @@ function applyRuntimeConfig(config: RuntimeConfig): void {
   setEnv('PUPPETEER_EXECUTABLE_PATH', config.paths?.puppeteerExecutablePath);
   setEnv('PDF_PRINT_URL', config.paths?.pdfPrintUrl);
 
-  setEnv('HTTPS_PROXY', config.network?.httpsProxy);
-  setEnv('HTTP_PROXY', config.network?.httpProxy);
-  setEnv('ANTHROPIC_PROXY_URL', config.network?.anthropicProxyUrl);
+  const officeProxyUrl = config.network?.officeProxyUrl;
+  setEnv('HTTPS_PROXY', config.network?.httpsProxy || officeProxyUrl);
+  setEnv('HTTP_PROXY', config.network?.httpProxy || officeProxyUrl);
+  setEnv('ANTHROPIC_PROXY_URL', config.network?.anthropicProxyUrl || officeProxyUrl);
   setEnv('NODE_EXTRA_CA_CERTS', config.network?.nodeExtraCaCerts);
   setEnv('INTEGRATION_ALLOW_SELF_SIGNED_CERTS', config.network?.integrationAllowSelfSignedCerts);
   setEnv('JIRA_ALLOW_SELF_SIGNED', config.network?.jiraAllowSelfSigned);
