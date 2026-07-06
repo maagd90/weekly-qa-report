@@ -1,4 +1,7 @@
 {
+  "notes": {
+    "CORS_ORIGINS": "Comma-separated browser origin allow-list for the API, for example: http://localhost:3000,http://localhost:5173"
+  },
   "env": {
     "CORS_ORIGINS": "http://localhost:3000"
   },
