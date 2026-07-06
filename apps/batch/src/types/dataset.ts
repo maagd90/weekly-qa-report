@@ -132,6 +132,18 @@ export interface DashboardTraceabilityItem { area: string; stories: number; done
 export interface DashboardWorkItem { key: string; summary: string; issueType: IssueType; status: IssueStatus; priority: string; assignee: string; sprint: string; sprintId?: unknown; area: string; project: string; updatedAt: string }
 export interface DashboardPriorityItem { priority: string; open: number; total: number }
 export interface DashboardOwnerItem { name: string; open: number }
+export interface DashboardStoryBug { story: number; bug: number; storyOpen: number; storyDone: number; bugOpen: number; bugDone: number }
+export interface DashboardDefectBacklog { openTotal: number; byPriority: DashboardPriorityItem[]; topPriorities: DashboardPriorityItem[]; byOwner: DashboardOwnerItem[] }
+export interface DashboardOverview {
+  totalCases: number;
+  executed: number;
+  passRate: number;
+  failed: number;
+  blocked: number;
+  resultMix: DashboardResultMixItem[];
+  byMonth: DashboardMonthItem[];
+  chartSeries: { resultMix: { name: string; value: number; color: string }[] };
+}
 export interface DashboardUatRow { id: string; subject: string; area: string; priority: string; status: string; submitter: string; submittedAt: string; updatedAt: string; cr: string }
 export interface DashboardUatPayload {
   total: number;
@@ -145,36 +157,28 @@ export interface DashboardUatPayload {
   bySubmitter: { name: string; count: number }[];
   rows: DashboardUatRow[];
 }
+export interface DashboardByProject {
+  project: string;
+  overview: DashboardOverview;
+  storyBug: DashboardStoryBug;
+  defectBacklog: DashboardDefectBacklog;
+  cycles: DashboardCycleItem[];
+  testers: DashboardTesterItem[];
+  uat: DashboardUatPayload | null;
+}
 
 export interface DashboardPayload {
   scope: { startDate?: string; endDate?: string; search: string; result: string; project: string; projects: string[] };
-  overview: {
-    totalCases: number;
-    executed: number;
-    passRate: number;
-    failed: number;
-    blocked: number;
-    resultMix: DashboardResultMixItem[];
-    byMonth: DashboardMonthItem[];
-    chartSeries: { resultMix: { name: string; value: number; color: string }[] };
-  };
+  overview: DashboardOverview;
   testers: DashboardTesterItem[];
   cycles: DashboardCycleItem[];
   cyclesByPassPctAsc: DashboardCycleItem[];
-  storyBug: { story: number; bug: number; storyOpen: number; storyDone: number; bugOpen: number; bugDone: number };
+  storyBug: DashboardStoryBug;
   traceability: DashboardTraceabilityItem[];
   workItems?: DashboardWorkItem[];
-  defectBacklog: { openTotal: number; byPriority: DashboardPriorityItem[]; topPriorities: DashboardPriorityItem[]; byOwner: DashboardOwnerItem[] };
+  defectBacklog: DashboardDefectBacklog;
   uat: DashboardUatPayload | null;
-  byProject?: Array<{
-    project: string;
-    overview: DashboardPayload['overview'];
-    storyBug: DashboardPayload['storyBug'];
-    defectBacklog: DashboardPayload['defectBacklog'];
-    cycles: DashboardCycleItem[];
-    testers: DashboardTesterItem[];
-    uat: DashboardUatPayload | null;
-  }>;
+  byProject?: DashboardByProject[];
   files: FileMeta[];
   meta: { generatedAt: string; parsedAt: string; fetchedAt: string | null; warnings: string[]; dataMin?: string | null; dataMax?: string | null };
 }
