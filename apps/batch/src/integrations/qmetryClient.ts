@@ -6,6 +6,19 @@ import { fetchWithTimeout, safeApiError, describeFetchError } from '../utils/fet
 import { mapExecutionResult, projectFromKey, sanitizeText } from '../utils/excel';
 import { isoDateFromApi } from '../utils/jiraHelpers';
 
+export interface QmetryCycleSummary {
+  id: string;
+  key?: string;
+  name: string;
+  status?: string;
+}
+
+export interface QmetryCycleSearchResult {
+  cycles: QmetryCycleSummary[];
+  total: number;
+  error?: string;
+}
+
 function authHeader(cfg: QmetryIntegrationConfig): string | null {
   const encoded = getEncodedAuth(cfg.authEncodedEnv);
   if (encoded) return encoded.startsWith('Basic ') ? encoded : `Basic ${encoded}`;
@@ -71,45 +84,106 @@ function extractItems(data: unknown): Record<string, unknown>[] {
   const payload = data as {
     data?: Record<string, unknown>[];
     values?: Record<string, unknown>[];
+    items?: Record<string, unknown>[];
+    results?: Record<string, unknown>[];
+    testCycles?: Record<string, unknown>[];
     testCases?: Record<string, unknown>[];
     total?: number;
   };
   if (Array.isArray(data)) return data as Record<string, unknown>[];
-  return payload.data || payload.values || payload.testCases || [];
+  return payload.data || payload.values || payload.items || payload.results || payload.testCycles || payload.testCases || [];
 }
 
-/** List test cycle IDs for a QMetry project (numeric projectId) */
-async function fetchProjectCycleIds(cfg: QmetryIntegrationConfig): Promise<string[]> {
-  return (await fetchProjectCycles(cfg)).map((c) => c.id);
+function extractTotal(data: unknown, fallback: number): number {
+  const payload = data as { total?: unknown; totalCount?: unknown; count?: unknown; recordsTotal?: unknown };
+  const value = payload.total ?? payload.totalCount ?? payload.recordsTotal ?? payload.count;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
 }
 
-/** List test cycle {id, name} pairs for a QMetry project — used for the live "folder" dropdown. */
+function normalizeCycle(item: Record<string, unknown>): QmetryCycleSummary | null {
+  const id = sanitizeText(item.id || item.cycleId || item.testCycleId || item.entityId);
+  const key = sanitizeText(item.key || item.cycleKey || item.testCycleKey);
+  const name = sanitizeText(item.name || item.summary || item.cycleName || item.testCycleName || item.folderName) || key || id;
+  const status = sanitizeText(item.status || item.executionStatus);
+  if (!id && !key) return null;
+  return { id: id || key, key: key || undefined, name, status: status || undefined };
+}
+
+function cycleSearchBody(cfg: QmetryIntegrationConfig): Record<string, unknown> {
+  if (cfg.testCyclesSearchBody) return cfg.testCyclesSearchBody;
+  const filter: Record<string, unknown> = {};
+  if (cfg.projectId) filter.projectId = /^\d+$/.test(cfg.projectId) ? Number(cfg.projectId) : cfg.projectId;
+  return { filter };
+}
+
+function cycleSearchPath(cfg: QmetryIntegrationConfig, startAt: number, maxResults: number): string {
+  const basePath = (cfg.testCyclesSearchPath || '/testcycles/search').replace('{projectId}', encodeURIComponent(cfg.projectId || ''));
+  const qs = new URLSearchParams({ startAt: String(startAt), maxResults: String(maxResults) });
+  return `${basePath}?${qs}`;
+}
+
+export async function searchQmetryTestCycles(
+  cfg: QmetryIntegrationConfig,
+  options: { startAt?: number; maxResults?: number } = {},
+): Promise<QmetryCycleSearchResult> {
+  if (!cfg.enabled) return { cycles: [], total: 0 };
+  if (!cfg.projectId && !cfg.testCyclesSearchBody) {
+    return { cycles: [], total: 0, error: 'QMetry projectId is required for test cycle search' };
+  }
+  if (!cfg.testCyclesSearchPath) {
+    return { cycles: [], total: 0, error: 'QMetry testCyclesSearchPath is required' };
+  }
+
+  const startAt = options.startAt ?? 0;
+  const maxResults = options.maxResults ?? cfg.pageSize;
+  const path = cycleSearchPath(cfg, startAt, maxResults);
+  const body = cycleSearchBody(cfg);
+  const { ok, data, error } = await qmetryFetch(cfg, 'POST', path, body);
+  if (!ok) return { cycles: [], total: 0, error };
+
+  const items = extractItems(data);
+  const cycles = items.map(normalizeCycle).filter((c): c is QmetryCycleSummary => Boolean(c));
+  return { cycles, total: extractTotal(data, cycles.length) };
+}
+
+/** List test cycle IDs for a QMetry project/folder. */
+async function fetchProjectCycleIds(cfg: QmetryIntegrationConfig): Promise<{ ids: string[]; error?: string }> {
+  const ids: string[] = [];
+  let startAt = 0;
+  let pages = 0;
+
+  while (pages < cfg.maxPages) {
+    const result = await searchQmetryTestCycles(cfg, { startAt, maxResults: cfg.pageSize });
+    if (result.error) return { ids, error: result.error };
+    ids.push(...result.cycles.map((cycle) => cycle.id).filter(Boolean));
+    startAt += result.cycles.length;
+    pages++;
+    if (!result.cycles.length || startAt >= result.total) break;
+  }
+
+  if (pages >= cfg.maxPages) return { ids, error: 'QMetry test cycle search pagination limit reached' };
+  return { ids };
+}
+
+/** List test cycle {id, name} pairs for a QMetry project/folder — used for the live dropdown. */
 export async function fetchProjectCycles(cfg: QmetryIntegrationConfig): Promise<{ id: string; name: string }[]> {
-  if (!cfg.projectId || !cfg.testCyclesSearchPath) return [];
-  const path = cfg.testCyclesSearchPath.replace('{projectId}', encodeURIComponent(cfg.projectId));
   const cycles: { id: string; name: string }[] = [];
   let startAt = 0;
   let pages = 0;
 
   while (pages < cfg.maxPages) {
-    const qs = `?startAt=${startAt}&maxResults=${cfg.pageSize}`;
-    const body = cfg.testCyclesSearchBody || { filter: { projectId: cfg.projectId } };
-    const { ok, data, error } = await qmetryFetch(cfg, 'POST', `${path}${qs}`, body);
-    if (!ok) {
-      console.error('[QMetry] cycle search:', error);
+    const result = await searchQmetryTestCycles(cfg, { startAt, maxResults: cfg.pageSize });
+    if (result.error) {
+      console.error('[QMetry] cycle search:', result.error);
       break;
     }
-    const items = extractItems(data);
-    for (const item of items) {
-      const id = sanitizeText(item.id || item.cycleId);
-      const name = sanitizeText(item.name || item.summary || item.folderName) || id;
-      if (id) cycles.push({ id, name });
-    }
-    const total = (data as { total?: number })?.total ?? items.length;
-    startAt += items.length;
+    cycles.push(...result.cycles.map((cycle) => ({ id: cycle.id, name: cycle.name })));
+    startAt += result.cycles.length;
     pages++;
-    if (!items.length || startAt >= total) break;
+    if (!result.cycles.length || startAt >= result.total) break;
   }
+
   return cycles;
 }
 
@@ -152,7 +226,7 @@ async function fetchCycleExecutions(
       if (exec) executions.push(exec);
     }
 
-    const total = (data as { total?: number })?.total ?? startAt + items.length;
+    const total = extractTotal(data, startAt + items.length);
     startAt += items.length;
     pages++;
     if (items.length < cfg.pageSize || startAt >= total) break;
@@ -170,13 +244,15 @@ export async function fetchQmetryExecutions(cfg: QmetryIntegrationConfig): Promi
 
   let cycleIds = [...cfg.cycleIds];
   if (!cycleIds.length && cfg.projectId) {
-    cycleIds = await fetchProjectCycleIds(cfg);
+    const discovered = await fetchProjectCycleIds(cfg);
+    if (discovered.error) return { executions: [], cycleMeta: new Map(), error: `QMetry test cycle search failed: ${discovered.error}` };
+    cycleIds = discovered.ids;
   }
   if (!cycleIds.length) {
     return {
       executions: [],
       cycleMeta: new Map(),
-      error: 'No cycleIds configured — set cycleIds or projectId + testCyclesSearchPath in integrations.json',
+      error: 'No QMetry test cycles found. Set projectId and optional folderId, or provide cycleIds manually.',
     };
   }
 
