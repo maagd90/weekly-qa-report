@@ -1,16 +1,5 @@
 import type { AnthropicLogFn } from './anthropicLog';
-
-function describeFetchError(err: unknown): string {
-  const e = err as Error & { cause?: unknown; code?: string; errno?: number };
-  const parts = [e.message || String(err)];
-  if (e.code) parts.push(`code=${e.code}`);
-  if (e.errno != null) parts.push(`errno=${e.errno}`);
-  if (e.cause) {
-    const c = e.cause as Error & { code?: string };
-    parts.push(`cause=${c.message || String(e.cause)}${c.code ? ` (${c.code})` : ''}`);
-  }
-  return parts.join(' · ');
-}
+import { describeFetchError, fetchWithTimeout } from '../utils/fetchWithTimeout';
 
 /** Quick HTTPS reachability check before the Anthropic SDK call. */
 export async function probeAnthropicReachability(log: AnthropicLogFn): Promise<void> {
@@ -18,10 +7,7 @@ export async function probeAnthropicReachability(log: AnthropicLogFn): Promise<v
   log('network probe', `GET ${url} (connectivity check)`);
   const started = Date.now();
   try {
-    const res = await fetch(url, {
-      method: 'GET',
-      signal: AbortSignal.timeout(12_000),
-    });
+    const res = await fetchWithTimeout(url, { method: 'GET' }, 12_000);
     log(
       'network probe result',
       `status=${res.status} ${res.statusText} elapsed=${Date.now() - started}ms ` +
@@ -32,5 +18,3 @@ export async function probeAnthropicReachability(log: AnthropicLogFn): Promise<v
     throw err;
   }
 }
-
-export { describeFetchError };
