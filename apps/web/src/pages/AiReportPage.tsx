@@ -19,6 +19,9 @@ const REPORT_TYPES: { value: ReportType; label: string; desc: string }[] = [
 
 const AI_TOOLS = ['get_result_mix', 'get_cycle_health', 'get_story_bug_split', 'get_defect_backlog', 'get_traceability', 'get_uat_summary'];
 
+type ToolCallMeta = { toolName: string; rowCount: number };
+type ReportMeta = { toolCalls?: ToolCallMeta[]; params?: { startDate?: string; endDate?: string; reportType?: ReportType } };
+
 interface AiReportPageProps {
   dashboard?: DashboardPayload | null;
   kpiStyle: KpiStyle;
@@ -37,7 +40,7 @@ export function AiReportPage({ dashboard, kpiStyle, project, onGenerated }: AiRe
   const [warning, setWarning] = useState<string | null>(null);
   const [reportMarkdown, setReportMarkdown] = useState('');
   const [reportDashboard, setReportDashboard] = useState<DashboardPayload | null>(null);
-  const [toolCalls, setToolCalls] = useState<{ toolName: string; rowCount: number }[]>([]);
+  const [toolCalls, setToolCalls] = useState<ToolCallMeta[]>([]);
   const [downloading, setDownloading] = useState(false);
 
   const { data: reportData } = useQuery({ queryKey: ['report'], queryFn: batchApi.getReport, retry: false });
@@ -46,9 +49,10 @@ export function AiReportPage({ dashboard, kpiStyle, project, onGenerated }: AiRe
 
   useEffect(() => {
     if (!reportData) return;
+    const meta = reportData.meta as ReportMeta | undefined;
     if (reportData.markdown) setReportMarkdown(reportData.markdown);
-    if (reportData.meta?.toolCalls) setToolCalls(reportData.meta.toolCalls);
-    const params = reportData.meta?.params;
+    if (meta?.toolCalls) setToolCalls(meta.toolCalls);
+    const params = meta?.params;
     if (params?.startDate) setStartDate(params.startDate);
     if (params?.endDate) setEndDate(params.endDate);
     if (params?.reportType) setReportType(params.reportType);
@@ -62,8 +66,9 @@ export function AiReportPage({ dashboard, kpiStyle, project, onGenerated }: AiRe
       setWarning(skipped || null);
       if (result.payload) setReportDashboard(result.payload);
       if (result.report?.markdown) {
+        const meta = result.report.meta as ReportMeta | undefined;
         setReportMarkdown(result.report.markdown);
-        setToolCalls(result.report.meta?.toolCalls ?? []);
+        setToolCalls(meta?.toolCalls ?? []);
       }
       queryClient.invalidateQueries({ queryKey: ['dashboard'] });
       queryClient.invalidateQueries({ queryKey: ['dashboard-init'] });
@@ -78,8 +83,6 @@ export function AiReportPage({ dashboard, kpiStyle, project, onGenerated }: AiRe
   const hasNarrative = Boolean(reportMarkdown);
   const hasReport = !generating && (Boolean(chartData) || hasNarrative);
   const datePresets = [{ label: '7d', days: 7 }, { label: '30d', days: 30 }, { label: '90d', days: 90 }];
-
-  const isOnePageView = reportType === 'executive';
 
   async function handleDownloadPdf() {
     setDownloading(true);
