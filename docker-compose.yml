@@ -5,24 +5,18 @@ services:
       dockerfile: apps/api/Dockerfile
     container_name: qa-dashboard-api
     restart: unless-stopped
-    env_file:
-      - .env
     environment:
+      NODE_ENV: production
       PORT: "3001"
       INPUT_DIR: /data/input
       OUTPUT_DIR: /data/output
       CONFIG_DIR: /data/config
       PDF_PRINT_URL: http://dashboard-web/print/report
       PUPPETEER_EXECUTABLE_PATH: /usr/bin/chromium
-      # Proxy / CA — pulled from host .env via substitution (reliable vs env_file parsing)
-      HTTPS_PROXY: ${HTTPS_PROXY:-}
-      HTTP_PROXY: ${HTTP_PROXY:-}
-      ANTHROPIC_PROXY_URL: ${ANTHROPIC_PROXY_URL:-}
-      NODE_EXTRA_CA_CERTS: ${NODE_EXTRA_CA_CERTS:-}
       # Office/on-prem integrations sometimes use a self-signed/intercepted TLS chain.
-      # Default true for local Docker so JIRA/QMetry work the same way as tested host mode.
-      INTEGRATION_ALLOW_SELF_SIGNED_CERTS: ${INTEGRATION_ALLOW_SELF_SIGNED_CERTS:-true}
-      JIRA_ALLOW_SELF_SIGNED: ${JIRA_ALLOW_SELF_SIGNED:-true}
+      # Runtime can be changed in config/runtime.json; no .env file is required.
+      INTEGRATION_ALLOW_SELF_SIGNED_CERTS: "true"
+      JIRA_ALLOW_SELF_SIGNED: "true"
     volumes:
       - ./input:/data/input
       - ./output:/data/output
