@@ -1,0 +1,36 @@
+{
+  "paths": {
+    "inputDir": "/data/input",
+    "outputDir": "/data/output",
+    "configDir": "/data/config",
+    "puppeteerExecutablePath": "/usr/bin/chromium",
+    "pdfPrintUrl": "http://dashboard-web/print/report"
+  },
+  "network": {
+    "integrationAllowSelfSignedCerts": true,
+    "jiraAllowSelfSigned": true,
+    "httpsProxy": "",
+    "httpProxy": "",
+    "nodeExtraCaCerts": ""
+  },
+  "llm": {
+    "provider": "anthropic",
+    "model": "claude-haiku-4-5-20251001",
+    "anthropicApiKey": "",
+    "openaiApiKey": "",
+    "geminiApiKey": "",
+    "customLlmApiKey": "",
+    "customLlmBaseUrl": ""
+  },
+  "jira": {
+    "email": "",
+    "apiToken": "",
+    "onPremSecret": "",
+    "sessionHeader": "",
+    "sessionId": "",
+    "xsrfToken": ""
+  },
+  "qmetry": {
+    "basicAuth": ""
+  }
+}
