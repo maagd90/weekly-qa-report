@@ -9,6 +9,7 @@
   "network": {
     "integrationAllowSelfSignedCerts": true,
     "jiraAllowSelfSigned": true,
+    "officeProxyUrl": "",
     "httpsProxy": "",
     "httpProxy": "",
     "nodeExtraCaCerts": ""
