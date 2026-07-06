@@ -1,6 +1,7 @@
 import { createAnthropicClient, anthropicRoute } from './anthropicClient';
 import { createAnthropicLogger } from './anthropicLog';
-import { describeFetchError, probeAnthropicReachability } from './networkProbe';
+import { probeAnthropicReachability } from './networkProbe';
+import { describeFetchError } from '../utils/fetchWithTimeout';
 import { getOptionalAnthropicProxyUrl, maskProxyUrl, anthropicProxySource } from './optionalProxy';
 import { loadReportConfig } from '../config/loadReportConfig';
 import {
