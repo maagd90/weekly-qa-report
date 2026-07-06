@@ -32,7 +32,7 @@ export function AiReportPage({ dashboard, kpiStyle, project, onGenerated }: AiRe
   const weekAgo = new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString().slice(0, 10);
   const [startDate, setStartDate] = useState(weekAgo);
   const [endDate, setEndDate] = useState(today);
-  const [reportType, setReportType] = useState<ReportType>('full');
+  const [reportType, setReportType] = useState<ReportType>('executive');
   const [error, setError] = useState<string | null>(null);
   const [warning, setWarning] = useState<string | null>(null);
   const [reportMarkdown, setReportMarkdown] = useState('');
@@ -70,7 +70,7 @@ export function AiReportPage({ dashboard, kpiStyle, project, onGenerated }: AiRe
       queryClient.invalidateQueries({ queryKey: ['report'] });
       onGenerated?.();
     },
-    onError: (err: Error) => setError(err.message),
+    onError: (err: unknown) => setError(apiErrorMessage(err, 'Report generation failed')),
   });
 
   const chartData = reportDashboard ?? dashboard ?? null;
@@ -79,8 +79,11 @@ export function AiReportPage({ dashboard, kpiStyle, project, onGenerated }: AiRe
   const hasReport = !generating && (Boolean(chartData) || hasNarrative);
   const datePresets = [{ label: '7d', days: 7 }, { label: '30d', days: 30 }, { label: '90d', days: 90 }];
 
+  const isOnePageView = reportType === 'executive';
+
   async function handleDownloadPdf() {
     setDownloading(true);
+    setError(null);
     try {
       await batchApi.downloadReportPdf({ startDate, endDate, reportType, kpiStyle, project: selectedProject, branding: getReportBranding() });
     } catch (err) {

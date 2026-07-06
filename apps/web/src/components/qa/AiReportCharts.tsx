@@ -6,6 +6,8 @@ import { QaKpiCard, QaKpiGrid } from './QaKpiCard';
 import { ResultDonut } from './ResultDonut';
 import { StackedMonthChart } from './StackedMonthChart';
 import { HorizBar, SegBar, testerSegSegments } from './SegBar';
+import { AiReportUatSection } from './AiReportUatSection';
+import { TestersPerformanceSection } from './TestersPerformanceSection';
 
 interface AiReportChartsProps {
   dashboard: DashboardPayload;
@@ -17,16 +19,24 @@ export function AiReportCharts({ dashboard, kpiStyle, reportType }: AiReportChar
   const { overview, testers, cycles, storyBug, defectBacklog, uat } = dashboard;
   const sbTot = storyBug.story + storyBug.bug || 1;
   const showOverview = reportType === 'full' || reportType === 'executive';
-  const showTesters = reportType === 'full' || reportType === 'testers';
+  const showTestersCompact = reportType === 'full';
+  const showTestersFull = reportType === 'testers';
   const showCycles = reportType === 'full' || reportType === 'cycles';
   const showTrace = reportType === 'full';
+  const showUat = reportType === 'full' || reportType === 'executive';
   const topTesters = [...testers].sort((a, b) => b.executed - a.executed).slice(0, 6);
   const atRiskCycles = dashboard.cyclesByPassPctAsc.slice(0, 5);
+
+  if (showTestersFull) {
+    return (
+      <TestersPerformanceSection dashboard={dashboard} kpiStyle={kpiStyle} embedded />
+    );
+  }
 
   return (
     <div className="flex flex-col gap-6">
       {showOverview && (
-        <>
+        <div className="pdf-section flex flex-col gap-5">
           <QaKpiGrid cols={5}>
             <QaKpiCard kpiStyle={kpiStyle} label="Total Test Cases" value={fmt(overview.totalCases)}
               sub={`${cycles.length} cycles in scope`} color={QA.accent} />
@@ -41,22 +51,22 @@ export function AiReportCharts({ dashboard, kpiStyle, reportType }: AiReportChar
           </QaKpiGrid>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-            <div className="border border-qa-border p-5 bg-[#faf8f2]">
+            <div className="border border-qa-border p-5 bg-[#faf8f2] min-w-0">
               <div className="font-mono-qa text-[10px] tracking-wider uppercase text-qa-muted-light mb-3">Execution Result Mix</div>
               <ResultDonut
                 items={overview.resultMix.map((r) => ({ code: r.code, label: r.label, count: r.count, pct: r.pct }))}
                 total={overview.totalCases}
               />
             </div>
-            <div className="border border-qa-border p-5 bg-white">
+            <div className="border border-qa-border p-5 bg-white min-w-0">
               <StackedMonthChart data={overview.byMonth} />
             </div>
           </div>
-        </>
+        </div>
       )}
 
-      {showTesters && topTesters.length > 0 && (
-        <div className="border border-qa-border p-5 bg-white">
+      {showTestersCompact && topTesters.length > 0 && (
+        <div className="pdf-section border border-qa-border p-5 bg-white">
           <div className="font-mono-qa text-[10px] tracking-wider uppercase text-qa-muted-light mb-3">Top Testers by Volume</div>
           <div className="flex flex-col gap-3">
             {topTesters.map((t) => (
@@ -76,7 +86,7 @@ export function AiReportCharts({ dashboard, kpiStyle, reportType }: AiReportChar
       )}
 
       {showCycles && atRiskCycles.length > 0 && (
-        <div className="border border-qa-border p-5 bg-white">
+        <div className="pdf-section border border-qa-border p-5 bg-white">
           <div className="font-mono-qa text-[10px] tracking-wider uppercase text-qa-muted-light mb-3">Cycle Health (lowest pass rate first)</div>
           <div className="overflow-x-auto">
             <table className="w-full text-[12.5px] border-collapse">
@@ -104,7 +114,7 @@ export function AiReportCharts({ dashboard, kpiStyle, reportType }: AiReportChar
       )}
 
       {showTrace && storyBug.story + storyBug.bug > 0 && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+        <div className="pdf-section grid grid-cols-1 md:grid-cols-2 gap-5">
           <div className="border border-qa-border p-5 bg-white">
             <div className="font-mono-qa text-[10px] tracking-wider uppercase text-qa-muted-light mb-3">Story vs Bug Split</div>
             {[
@@ -134,23 +144,13 @@ export function AiReportCharts({ dashboard, kpiStyle, reportType }: AiReportChar
         </div>
       )}
 
-      {showOverview && uat && uat.total > 0 && (
-        <div className="border border-qa-border p-5 bg-white">
-          <div className="font-mono-qa text-[10px] tracking-wider uppercase text-qa-muted-light mb-3">UAT Summary</div>
-          <div className="grid grid-cols-3 gap-4 text-center">
-            <div>
-              <div className="font-spectral text-2xl font-bold">{fmt(uat.total)}</div>
-              <div className="text-[11px] text-qa-muted">Total</div>
-            </div>
-            <div>
-              <div className="font-spectral text-2xl font-bold" style={{ color: QA.PASS }}>{fmt(uat.closed)}</div>
-              <div className="text-[11px] text-qa-muted">Closed</div>
-            </div>
-            <div>
-              <div className="font-spectral text-2xl font-bold" style={{ color: QA.FAIL }}>{fmt(uat.open)}</div>
-              <div className="text-[11px] text-qa-muted">Open</div>
-            </div>
-          </div>
+      {showUat && uat && uat.total > 0 && (
+        <AiReportUatSection uat={uat} />
+      )}
+
+      {showUat && !uat?.total && (
+        <div className="pdf-section border border-qa-border p-5 bg-[#faf8f2] text-[13px] text-qa-muted">
+          No UAT issues in the selected date range. Widen the date range or check that an ODL UAT export is staged under Import Data.
         </div>
       )}
     </div>

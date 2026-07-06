@@ -9,6 +9,7 @@ export const AI_TOOLS = [
   { name: 'get_story_bug_split', description: 'Story vs Bug counts (open/done) for filtered JIRA issues' },
   { name: 'get_defect_backlog', description: 'Open bugs by priority and assignee' },
   { name: 'get_traceability', description: 'Feature area traceability matrix (stories, bugs, completion)' },
+  { name: 'get_uat_summary', description: 'UAT defects: totals, open/closed, by CR (change request), area, submitter, pending/open status, and priority' },
 ] as const;
 
 export type ToolName = typeof AI_TOOLS[number]['name'];
@@ -28,6 +29,8 @@ export function executeTool(name: string, dataset: Dataset, filter: FilterParams
       return payload.defectBacklog;
     case 'get_traceability':
       return payload.traceability;
+    case 'get_uat_summary':
+      return payload.uat ?? { total: 0, open: 0, closed: 0, message: 'No UAT issues in scope for this date range' };
     default:
       return { error: `Unknown tool: ${name}` };
   }
@@ -42,6 +45,7 @@ export function summarizeForPrompt(payload: DashboardPayload): string {
     scope: payload.scope,
     overview: payload.overview,
     storyBug: payload.storyBug,
+    uat: payload.uat ? { total: payload.uat.total, open: payload.uat.open, closed: payload.uat.closed } : null,
     testerCount: payload.testers.length,
     cycleCount: payload.cycles.length,
   });
