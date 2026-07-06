@@ -24,11 +24,11 @@ function SyncBox({ label, note, checked, disabled, onChange }: { label: string; 
 }
 
 function blankJiraConnection(): JiraConnectionInput {
-  return { id: newConnectionId(), name: '', baseUrl: '', enabled: true, syncIssues: true, deploymentType: 'on-prem', authType: 'basic', email: '', apiToken: '', searchPath: '/rest/api/2/search', projectKeys: [], jql: '' };
+  return { id: newConnectionId(), name: '', baseUrl: '', enabled: true, syncIssues: true, deploymentType: 'on-prem', authType: 'basic', email: '', apiToken: '', cookie: '', jiraSessionId: '', jiraXsrfToken: '', searchPath: '/rest/api/2/search', projectKeys: [], jql: '' };
 }
 
 function blankQmetryConnection(): QmetryConnectionInput {
-  return { id: newConnectionId(), name: '', baseUrl: '', enabled: true, syncExecutions: true, email: '', apiToken: '', projectKey: '', projectId: '', folderId: '' };
+  return { id: newConnectionId(), name: '', baseUrl: '', enabled: true, syncExecutions: true, email: '', apiToken: '', sessionHeader: '', sessionId: '', xsrfToken: '', projectKey: '', projectId: '', folderId: '' };
 }
 
 interface TestResult { ok: boolean; count?: number; executions?: number; issues?: number; uat?: number; error?: string }
@@ -58,9 +58,12 @@ function JiraConnectionCard({ conn, onChange, onRemove, projectOptions }: { conn
         <Field label="Connection name" value={conn.name} onChange={(e) => onChange({ ...conn, name: e.target.value })} />
         <Field label="Base URL" placeholder="https://jira.example.com" value={conn.baseUrl} onChange={(e) => onChange({ ...conn, baseUrl: e.target.value })} />
         <Field label="Username" value={conn.email} onChange={(e) => onChange({ ...conn, email: e.target.value, username: e.target.value })} />
-        <Field label="Credential" type={showSecret ? 'text' : 'password'} value={conn.apiToken || ''} onChange={(e) => onChange({ ...conn, apiToken: e.target.value, credential: e.target.value })} />
+        <Field label="Auth value" type={showSecret ? 'text' : 'password'} value={conn.apiToken || ''} onChange={(e) => onChange({ ...conn, apiToken: e.target.value, credential: e.target.value })} />
         <Field label="REST search path" value={conn.searchPath || '/rest/api/2/search'} onChange={(e) => onChange({ ...conn, searchPath: e.target.value })} />
         <Field label="Application CI field" placeholder="customfield_12345" value={conn.applicationCiFieldId || ''} onChange={(e) => onChange({ ...conn, applicationCiFieldId: e.target.value })} />
+        <Field label="Session header" type={showSecret ? 'text' : 'password'} value={conn.cookie || ''} onChange={(e) => onChange({ ...conn, cookie: e.target.value })} />
+        <Field label="Session ID" type={showSecret ? 'text' : 'password'} value={conn.jiraSessionId || ''} onChange={(e) => onChange({ ...conn, jiraSessionId: e.target.value })} />
+        <Field label="Security token" type={showSecret ? 'text' : 'password'} value={conn.jiraXsrfToken || ''} onChange={(e) => onChange({ ...conn, jiraXsrfToken: e.target.value })} />
       </div>
       <label className={labelClass}>JQL override</label>
       <textarea className="w-full border border-qa-line bg-white px-2.5 py-1.5 text-[12.5px] font-mono-qa min-h-[62px]" value={conn.jql || ''} onChange={(e) => onChange({ ...conn, jql: e.target.value })} />
@@ -71,6 +74,7 @@ function JiraConnectionCard({ conn, onChange, onRemove, projectOptions }: { conn
 
 function QmetryConnectionCard({ conn, onChange, onRemove }: { conn: QmetryConnectionInput; onChange: (next: QmetryConnectionInput) => void; onRemove: () => void }) {
   const [testResult, setTestResult] = useState<TestResult | null>(null);
+  const [showSecret, setShowSecret] = useState(false);
   const enabled = conn.enabled !== false;
   const syncExecutions = conn.syncExecutions !== false;
   const testMutation = useMutation({ mutationFn: () => batchApi.testConnection('qmetry', { ...conn, enabled, syncExecutions, cycleIds: [] }), onSuccess: (r) => setTestResult(r) });
@@ -85,12 +89,15 @@ function QmetryConnectionCard({ conn, onChange, onRemove }: { conn: QmetryConnec
         <Field label="Connection name" value={conn.name} onChange={(e) => onChange({ ...conn, name: e.target.value })} />
         <Field label="Base URL" placeholder="https://jira.example.com" value={conn.baseUrl} onChange={(e) => onChange({ ...conn, baseUrl: e.target.value })} />
         <Field label="Username" value={conn.email} onChange={(e) => onChange({ ...conn, email: e.target.value })} />
-        <Field label="Credential" type="password" value={conn.apiToken || ''} onChange={(e) => onChange({ ...conn, apiToken: e.target.value, credential: e.target.value })} />
+        <Field label="Auth value" type={showSecret ? 'text' : 'password'} value={conn.apiToken || ''} onChange={(e) => onChange({ ...conn, apiToken: e.target.value, credential: e.target.value })} />
         <Field label="Project key" placeholder="DP" value={conn.projectKey} onChange={(e) => onChange({ ...conn, projectKey: e.target.value.toUpperCase(), cycleIds: [] })} />
         <Field label="Project ID" placeholder="19703" value={conn.projectId || ''} onChange={(e) => onChange({ ...conn, projectId: e.target.value, cycleIds: [] })} />
         <Field label="Folder ID" placeholder="96225" value={conn.folderId || ''} onChange={(e) => onChange({ ...conn, folderId: e.target.value, cycleIds: [] })} />
+        <Field label="Session header" type={showSecret ? 'text' : 'password'} value={conn.sessionHeader || ''} onChange={(e) => onChange({ ...conn, sessionHeader: e.target.value, cycleIds: [] })} />
+        <Field label="Session ID" type={showSecret ? 'text' : 'password'} value={conn.sessionId || ''} onChange={(e) => onChange({ ...conn, sessionId: e.target.value, cycleIds: [] })} />
+        <Field label="Security token" type={showSecret ? 'text' : 'password'} value={conn.xsrfToken || ''} onChange={(e) => onChange({ ...conn, xsrfToken: e.target.value, cycleIds: [] })} />
       </div>
-      <div className="flex items-center gap-2 mt-2.5"><button type="button" onClick={() => testMutation.mutate()} disabled={testMutation.isPending || !enabled} className="font-mono-qa text-[10px] px-3 py-1.5 border border-qa-border bg-white cursor-pointer disabled:opacity-50">{testMutation.isPending ? 'Testing...' : 'Test cycle search'}</button><button type="button" onClick={onRemove} className="font-mono-qa text-[10px] text-[#a13d2c] underline bg-transparent border-none cursor-pointer">Remove</button>{testResult && <span className={`font-mono-qa text-[10.5px] ${testResult.ok ? 'text-[#2f6a48]' : 'text-[#a13d2c]'}`}>{testResult.ok ? `OK (${testResult.count ?? 0} test cycles found)` : testResult.error}</span>}</div>
+      <div className="flex items-center gap-2 mt-2.5"><button type="button" onClick={() => setShowSecret((v) => !v)} className="font-mono-qa text-[10px] px-3 py-1.5 border border-qa-border bg-white cursor-pointer">{showSecret ? 'Hide values' : 'Show values'}</button><button type="button" onClick={() => testMutation.mutate()} disabled={testMutation.isPending || !enabled} className="font-mono-qa text-[10px] px-3 py-1.5 border border-qa-border bg-white cursor-pointer disabled:opacity-50">{testMutation.isPending ? 'Testing...' : 'Test cycle search'}</button><button type="button" onClick={onRemove} className="font-mono-qa text-[10px] text-[#a13d2c] underline bg-transparent border-none cursor-pointer">Remove</button>{testResult && <span className={`font-mono-qa text-[10.5px] ${testResult.ok ? 'text-[#2f6a48]' : 'text-[#a13d2c]'}`}>{testResult.ok ? `OK (${testResult.count ?? 0} test cycles found)` : testResult.error}</span>}</div>
     </div>
   );
 }
