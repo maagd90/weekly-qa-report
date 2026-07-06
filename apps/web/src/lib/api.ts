@@ -26,6 +26,7 @@ type RequestMeta = { requestId: string; startedAt: number };
 
 export interface ReportBranding { logoUrl?: string; logoAlt?: string; title?: string; subtitle?: string }
 export interface SyncInputResult { ok: boolean; rebuilt: boolean; rowCounts: { executions: number; issues: number; uat: number }; removed?: string[]; warnings?: string[]; projects?: string[]; error?: string }
+export interface DashboardSearchResult { ok: boolean; dashboard: DashboardPayload; rowCounts: { executions: number; issues: number; uat: number }; warnings?: string[]; error?: string }
 
 export const LLM_MODELS: Record<LlmProvider, string[]> = {
   anthropic: ['claude-haiku-4-5-20251001', 'claude-sonnet-4-6'],
@@ -53,7 +54,6 @@ export function getReportBranding(): ReportBranding { return readStoredObject<Re
 export function setReportBranding(branding: ReportBranding): void { writeStoredObject(REPORT_BRANDING_STORAGE, { logoUrl: branding.logoUrl?.trim() || '', logoAlt: branding.logoAlt?.trim() || 'Report logo', title: branding.title?.trim() || 'QA Sprint Report', subtitle: branding.subtitle?.trim() || '' }); }
 export function getActiveProject(): string { try { return window.localStorage.getItem(ACTIVE_PROJECT_STORAGE) || 'all'; } catch { return 'all'; } }
 export function setActiveProject(project: string): void { try { window.localStorage.setItem(ACTIVE_PROJECT_STORAGE, project || 'all'); } catch { /* storage unavailable */ } }
-
 export function getUserLlmKey(provider: LlmProvider): string { const keys = readStoredObject<Record<string, string>>(LLM_KEYS_STORAGE, {}); if (keys[provider]) return keys[provider]; if (provider === 'anthropic') { try { return window.localStorage.getItem(ANTHROPIC_KEY_STORAGE) || ''; } catch { return ''; } } return ''; }
 export function setUserLlmKey(provider: LlmProvider, value: string): void { const keys = readStoredObject<Record<string, string>>(LLM_KEYS_STORAGE, {}); const clean = value.trim(); if (clean) keys[provider] = clean; else delete keys[provider]; writeStoredObject(LLM_KEYS_STORAGE, keys); if (provider === 'anthropic') { try { if (clean) window.localStorage.setItem(ANTHROPIC_KEY_STORAGE, clean); else window.localStorage.removeItem(ANTHROPIC_KEY_STORAGE); } catch { /* storage unavailable */ } } }
 export function getUserLlmSelection(): LlmSelectionInput { const stored = readStoredObject<Partial<LlmSelectionInput>>(LLM_SELECTION_STORAGE, {}); const provider = normalizeProvider(stored.provider); const model = stored.model && LLM_MODELS[provider].includes(stored.model) ? stored.model : LLM_MODELS[provider][0]; const apiKey = getUserLlmKey(provider); return { provider, model, baseUrl: stored.baseUrl || undefined, apiKey: apiKey || undefined }; }
@@ -104,6 +104,7 @@ export const batchApi = {
   testAnthropic: () => api.get('/anthropic/test', { timeout: 35_000 }).then((r) => r.data as { ok: boolean; model?: string; route?: 'direct' | 'proxy'; elapsedMs?: number; error?: string; logs?: string[] }).catch((err) => { throw new Error(apiErrorMessage(err, 'Anthropic connectivity test failed')); }),
   generate: (params: GenerateParams) => api.post<GenerateResult>('/generate', params, { timeout: 300_000 }).then((r) => r.data).catch((err) => { throw new Error(apiErrorMessage(err, 'Report generation failed')); }),
   getDashboard: (filter?: Partial<FilterParams>) => { const params = filter ? { startDate: filter.startDate, endDate: filter.endDate, search: filter.search, result: filter.result, project: filter.project } : undefined; return api.get('/dashboard', { params }).then((r) => r.data as DashboardPayload).catch((err) => { if (axios.isAxiosError(err) && err.response?.status === 404) return null; throw err; }); },
+  searchDashboardByDates: (filter: Partial<FilterParams>) => api.post('/dashboard/search', filter, { timeout: 240_000 }).then((r) => (r.data as DashboardSearchResult).dashboard).catch((err) => { throw new Error(apiErrorMessage(err, 'Dashboard API search failed')); }),
   getReport: () => api.get('/report').then((r) => r.data).catch((err) => { if (axios.isAxiosError(err) && err.response?.status === 404) return null; throw err; }),
   upload: (file: File) => { const form = new FormData(); form.append('file', file); return api.post('/upload', form, { headers: { 'Content-Type': 'multipart/form-data' } }).then((r) => r.data); },
   syncInputFiles: () => api.post('/input/sync', {}, { timeout: 180_000 }).then((r) => r.data as SyncInputResult).catch((err) => { throw new Error(apiErrorMessage(err, 'Import/API sync failed')); }),
