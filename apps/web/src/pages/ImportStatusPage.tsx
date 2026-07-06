@@ -2,6 +2,7 @@ import React, { useState, useRef, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import clsx from 'clsx';
 import { batchApi, getJiraConnections, getQmetryConnections } from '../lib/api';
+import { projectDisplayName } from '../lib/projectDisplay';
 import { QaPageShell, QaSection } from '../components/layout/QaPageShell';
 import { QA } from '../theme/qaTheme';
 
@@ -54,6 +55,10 @@ function rowCountText(result?: SyncResult): string {
   if (!result) return '';
   const counts = result.rowCounts;
   return `${counts.executions} executions · ${counts.issues} issues · ${counts.uat} vendor bugs`;
+}
+
+function projectListText(projects?: string[]): string {
+  return projects?.length ? projects.map(projectDisplayName).join(', ') : '';
 }
 
 export function ImportStatusPage() {
@@ -109,6 +114,8 @@ export function ImportStatusPage() {
     if (file) handleFile(file);
   };
 
+  const syncedProjects = projectListText(syncMutation.data?.projects);
+
   return (
     <QaPageShell
       title="Import Data"
@@ -146,7 +153,7 @@ export function ImportStatusPage() {
           {uploadMutation.isError && <div className="p-3 border border-[#ecccc2] bg-[#f8ece8] text-[#a13d2c] text-sm mb-4">Upload failed</div>}
           {uploadMutation.isSuccess && <div className="p-3 border border-[#cfe0d4] bg-[#eef4ef] text-[#2f6a48] text-sm mb-4">File staged successfully. Click Sync imported data to update dashboard.</div>}
           {syncMutation.isError && <div className="p-3 border border-[#ecccc2] bg-[#f8ece8] text-[#a13d2c] text-sm mb-4">{(syncMutation.error as Error).message}</div>}
-          {syncMutation.isSuccess && <div className="p-3 border border-[#cfe0d4] bg-[#eef4ef] text-[#2f6a48] text-sm mb-4">Sync completed · {rowCountText(syncMutation.data)}{syncMutation.data.projects?.length ? ` · Projects: ${syncMutation.data.projects.join(', ')}` : ''}</div>}
+          {syncMutation.isSuccess && <div className="p-3 border border-[#cfe0d4] bg-[#eef4ef] text-[#2f6a48] text-sm mb-4">Sync completed · {rowCountText(syncMutation.data)}{syncedProjects ? ` · Projects: ${syncedProjects}` : ''}</div>}
           {deleteMutation.isError && <div className="p-3 border border-[#ecccc2] bg-[#f8ece8] text-[#a13d2c] text-sm mb-4">Remove failed</div>}
           {deleteMutation.isSuccess && <div className="p-3 border border-[#cfe0d4] bg-[#eef4ef] text-[#2f6a48] text-sm mb-4">File removed and dashboard data refreshed</div>}
           <QaSection title="Expected file types">
