@@ -49,7 +49,14 @@ export function ImportStatusPage() {
 
   const deleteMutation = useMutation({
     mutationFn: batchApi.deleteInputFile,
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['input-files'] }),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['input-files'] }),
+        queryClient.invalidateQueries({ queryKey: ['dashboard'] }),
+        queryClient.invalidateQueries({ queryKey: ['dashboard-init'] }),
+        queryClient.invalidateQueries({ queryKey: ['report'] }),
+      ]);
+    },
   });
 
   const handleFile = useCallback((file: File) => {
@@ -84,6 +91,8 @@ export function ImportStatusPage() {
           </div>
           {uploadMutation.isError && <div className="p-3 border border-[#ecccc2] bg-[#f8ece8] text-[#a13d2c] text-sm mb-4">Upload failed</div>}
           {uploadMutation.isSuccess && <div className="p-3 border border-[#cfe0d4] bg-[#eef4ef] text-[#2f6a48] text-sm mb-4">File staged successfully</div>}
+          {deleteMutation.isError && <div className="p-3 border border-[#ecccc2] bg-[#f8ece8] text-[#a13d2c] text-sm mb-4">Remove failed</div>}
+          {deleteMutation.isSuccess && <div className="p-3 border border-[#cfe0d4] bg-[#eef4ef] text-[#2f6a48] text-sm mb-4">File removed and dashboard data refreshed</div>}
           <QaSection title="Expected file types">
             <ul className="m-0 p-0 list-none space-y-2">
               {EXPECTED.map((f) => <li key={f.label} className="flex items-start gap-2 text-[13px]"><span className="font-mono-qa text-[10px] font-semibold text-white px-1.5 py-0.5 shrink-0" style={{ background: extColor(f.ext) }}>{f.ext}</span><span><strong>{f.label}</strong> — {f.map}</span></li>)}
@@ -92,7 +101,7 @@ export function ImportStatusPage() {
         </div>
         <div>
           <QaSection title={`Staged files (${files.length})`} subtitle={isLoading ? 'Loading…' : files.length ? `${files.length} file(s) in input/` : 'No files yet'} noPadding>
-            {files.length === 0 ? <div className="py-10 text-center text-[13px] text-qa-muted-light">No files staged yet</div> : <div>{files.map((f) => <div key={f.name} className="flex items-center gap-3 px-[22px] py-3 border-t border-[#f0ede5] first:border-t-0"><span className="font-mono-qa text-[10px] font-semibold text-white px-1.5 py-1 shrink-0" style={{ background: extColor('XLSX') }}>XLSX</span><div className="flex-1 min-w-0"><p className="text-[13px] font-semibold m-0 truncate">{f.name}</p><p className="font-mono-qa text-[10px] text-qa-muted-light m-0 mt-0.5">{(f.size / 1024).toFixed(1)} KB · {new Date(f.modifiedAt).toLocaleString()} · staged</p></div><button type="button" onClick={() => deleteMutation.mutate(f.name)} className="font-mono-qa text-[10px] text-qa-muted-light hover:text-[#C24533] border-none bg-transparent cursor-pointer">Remove</button></div>)}</div>}
+            {files.length === 0 ? <div className="py-10 text-center text-[13px] text-qa-muted-light">No files staged yet</div> : <div>{files.map((f) => <div key={f.name} className="flex items-center gap-3 px-[22px] py-3 border-t border-[#f0ede5] first:border-t-0"><span className="font-mono-qa text-[10px] font-semibold text-white px-1.5 py-1 shrink-0" style={{ background: extColor('XLSX') }}>XLSX</span><div className="flex-1 min-w-0"><p className="text-[13px] font-semibold m-0 truncate">{f.name}</p><p className="font-mono-qa text-[10px] text-qa-muted-light m-0 mt-0.5">{(f.size / 1024).toFixed(1)} KB · {new Date(f.modifiedAt).toLocaleString()} · staged</p></div><button type="button" onClick={() => deleteMutation.mutate(f.name)} disabled={deleteMutation.isPending} className="font-mono-qa text-[10px] text-qa-muted-light hover:text-[#C24533] border-none bg-transparent cursor-pointer disabled:opacity-50 disabled:cursor-wait">{deleteMutation.isPending ? 'Removing…' : 'Remove'}</button></div>)}</div>}
           </QaSection>
           <QaSection title="Column mapping" className="mt-[22px]">
             <p className="text-[11.5px] text-qa-muted-light m-0 mb-3">{MAPPING_ROWS.length} fields auto-mapped on parse</p>
