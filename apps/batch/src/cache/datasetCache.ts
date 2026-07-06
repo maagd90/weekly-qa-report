@@ -5,22 +5,30 @@ import type { Dataset } from '../types/dataset';
 import type { UserConnections } from '../types/connections';
 import { emptyDataset } from '../types/dataset';
 import { loadIntegrations, jiraConfigFromConnection, qmetryConfigFromConnection, configuredJiraProfiles } from '../config/loadIntegrations';
-import { fetchJiraDataset, fetchJiraIssues } from '../integrations/jiraClient';
+import { fetchJiraDataset, fetchJiraIssues, type JiraSearchScope } from '../integrations/jiraClient';
 import { fetchQmetryDataset, fetchQmetryExecutions } from '../integrations/qmetryClient';
 import { parseAllFiles, discoverInputFiles } from '../parse/dispatcher';
 import { mergeDatasets } from '../merge/mergeDataset';
 
-async function buildJiraConnectionDataset(configDir: string, connections?: UserConnections): Promise<Dataset[]> {
+export interface BuildDatasetOptions {
+  jiraSearchScope?: JiraSearchScope;
+}
+
+async function buildJiraConnectionDataset(configDir: string, connections?: UserConnections, options?: BuildDatasetOptions): Promise<Dataset[]> {
   const parts: Dataset[] = [];
   if (connections?.jira?.length) {
     for (const conn of connections.jira) {
       const jiraCfg = jiraConfigFromConnection(conn);
-      const { issues, error } = await fetchJiraIssues(jiraCfg);
+      const { issues, error, jql } = await fetchJiraIssues(jiraCfg, options?.jiraSearchScope);
       const ds = emptyDataset();
       ds.issues = issues;
       ds.meta.integrations.jira = true;
       ds.meta.fetchedAt = new Date().toISOString();
       if (error) ds.meta.warnings.push(`[${conn.name}] ${error}`);
+      if (options?.jiraSearchScope?.startDate && options?.jiraSearchScope?.endDate) {
+        ds.meta.sourceFiles.push(`jira-api:${conn.name}:date-range:${options.jiraSearchScope.startDate}:${options.jiraSearchScope.endDate}`);
+        if (jql) ds.meta.warnings.push(`[${conn.name}] JIRA date search applied: updated ${options.jiraSearchScope.startDate} to ${options.jiraSearchScope.endDate}`);
+      }
       if (issues.length) {
         ds.files.push({ name: `jira-api:${conn.name}`, ext: 'API', project: issues[0]?.project || conn.projectKeys?.[0] || 'UNKNOWN', rows: issues.length, status: 'parsed', detectedType: 'jira', source: 'jira-api' });
         ds.projects = [...new Set(issues.map((i) => i.project))];
@@ -31,7 +39,7 @@ async function buildJiraConnectionDataset(configDir: string, connections?: UserC
     const cfg = loadIntegrations(configDir);
     const profiles = configuredJiraProfiles(cfg);
     for (const profile of profiles) {
-      parts.push(await fetchJiraDataset({ ...cfg, jira: profile }));
+      parts.push(await fetchJiraDataset({ ...cfg, jira: profile }, options?.jiraSearchScope));
     }
   }
   return parts;
@@ -61,9 +69,9 @@ async function buildQmetryConnectionDataset(configDir: string, connections?: Use
   return parts;
 }
 
-export async function buildDataset(inputDir: string, configDir: string, connections?: UserConnections): Promise<Dataset> {
+export async function buildDataset(inputDir: string, configDir: string, connections?: UserConnections, options?: BuildDatasetOptions): Promise<Dataset> {
   const parts: Dataset[] = [
-    ...(await buildJiraConnectionDataset(configDir, connections)),
+    ...(await buildJiraConnectionDataset(configDir, connections, options)),
     ...(await buildQmetryConnectionDataset(configDir, connections)),
   ];
   const files = discoverInputFiles(inputDir);
