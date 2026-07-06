@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import clsx from 'clsx';
 import { QaMasthead } from './components/layout/QaMasthead';
 import { QaTabNav, buildTabs } from './components/layout/QaTabNav';
@@ -27,6 +27,7 @@ const queryClient = new QueryClient({
 function AppContent() {
   const [activeTab, setActiveTab] = useState<QaTab>('overview');
   const ui = useUiPreferences();
+  const client = useQueryClient();
 
   const { data: initialDashboard } = useQuery<DashboardPayload | null>({
     queryKey: ['dashboard-init'],
@@ -41,6 +42,15 @@ function AppContent() {
     queryFn: () => batchApi.getDashboard(filters.filterParams),
     retry: false,
     enabled: !!initialDashboard,
+  });
+
+  const searchApis = useMutation({
+    mutationFn: () => batchApi.searchDashboardByDates(filters.filterParams),
+    onSuccess: (freshDashboard) => {
+      client.setQueryData(['dashboard', filters.filterParams], freshDashboard);
+      client.setQueryData(['dashboard-init'], freshDashboard);
+      client.invalidateQueries({ queryKey: ['settings-dashboard-projects'] });
+    },
   });
 
   const display = dashboard ?? initialDashboard;
@@ -79,7 +89,17 @@ function AppContent() {
           onKpiStyleChange={ui.setKpiStyle}
           dataMin={display?.meta.dataMin}
           dataMax={display?.meta.dataMax}
+          onSearchApis={activeTab === 'overview' ? () => searchApis.mutate() : undefined}
+          isSearchingApis={searchApis.isPending}
         />
+      )}
+
+      {searchApis.isError && activeTab === 'overview' && (
+        <div className="max-w-qa mx-auto w-full px-8 pt-3 print:hidden">
+          <div className="p-3 border border-[#ecccc2] bg-[#f8ece8] text-[#a13d2c] text-sm">
+            {(searchApis.error as Error).message}
+          </div>
+        </div>
       )}
 
       <div className={clsx('flex-1', activeTab === 'ai' ? 'flex flex-col overflow-hidden min-h-0' : 'overflow-auto')}>
@@ -93,30 +113,13 @@ function AppContent() {
           <EmptyDashboard onGenerate={goGenerate} />
         )}
 
-        {display && activeTab === 'overview' && (
-          <OverviewPage dashboard={display} kpiStyle={ui.kpiStyle} />
-        )}
-        {display && activeTab === 'testers' && (
-          <TestersPage dashboard={display} kpiStyle={ui.kpiStyle} />
-        )}
-        {display && activeTab === 'cycles' && (
-          <CyclesPage
-            dashboard={display}
-            kpiStyle={ui.kpiStyle}
-            selectedCycle={ui.selectedCycle}
-            onSelectCycle={ui.setSelectedCycle}
-          />
-        )}
-        {display && activeTab === 'trace' && (
-          <TraceabilityPage dashboard={display} kpiStyle={ui.kpiStyle} />
-        )}
-        {display && activeTab === 'uat' && showUat && (
-          <UatPage dashboard={display} kpiStyle={ui.kpiStyle} />
-        )}
+        {display && activeTab === 'overview' && <OverviewPage dashboard={display} kpiStyle={ui.kpiStyle} />}
+        {display && activeTab === 'testers' && <TestersPage dashboard={display} kpiStyle={ui.kpiStyle} />}
+        {display && activeTab === 'cycles' && <CyclesPage dashboard={display} kpiStyle={ui.kpiStyle} selectedCycle={ui.selectedCycle} onSelectCycle={ui.setSelectedCycle} />}
+        {display && activeTab === 'trace' && <TraceabilityPage dashboard={display} kpiStyle={ui.kpiStyle} />}
+        {display && activeTab === 'uat' && showUat && <UatPage dashboard={display} kpiStyle={ui.kpiStyle} />}
         {activeTab === 'import' && <ImportStatusPage />}
-        {activeTab === 'ai' && (
-          <AiReportPage dashboard={display} kpiStyle={ui.kpiStyle} onGenerated={() => refetch()} />
-        )}
+        {activeTab === 'ai' && <AiReportPage dashboard={display} kpiStyle={ui.kpiStyle} project={filters.project} onGenerated={() => refetch()} />}
         {activeTab === 'settings' && <SettingsPage />}
       </div>
 

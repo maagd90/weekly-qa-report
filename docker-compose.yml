@@ -3,17 +3,20 @@ services:
     build:
       context: .
       dockerfile: apps/api/Dockerfile
-    container_name: dlm-dashboard-api
+    container_name: qa-dashboard-api
     restart: unless-stopped
-    env_file:
-      - .env
     environment:
+      NODE_ENV: production
       PORT: "3001"
       INPUT_DIR: /data/input
       OUTPUT_DIR: /data/output
       CONFIG_DIR: /data/config
       PDF_PRINT_URL: http://dashboard-web/print/report
       PUPPETEER_EXECUTABLE_PATH: /usr/bin/chromium
+      # Office/on-prem integrations sometimes use a self-signed/intercepted TLS chain.
+      # Runtime can be changed in config/runtime.json; no .env file is required.
+      INTEGRATION_ALLOW_SELF_SIGNED_CERTS: "true"
+      JIRA_ALLOW_SELF_SIGNED: "true"
     volumes:
       - ./input:/data/input
       - ./output:/data/output
@@ -31,7 +34,7 @@ services:
     build:
       context: .
       dockerfile: apps/web/Dockerfile
-    container_name: dlm-dashboard-web
+    container_name: qa-dashboard-web
     restart: unless-stopped
     ports:
       - "3000:80"

@@ -1,0 +1,43 @@
+{
+  "notes": {
+    "CORS_ORIGINS": "Comma-separated browser origin allow-list for the API, for example: http://localhost:3000,http://localhost:5173"
+  },
+  "env": {
+    "CORS_ORIGINS": "http://localhost:3000"
+  },
+  "paths": {
+    "inputDir": "/data/input",
+    "outputDir": "/data/output",
+    "configDir": "/data/config",
+    "puppeteerExecutablePath": "/usr/bin/chromium",
+    "pdfPrintUrl": "http://dashboard-web/print/report"
+  },
+  "network": {
+    "integrationAllowSelfSignedCerts": true,
+    "jiraAllowSelfSigned": true,
+    "officeProxyUrl": "",
+    "httpsProxy": "",
+    "httpProxy": "",
+    "nodeExtraCaCerts": ""
+  },
+  "llm": {
+    "provider": "anthropic",
+    "model": "claude-haiku-4-5-20251001",
+    "anthropicApiKey": "",
+    "openaiApiKey": "",
+    "geminiApiKey": "",
+    "customLlmApiKey": "",
+    "customLlmBaseUrl": ""
+  },
+  "jira": {
+    "email": "",
+    "apiToken": "",
+    "onPremSecret": "",
+    "sessionHeader": "",
+    "sessionId": "",
+    "xsrfToken": ""
+  },
+  "qmetry": {
+    "basicAuth": ""
+  }
+}

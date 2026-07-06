@@ -2,6 +2,7 @@ import React from 'react';
 import clsx from 'clsx';
 import type { KpiStyle } from '../../theme/qaTheme';
 import { QA } from '../../theme/qaTheme';
+import { projectDisplayName } from '../../lib/projectDisplay';
 
 interface QaFilterBarProps {
   startDate: string;
@@ -20,6 +21,8 @@ interface QaFilterBarProps {
   showResult?: boolean;
   dataMin?: string | null;
   dataMax?: string | null;
+  onSearchApis?: () => void;
+  isSearchingApis?: boolean;
 }
 
 const FOCUS_CHIPS: { id: 'all' | 'PASS' | 'FAIL' | 'BLOCKED'; label: string; color: string }[] = [
@@ -35,8 +38,7 @@ const KPI_OPTS: { id: KpiStyle; label: string }[] = [
   { id: 'minimal', label: 'Bare' },
 ];
 
-const inputDateClass =
-  'font-mono-qa text-xs py-[7px] px-2 border border-qa-ink bg-white text-qa-ink';
+const inputDateClass = 'font-mono-qa text-xs py-[7px] px-2 border border-qa-ink bg-white text-qa-ink';
 
 export function QaFilterBar(props: QaFilterBarProps) {
   const {
@@ -46,6 +48,8 @@ export function QaFilterBar(props: QaFilterBarProps) {
     kpiStyle, onKpiStyleChange,
     showResult = true,
     dataMin, dataMax,
+    onSearchApis,
+    isSearchingApis = false,
   } = props;
 
   return (
@@ -53,14 +57,8 @@ export function QaFilterBar(props: QaFilterBarProps) {
       <div className="flex items-center gap-2.5">
         <span className="font-mono-qa text-[10px] tracking-wider uppercase text-qa-muted-light">Project</span>
         <div className="relative flex items-center">
-          <select
-            value={project}
-            onChange={(e) => onProjectChange(e.target.value)}
-            className="appearance-none font-sans text-[13px] font-semibold py-2 pl-3 pr-8 border border-qa-ink bg-white text-qa-ink cursor-pointer"
-          >
-            {projects.map((p) => (
-              <option key={p} value={p}>{p === 'all' ? 'All projects' : p}</option>
-            ))}
+          <select value={project} onChange={(e) => onProjectChange(e.target.value)} className="appearance-none font-sans text-[13px] font-semibold py-2 pl-3 pr-8 border border-qa-ink bg-white text-qa-ink cursor-pointer">
+            {projects.map((p) => <option key={p} value={p}>{projectDisplayName(p)}</option>)}
           </select>
           <span className="absolute right-2.5 pointer-events-none text-[9px] text-qa-ink">▼</span>
         </div>
@@ -68,26 +66,26 @@ export function QaFilterBar(props: QaFilterBarProps) {
 
       <div className="flex items-center gap-2">
         <span className="font-mono-qa text-[10px] tracking-wider uppercase text-qa-muted-light">Period</span>
-        <input type="date" value={startDate} min={dataMin || undefined} max={dataMax || undefined}
-          onChange={(e) => onStartDateChange(e.target.value)} className={inputDateClass} />
+        <input type="date" value={startDate} min={dataMin || undefined} max={dataMax || undefined} onChange={(e) => onStartDateChange(e.target.value)} className={inputDateClass} />
         <span className="text-qa-muted-light text-xs">→</span>
-        <input type="date" value={endDate} min={dataMin || undefined} max={dataMax || undefined}
-          onChange={(e) => onEndDateChange(e.target.value)} className={inputDateClass} />
+        <input type="date" value={endDate} min={dataMin || undefined} max={dataMax || undefined} onChange={(e) => onEndDateChange(e.target.value)} className={inputDateClass} />
+        {onSearchApis && (
+          <button
+            type="button"
+            onClick={onSearchApis}
+            disabled={isSearchingApis || !startDate || !endDate}
+            title="Refresh JIRA tickets and QMetry/JIRA test executions using the selected Overview dates"
+            className="font-mono-qa text-[10px] font-semibold tracking-wider uppercase px-3 py-[7px] border border-qa-ink bg-qa-ink text-[#F5F3ED] cursor-pointer disabled:opacity-50 disabled:cursor-wait"
+          >
+            {isSearchingApis ? 'Searching…' : 'Search APIs'}
+          </button>
+        )}
       </div>
 
       <div className="flex items-center gap-2 border border-qa-border-mid bg-white px-2.5">
         <span className="text-[13px] text-qa-muted-pale">⚲</span>
-        <input
-          type="text"
-          value={search}
-          onChange={(e) => onSearchChange(e.target.value)}
-          placeholder="Search cycles, testers, keys…"
-          className="border-none outline-none bg-transparent font-sans text-[13px] text-qa-ink py-2 px-1 w-[180px]"
-        />
-        {search && (
-          <button type="button" onClick={() => onSearchChange('')}
-            className="border-none bg-transparent cursor-pointer text-qa-muted-pale text-[15px] leading-none p-0.5">×</button>
-        )}
+        <input type="text" value={search} onChange={(e) => onSearchChange(e.target.value)} placeholder="Search cycles, testers, keys…" className="border-none outline-none bg-transparent font-sans text-[13px] text-qa-ink py-2 px-1 w-[180px]" />
+        {search && <button type="button" onClick={() => onSearchChange('')} className="border-none bg-transparent cursor-pointer text-qa-muted-pale text-[15px] leading-none p-0.5">×</button>}
       </div>
 
       {showResult && (
@@ -97,18 +95,8 @@ export function QaFilterBar(props: QaFilterBarProps) {
             {FOCUS_CHIPS.map((c) => {
               const active = result === c.id;
               return (
-                <button
-                  key={c.id}
-                  type="button"
-                  onClick={() => onResultChange(c.id)}
-                  className={clsx(
-                    'flex items-center gap-1.5 whitespace-nowrap font-mono-qa text-[11px] tracking-wide px-[11px] py-1.5 cursor-pointer border',
-                    active ? 'bg-qa-ink text-[#F5F3ED] border-qa-ink' : 'bg-white text-qa-ink border-qa-border-mid'
-                  )}
-                >
-                  {c.id !== 'all' && (
-                    <span className="w-2 h-2 shrink-0" style={{ background: c.color }} />
-                  )}
+                <button key={c.id} type="button" onClick={() => onResultChange(c.id)} className={clsx('flex items-center gap-1.5 whitespace-nowrap font-mono-qa text-[11px] tracking-wide px-[11px] py-1.5 cursor-pointer border', active ? 'bg-qa-ink text-[#F5F3ED] border-qa-ink' : 'bg-white text-qa-ink border-qa-border-mid')}>
+                  {c.id !== 'all' && <span className="w-2 h-2 shrink-0" style={{ background: c.color }} />}
                   {c.label}
                 </button>
               );
@@ -121,15 +109,7 @@ export function QaFilterBar(props: QaFilterBarProps) {
         <span className="font-mono-qa text-[10px] tracking-wider uppercase text-qa-muted-light">Card style</span>
         <div className="flex border border-qa-border-mid">
           {KPI_OPTS.map((opt) => (
-            <button
-              key={opt.id}
-              type="button"
-              onClick={() => onKpiStyleChange(opt.id)}
-              className={clsx(
-                'font-mono-qa text-[11px] tracking-wide uppercase px-3 py-[7px] border-none cursor-pointer',
-                kpiStyle === opt.id ? 'bg-qa-ink text-[#F5F3ED]' : 'bg-white text-qa-ink'
-              )}
-            >
+            <button key={opt.id} type="button" onClick={() => onKpiStyleChange(opt.id)} className={clsx('font-mono-qa text-[11px] tracking-wide uppercase px-3 py-[7px] border-none cursor-pointer', kpiStyle === opt.id ? 'bg-qa-ink text-[#F5F3ED]' : 'bg-white text-qa-ink')}>
               {opt.label}
             </button>
           ))}

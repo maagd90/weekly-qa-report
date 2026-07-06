@@ -1,23 +1,23 @@
 import path from 'path';
 import type { ExecutionRow, FileMeta } from '../types/dataset';
 import {
-  findHeaderRow, rowToObject, mapExecutionResult, parseZephyrDate,
+  findHeaderRow, rowToObject, mapExecutionResult, parseExecutionExportDate,
   projectFromKey, sanitizeText,
 } from '../utils/excel';
 import { readWorkbookRows } from '../utils/readWorkbook';
 
-const ZEPHYR_HEADERS = ['Test Cycle Key', 'Testcase/Teststep Execution Result'];
+const EXECUTION_EXPORT_HEADERS = ['Test Cycle Key', 'Testcase/Teststep Execution Result'];
 
-export function isZephyrFile(rows: unknown[][]): boolean {
-  return findHeaderRow(rows, ZEPHYR_HEADERS) >= 0;
+export function isExecutionExportFile(rows: unknown[][]): boolean {
+  return findHeaderRow(rows, EXECUTION_EXPORT_HEADERS) >= 0;
 }
 
-export function parseZephyrFromRows(
+export function parseExecutionExportFromRows(
   rows: unknown[][],
   fileName: string,
 ): { executions: ExecutionRow[]; file: FileMeta } {
-  const headerIdx = findHeaderRow(rows, ZEPHYR_HEADERS);
-  if (headerIdx < 0) throw new Error('Zephyr headers not found');
+  const headerIdx = findHeaderRow(rows, EXECUTION_EXPORT_HEADERS);
+  if (headerIdx < 0) throw new Error('Test execution headers not found');
 
   const headers = (rows[headerIdx] as unknown[]).map((h) => sanitizeText(h));
   const executions: ExecutionRow[] = [];
@@ -30,7 +30,7 @@ export function parseZephyrFromRows(
     const cycleKey = sanitizeText(obj['Test Cycle Key']);
     if (!caseKey && !cycleKey) continue;
 
-    const executedAt = parseZephyrDate(obj['Executed On']);
+    const executedAt = parseExecutionExportDate(obj['Executed On']);
     const result = mapExecutionResult(obj['Testcase/Teststep Execution Result']);
     const tester = sanitizeText(obj['Executed By']) || null;
 
@@ -43,7 +43,7 @@ export function parseZephyrFromRows(
       tester,
       executedAt,
       updatedAt: executedAt,
-      source: 'zephyr',
+      source: 'test-execution-file',
     });
   }
 
@@ -55,13 +55,13 @@ export function parseZephyrFromRows(
       project: executions[0]?.project || 'DLM',
       rows: executions.length,
       status: 'parsed',
-      detectedType: 'zephyr',
+      detectedType: 'test-execution',
       source: 'file',
     },
   };
 }
 
-export function parseZephyr(filePath: string): { executions: ExecutionRow[]; file: FileMeta } {
+export function parseExecutionExport(filePath: string): { executions: ExecutionRow[]; file: FileMeta } {
   const { rows } = readWorkbookRows(filePath, ['Data']);
-  return parseZephyrFromRows(rows, path.basename(filePath));
+  return parseExecutionExportFromRows(rows, path.basename(filePath));
 }

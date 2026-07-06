@@ -3,7 +3,7 @@ import path from 'path';
 import type { Dataset } from '../types/dataset';
 import { emptyDataset } from '../types/dataset';
 import { readWorkbookRows } from '../utils/readWorkbook';
-import { isZephyrFile, parseZephyrFromRows } from './parseZephyr';
+import { isExecutionExportFile, parseExecutionExportFromRows } from './parseExecutionExport';
 import { isJiraExport, parseJiraFromRows } from './parseJira';
 import { isOdlFile, parseOdlFromRows } from './parseOdl';
 import { mergeDatasets } from '../merge/mergeDataset';
@@ -12,8 +12,8 @@ export type FileFormat = 'xlsx' | 'unknown';
 
 const SHEET_PREFS: Record<string, string[]> = {
   odl: [],
-  jira: ['general_report'],
-  zephyr: ['Data'],
+  jira: ['general_report', 'Jira'],
+  execution: ['Data'],
 };
 
 export function detectFormat(filename: string): FileFormat {
@@ -43,13 +43,13 @@ function routeParse(rows: unknown[][], fileName: string, warnings: string[]): Da
     ds.files.push(file);
     return ds;
   }
-  if (isZephyrFile(rows)) {
-    const { executions, file } = parseZephyrFromRows(rows, fileName);
+  if (isExecutionExportFile(rows)) {
+    const { executions, file } = parseExecutionExportFromRows(rows, fileName);
     ds.executions = executions;
     ds.files.push(file);
     return ds;
   }
-  warnings.push(`Unknown xlsx format: ${fileName}`);
+  warnings.push(`Unknown spreadsheet format: ${fileName}`);
   return ds;
 }
 
@@ -68,7 +68,7 @@ export function parseFile(filePath: string): Dataset {
     const { rows } = readWorkbookRows(filePath, [
       ...SHEET_PREFS.odl,
       ...SHEET_PREFS.jira,
-      ...SHEET_PREFS.zephyr,
+      ...SHEET_PREFS.execution,
     ]);
     const parsed = routeParse(rows, fileName, ds.meta.warnings);
     ds.executions = parsed.executions;
@@ -87,12 +87,12 @@ export function parseAllFiles(filePaths: string[]): Dataset {
   return mergeDatasets(parts);
 }
 
-export function sniffFileType(filePath: string): 'zephyr' | 'jira' | 'odl' | 'unknown' {
+export function sniffFileType(filePath: string): 'test-execution' | 'jira' | 'odl' | 'unknown' {
   try {
-    const { rows } = readWorkbookRows(filePath, ['general_report', 'Data']);
+    const { rows } = readWorkbookRows(filePath, ['general_report', 'Jira', 'Data']);
     if (isOdlFile(rows)) return 'odl';
     if (isJiraExport(rows)) return 'jira';
-    if (isZephyrFile(rows)) return 'zephyr';
+    if (isExecutionExportFile(rows)) return 'test-execution';
   } catch (err) {
     console.error(`[sniff] ${path.basename(filePath)}:`, (err as Error).message);
   }

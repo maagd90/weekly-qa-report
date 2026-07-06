@@ -1,6 +1,7 @@
 import React from 'react';
 import type { DashboardPayload } from 'qa-dashboard-batch';
 import { fmt } from '../../theme/qaTheme';
+import { projectDisplayName } from '../../lib/projectDisplay';
 
 interface QaMastheadProps {
   dashboard?: DashboardPayload | null;
@@ -8,14 +9,11 @@ interface QaMastheadProps {
 
 export function QaMasthead({ dashboard }: QaMastheadProps) {
   const projectLabel = dashboard?.scope.project && dashboard.scope.project !== 'all'
-    ? `${dashboard.scope.project} · Travel Studio`
-    : 'DLM · Travel Studio';
+    ? projectDisplayName(dashboard.scope.project)
+    : 'All projects';
 
   const totalCases = dashboard?.overview.totalCases ?? 0;
   const cycleCount = dashboard?.cycles.length ?? 0;
-  const fileHint = dashboard?.files?.length
-    ? dashboard.files.map((f) => f.name).slice(0, 2).join(', ')
-    : 'no files loaded';
 
   return (
     <>
@@ -24,10 +22,10 @@ export function QaMasthead({ dashboard }: QaMastheadProps) {
         <div className="flex items-end justify-between gap-6 pb-3.5 border-b-2 border-qa-ink">
           <div className="flex items-baseline gap-3.5">
             <div className="font-spectral font-extrabold text-[30px] tracking-tight leading-none">
-              QA&nbsp;Weekly
+              QA Weekly
             </div>
             <div className="font-mono-qa text-[11px] tracking-widest uppercase text-qa-muted-light pb-0.5">
-              Test&nbsp;Execution&nbsp;Report
+              Test Execution Report
             </div>
           </div>
           <div className="text-right pb-0.5">
@@ -38,11 +36,8 @@ export function QaMasthead({ dashboard }: QaMastheadProps) {
         <div className="flex items-center justify-between py-1.5 border-b border-qa-ink">
           <div className="font-mono-qa text-[10.5px] tracking-wide uppercase text-qa-muted-light">
             {dashboard
-              ? `Zephyr execution export · ${fmt(totalCases)} records · ${cycleCount} cycles`
-              : 'Awaiting data — stage files or generate report'}
-          </div>
-          <div className="font-mono-qa text-[10.5px] tracking-wide uppercase text-qa-muted-light hidden sm:block">
-            Source: {fileHint}
+              ? `Test execution data · ${fmt(totalCases)} records · ${cycleCount} cycles`
+              : 'Awaiting data — stage files or sync report'}
           </div>
         </div>
       </header>

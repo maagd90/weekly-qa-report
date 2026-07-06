@@ -7,20 +7,18 @@ import { QaKpiCard, QaKpiGrid } from '../components/qa/QaKpiCard';
 import { ResultDonut } from '../components/qa/ResultDonut';
 import { StackedMonthChart } from '../components/qa/StackedMonthChart';
 import { HorizBar } from '../components/qa/SegBar';
+import { projectDisplayName } from '../lib/projectDisplay';
 
 interface OverviewPageProps {
   dashboard: DashboardPayload;
   kpiStyle: KpiStyle;
 }
 
-export function OverviewPage({ dashboard, kpiStyle }: OverviewPageProps) {
-  const { overview, storyBug, defectBacklog } = dashboard;
-  const sbTot = storyBug.story + storyBug.bug || 1;
-  const filterActive = !!dashboard.scope.search || dashboard.meta.dataMin !== dashboard.scope.startDate;
+type OverviewSlice = Pick<DashboardPayload, 'overview' | 'storyBug' | 'defectBacklog'>;
 
-  const periodNote = dashboard.meta.dataMax
-    ? `all cycles · through ${dashboard.meta.dataMax.slice(0, 7)}`
-    : 'all cycles';
+function ProjectOverviewBlock({ slice, kpiStyle }: { slice: OverviewSlice; kpiStyle: KpiStyle }) {
+  const { overview, storyBug, defectBacklog } = slice;
+  const sbTot = storyBug.story + storyBug.bug || 1;
 
   const flagMsg = storyBug.bugOpen > 0
     ? `${storyBug.bugOpen} open bugs in scope — review defect backlog on Traceability tab.`
@@ -28,10 +26,10 @@ export function OverviewPage({ dashboard, kpiStyle }: OverviewPageProps) {
   const flagColor = storyBug.bugOpen > 0 ? QA.FAIL : '#2f6a48';
 
   return (
-    <QaPageShell title="Execution Overview" subtitle={periodNote}>
+    <>
       <QaKpiGrid cols={5}>
         <QaKpiCard kpiStyle={kpiStyle} label="Total Test Cases" value={fmt(overview.totalCases)}
-          sub={filterActive ? 'in current scope' : `${dashboard.cycles.length} cycles`} color={QA.accent} />
+          sub="in current scope" color={QA.accent} />
         <QaKpiCard kpiStyle={kpiStyle} label="Executed" value={fmt(overview.executed)}
           sub={`${overview.executed && overview.totalCases ? Math.round((overview.executed / overview.totalCases) * 100) : 0}% coverage`} color={QA.PASS} />
         <QaKpiCard kpiStyle={kpiStyle} label="Pass Rate" value={`${overview.passRate}%`}
@@ -118,6 +116,44 @@ export function OverviewPage({ dashboard, kpiStyle }: OverviewPageProps) {
           </div>
         </div>
       </QaSection>
+    </>
+  );
+}
+
+export function OverviewPage({ dashboard, kpiStyle }: OverviewPageProps) {
+  const periodNote = dashboard.meta.dataMax
+    ? `all cycles · through ${dashboard.meta.dataMax.slice(0, 7)}`
+    : 'all cycles';
+
+  const isAllProjects = dashboard.scope.project === 'all';
+  const byProject = dashboard.byProject;
+
+  if (isAllProjects && byProject && byProject.length > 1) {
+    return (
+      <QaPageShell
+        title="Execution Overview"
+        subtitle={`${periodNote} · ${byProject.length} projects, shown separately`}
+      >
+        <div className="flex flex-col gap-9">
+          {byProject.map((p) => (
+            <div key={p.project}>
+              <div className="flex items-baseline gap-2.5 mb-3.5 pb-2 border-b-2 border-qa-ink">
+                <h3 className="font-spectral font-extrabold text-[20px] m-0 tracking-tight">{projectDisplayName(p.project)}</h3>
+                <span className="font-mono-qa text-[10px] tracking-wider uppercase text-qa-muted-light">
+                  {p.overview.totalCases ? `${fmt(p.overview.totalCases)} test cases` : p.storyBug.bug ? `${fmt(p.storyBug.bug)} defects` : 'no metrics in scope'}
+                </span>
+              </div>
+              <ProjectOverviewBlock slice={p} kpiStyle={kpiStyle} />
+            </div>
+          ))}
+        </div>
+      </QaPageShell>
+    );
+  }
+
+  return (
+    <QaPageShell title="Execution Overview" subtitle={periodNote}>
+      <ProjectOverviewBlock slice={dashboard} kpiStyle={kpiStyle} />
     </QaPageShell>
   );
 }

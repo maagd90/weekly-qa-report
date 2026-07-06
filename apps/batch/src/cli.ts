@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import 'dotenv/config';
+import './config/loadRepoEnv';
 import { runGenerate } from './runGenerate';
 import type { ReportType } from './types/dataset';
 

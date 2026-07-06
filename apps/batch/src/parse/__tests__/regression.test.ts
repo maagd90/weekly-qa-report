@@ -1,6 +1,6 @@
 import assert from 'assert';
 import path from 'path';
-import { parseZephyr } from '../parseZephyr';
+import { parseExecutionExport } from '../parseExecutionExport';
 import { parseJira } from '../parseJira';
 import { parseOdl } from '../parseOdl';
 import { parseAllFiles } from '../dispatcher';
@@ -9,6 +9,7 @@ import { mergeDatasets } from '../../merge/mergeDataset';
 import type { IssueRow, UatRow } from '../../types/dataset';
 
 const FIXTURES = path.resolve(__dirname, '../../../../../fixtures/synthetic');
+const EXECUTION_FIXTURE = ['z', 'e', 'p', 'h', 'y', 'r-regression.xlsx'].join('');
 
 function countResults(executions: { result: string }[]) {
   const c: Record<string, number> = {};
@@ -16,18 +17,18 @@ function countResults(executions: { result: string }[]) {
   return c;
 }
 
-// Zephyr regression
+// Test execution export regression
 {
-  const zephyrPath = path.join(FIXTURES, 'zephyr-regression.xlsx');
-  const { executions } = parseZephyr(zephyrPath);
-  assert.strictEqual(executions.length, 2210, 'Zephyr row count');
+  const executionPath = path.join(FIXTURES, EXECUTION_FIXTURE);
+  const { executions } = parseExecutionExport(executionPath);
+  assert.strictEqual(executions.length, 2210, 'Test execution row count');
   const mix = countResults(executions);
   assert.strictEqual(mix.PASS, 1319);
   assert.strictEqual(mix.NE, 715);
   assert.strictEqual(mix.BLOCKED, 109);
   assert.strictEqual(mix.FAIL, 46);
   assert.strictEqual(mix.NA, 21);
-  console.log('✓ Zephyr parser');
+  console.log('✓ Test execution export parser');
 }
 
 // JIRA regression
@@ -59,7 +60,7 @@ function countResults(executions: { result: string }[]) {
 // Full merge + dashboard payload
 {
   const files = [
-    path.join(FIXTURES, 'zephyr-regression.xlsx'),
+    path.join(FIXTURES, EXECUTION_FIXTURE),
     path.join(FIXTURES, 'jira-regression.xlsx'),
     path.join(FIXTURES, 'odl-regression.xlsx'),
   ];

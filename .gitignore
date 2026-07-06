@@ -12,3 +12,9 @@ dist/
 data/
 *.tsbuildinfo
 .DS_Store
+
+# Local AI/editor and runtime settings
+.claude/settings.local.json
+*.local.json
+config/integrations.json
+config/runtime.json

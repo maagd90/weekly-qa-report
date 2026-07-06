@@ -49,17 +49,17 @@ export function QaTabNav({ tabs, activeTab, onTabChange }: QaTabNavProps) {
   );
 }
 
-export function buildTabs(showUat: boolean): TabDef[] {
+export function buildTabs(showVendorPortalBugs: boolean): TabDef[] {
   const tabs: TabDef[] = [
     { id: 'overview', label: 'Overview', num: '01' },
     { id: 'testers', label: 'Testers', num: '02' },
     { id: 'cycles', label: 'Test Cycles', num: '03' },
     { id: 'trace', label: 'Traceability', num: '04' },
   ];
-  if (showUat) tabs.push({ id: 'uat', label: 'UAT Issues', num: '05' });
-  const aiNum = showUat ? '06' : '05';
-  const importNum = showUat ? '07' : '06';
-  const settingsNum = showUat ? '08' : '07';
+  if (showVendorPortalBugs) tabs.push({ id: 'uat', label: 'Vendor Portal Bugs', num: '05' });
+  const aiNum = showVendorPortalBugs ? '06' : '05';
+  const importNum = showVendorPortalBugs ? '07' : '06';
+  const settingsNum = showVendorPortalBugs ? '08' : '07';
   tabs.push(
     { id: 'ai', label: 'AI Report', num: aiNum, hideFilters: true },
     { id: 'import', label: 'Import Data', num: importNum, hideFilters: true },

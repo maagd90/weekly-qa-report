@@ -19,7 +19,7 @@ export function excelSerialToIso(value: unknown): string | null {
   return null;
 }
 
-export function parseZephyrDate(value: unknown): string | null {
+export function parseExecutionExportDate(value: unknown): string | null {
   if (!value || typeof value !== 'string') return null;
   const trimmed = value.trim();
   if (!trimmed || trimmed.toUpperCase() === 'NOT EXECUTED') return null;

@@ -23,8 +23,8 @@ export function UatPage({ dashboard, kpiStyle }: UatPageProps) {
   const uat = dashboard.uat;
   if (!uat) {
     return (
-      <QaPageShell title="UAT Issue Log">
-        <div className="py-8 text-center text-qa-muted-light">No UAT data loaded</div>
+      <QaPageShell title="Vendor Portal Bugs">
+        <div className="py-8 text-center text-qa-muted-light">No Vendor Portal Bug data loaded</div>
       </QaPageShell>
     );
   }
@@ -43,12 +43,12 @@ export function UatPage({ dashboard, kpiStyle }: UatPageProps) {
 
   return (
     <QaPageShell
-      title="UAT Issue Log"
-      subtitle={`${fmt(uat.total)} issues · ${uat.open} open`}
-      intro="Defects raised during UAT on Travel Studio V2 — auto-detected from the Issue-Log export (TicketID / Status / Priority / Product Area). Filterable by submitted date and search like every other tab."
+      title="Vendor Portal Bugs"
+      subtitle={`${fmt(uat.total)} bugs · ${uat.open} open`}
+      intro="DLM vendor portal bug log — auto-detected from the Issue-Log export (TicketID / Status / Priority / Product Area). This tab is shown only when the dashboard project filter is DLM."
     >
       <QaKpiGrid cols={4}>
-        <QaKpiCard kpiStyle={kpiStyle} label="Total UAT Issues" value={fmt(uat.total)}
+        <QaKpiCard kpiStyle={kpiStyle} label="Total Vendor Portal Bugs" value={fmt(uat.total)}
           sub="in current scope" color={QA.accent} />
         <QaKpiCard kpiStyle={kpiStyle} label="Open" value={uat.open}
           sub="awaiting resolution" color={QA.BLOCKED} />
@@ -59,7 +59,7 @@ export function UatPage({ dashboard, kpiStyle }: UatPageProps) {
       </QaKpiGrid>
 
       <div className="grid grid-cols-1 lg:grid-cols-[1.1fr_0.9fr] gap-[22px] mb-[22px]">
-        <QaSection title="Issues by Status" subtitle="Closed vs in-flight UAT defects">
+        <QaSection title="Bugs by Status" subtitle="Closed vs in-flight vendor portal bugs">
           <div className="flex flex-col gap-3">
             {uat.byStatus.map((r) => (
               <div key={r.status} className="flex items-center gap-3">
@@ -100,7 +100,7 @@ export function UatPage({ dashboard, kpiStyle }: UatPageProps) {
         </QaSection>
       </div>
 
-      <QaSection title="UAT Defects" noPadding>
+      <QaSection title="Vendor Portal Bugs" noPadding>
         <QaTable>
           <QaThead cols={[
             { label: 'Ticket', className: 'pl-[22px]' },
