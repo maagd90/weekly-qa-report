@@ -2,6 +2,7 @@ import React from 'react';
 import clsx from 'clsx';
 import type { KpiStyle } from '../../theme/qaTheme';
 import { QA } from '../../theme/qaTheme';
+import { projectDisplayName } from '../../lib/projectDisplay';
 
 interface QaFilterBarProps {
   startDate: string;
@@ -59,7 +60,7 @@ export function QaFilterBar(props: QaFilterBarProps) {
             className="appearance-none font-sans text-[13px] font-semibold py-2 pl-3 pr-8 border border-qa-ink bg-white text-qa-ink cursor-pointer"
           >
             {projects.map((p) => (
-              <option key={p} value={p}>{p === 'all' ? 'All projects' : p}</option>
+              <option key={p} value={p}>{projectDisplayName(p)}</option>
             ))}
           </select>
           <span className="absolute right-2.5 pointer-events-none text-[9px] text-qa-ink">▼</span>
