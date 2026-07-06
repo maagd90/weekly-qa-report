@@ -20,10 +20,16 @@ export function useFilters(dashboard: DashboardPayload | undefined) {
 
   const projects = useMemo(() => {
     const values = new Set<string>(['all']);
-    if (storedProject && storedProject !== 'all') values.add(storedProject);
-    for (const p of dashboard?.scope.projects || []) values.add(p);
+    for (const p of dashboard?.scope.projects || []) if (p) values.add(p);
     return [...values];
-  }, [dashboard?.scope.projects, storedProject]);
+  }, [dashboard?.scope.projects]);
+
+  useEffect(() => {
+    if (project !== 'all' && dashboard?.scope.projects?.length && !dashboard.scope.projects.includes(project)) {
+      setProjectState('all');
+      setActiveProject('all');
+    }
+  }, [dashboard?.scope.projects, project]);
 
   const setProject = useCallback((next: string) => {
     const value = next || 'all';
