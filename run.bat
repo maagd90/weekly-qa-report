@@ -16,20 +16,24 @@ echo error: unknown command "%~1"
 echo Run: run.bat help
 exit /b 1
 
-:setup
-call npm install
-if not exist .env copy .env.example .env
+:ensure_runtime
 if not exist input mkdir input
 if not exist output mkdir output
 if not exist config mkdir config
+if not exist config\runtime.json copy config\runtime.example.json config\runtime.json
 if not exist config\integrations.json copy config\integrations.example.json config\integrations.json
-echo Setup complete. Edit .env then run: run.bat dev
+exit /b 0
+
+:setup
+call :ensure_runtime
+call npm install
+echo Setup complete. Use the Settings screen for credentials. Optional server runtime overrides are in config\runtime.json.
 exit /b 0
 
 :dev
 if not exist node_modules call npm install
+call :ensure_runtime
 echo Starting dev servers (API http://localhost:3001, UI http://localhost:3000)
-echo .env is loaded automatically — do NOT use "source .env" in Git Bash.
 call npm run dev
 exit /b %ERRORLEVEL%
 
@@ -48,15 +52,15 @@ exit /b %ERRORLEVEL%
 
 :help
 echo.
-echo DLM QA Dashboard — Windows runner
+echo Weekly QA Dashboard - Windows runner
 echo.
-echo   run.bat setup      First-time setup (.env, folders, npm install)
-echo   run.bat dev        Start API + UI (loads .env automatically)
+echo   run.bat setup      First-time setup (runtime config, folders, npm install)
+echo   run.bat dev        Start API + UI
 echo   run.bat build      Production build
 echo   run.bat test       Parser tests
 echo   run.bat generate   CLI report generation
 echo.
-echo Edit .env in the repo root. Quote paths with spaces, e.g.:
-echo   PUPPETEER_EXECUTABLE_PATH="C:/Program Files/Google/Chrome/Application/chrome.exe"
+echo Configure credentials from the Settings screen.
+echo Optional server runtime overrides are stored in config\runtime.json.
 echo.
 exit /b 0
