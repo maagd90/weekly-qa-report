@@ -203,6 +203,7 @@ export function qmetryConfigFromConnection(conn: QmetryConnectionInput): QmetryI
   const projectId = conn.projectId?.trim() || null;
   return {
     ...DEFAULTS.qmetry,
+    ...(conn as unknown as Partial<QmetryIntegrationConfig>),
     enabled: true,
     baseUrl: conn.baseUrl.replace(/\/+$/, ''),
     auth: { type: 'basic', email: conn.email, token: connectionSecret(conn) },
