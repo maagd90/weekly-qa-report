@@ -57,12 +57,6 @@ function normalizeExecutablePath(raw: string): string {
   return path.normalize(p);
 }
 
-function existingPath(value?: string): string | null {
-  if (!value?.trim()) return null;
-  const executablePath = normalizeExecutablePath(value);
-  return executablePath && fs.existsSync(executablePath) ? executablePath : null;
-}
-
 function candidateBrowserPaths(): string[] {
   const candidates = new Set<string>();
   const configured = process.env.PUPPETEER_EXECUTABLE_PATH;
