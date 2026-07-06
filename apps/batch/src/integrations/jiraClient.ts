@@ -1,6 +1,6 @@
 import type { IntegrationsConfig } from '../config/loadIntegrations';
 import { getAuthHeader } from '../config/loadIntegrations';
-import { fetchWithTimeout, safeApiError } from '../utils/fetchWithTimeout';
+import { fetchWithTimeout, safeApiError, describeFetchError } from '../utils/fetchWithTimeout';
 import { mapIssueType, isoDateFromApi } from '../utils/jiraHelpers';
 import type { IssueRow } from '../types/dataset';
 import { emptyDataset } from '../types/dataset';
@@ -72,7 +72,7 @@ export async function fetchJiraIssues(cfg: IntegrationsConfig['jira']): Promise<
         body: JSON.stringify({ jql: cfg.jql, startAt, maxResults, fields: cfg.fields }),
       });
     } catch (err) {
-      return { issues, error: `JIRA API timeout: ${(err as Error).message}` };
+      return { issues, error: `JIRA API request failed: ${describeFetchError(err)}` };
     }
 
     const data = await parseJiraResponse(res);
