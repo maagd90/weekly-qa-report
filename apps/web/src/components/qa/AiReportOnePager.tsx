@@ -18,6 +18,18 @@ interface AiReportOnePagerProps {
   compactNarrative?: boolean;
 }
 
+function topUatCrs(uat: NonNullable<DashboardPayload['uat']>) {
+  const grouped = new Map<string, { cr: string; total: number; open: number }>();
+  for (const row of uat.rows) {
+    const cr = row.cr || 'Unassigned';
+    const current = grouped.get(cr) || { cr, total: 0, open: 0 };
+    current.total += 1;
+    if (!/closed|done|resolved|cancel/i.test(row.status)) current.open += 1;
+    grouped.set(cr, current);
+  }
+  return [...grouped.values()].sort((a, b) => b.open - a.open || b.total - a.total).slice(0, 3);
+}
+
 export function AiReportOnePager({
   dashboard,
   kpiStyle,
@@ -28,7 +40,8 @@ export function AiReportOnePager({
 }: AiReportOnePagerProps) {
   const { overview, testers, uat } = dashboard;
   const topTesters = [...testers].sort((a, b) => b.executed - a.executed).slice(0, 3);
-  const topCrs = uat?.byCr?.slice(0, 3) ?? [];
+  const topCrs = uat ? topUatCrs(uat) : [];
+  const projectLabel = dashboard.scope.project && dashboard.scope.project !== 'all' ? dashboard.scope.project : 'All Projects';
   const displayNarrative = compactNarrative ? trimSummaryForPrint(narrative) : summaryBodyOnly(narrative);
 
   return (
@@ -41,7 +54,7 @@ export function AiReportOnePager({
           QA Report
         </h1>
         <div className="font-mono-qa text-[9.5px] text-qa-muted-light uppercase tracking-wide">
-          {startDate} → {endDate} · DLM · Travel Studio
+          {startDate} → {endDate} · {projectLabel}
         </div>
       </div>
 
