@@ -26,7 +26,7 @@ type RequestMeta = { requestId: string; startedAt: number };
 
 export interface ReportBranding { logoUrl?: string; logoAlt?: string; title?: string; subtitle?: string }
 export interface SyncInputResult { ok: boolean; rebuilt: boolean; rowCounts: { executions: number; issues: number; uat: number }; removed?: string[]; warnings?: string[]; projects?: string[]; error?: string }
-export interface DashboardSearchResult { ok: boolean; dashboard: DashboardPayload; rowCounts: { executions: number; issues: number; uat: number }; warnings?: string[]; error?: string }
+export interface DashboardSearchResult { ok: boolean; dashboard: DashboardPayload; rowCounts: { executions: number; issues: number; uat: number }; warnings?: string[]; projects?: string[]; error?: string }
 
 export const LLM_MODELS: Record<LlmProvider, string[]> = {
   anthropic: ['claude-haiku-4-5-20251001', 'claude-sonnet-4-6'],
@@ -49,6 +49,8 @@ function logApi(event: string, data: Record<string, unknown>): void { console.lo
 function normalizeProvider(value: unknown): LlmProvider { return value === 'openai' || value === 'gemini' || value === 'openai-compatible' || value === 'anthropic' ? value : 'anthropic'; }
 function readStoredObject<T>(key: string, fallback: T): T { try { const raw = window.localStorage.getItem(key); return raw ? (JSON.parse(raw) as T) : fallback; } catch { return fallback; } }
 function writeStoredObject<T>(key: string, value: T): void { try { window.localStorage.setItem(key, JSON.stringify(value)); } catch { /* storage unavailable */ } }
+function normalizeJiraConnection(c: JiraConnectionInput): JiraConnectionInput { return { ...c, enabled: c.enabled !== false, syncIssues: c.syncIssues !== false }; }
+function normalizeQmetryConnection(c: QmetryConnectionInput): QmetryConnectionInput { return { ...c, enabled: c.enabled !== false, syncExecutions: c.syncExecutions !== false, cycleIds: [] }; }
 
 export function getReportBranding(): ReportBranding { return readStoredObject<ReportBranding>(REPORT_BRANDING_STORAGE, { logoUrl: '', logoAlt: 'Report logo', title: 'QA Sprint Report', subtitle: '' }); }
 export function setReportBranding(branding: ReportBranding): void { writeStoredObject(REPORT_BRANDING_STORAGE, { logoUrl: branding.logoUrl?.trim() || '', logoAlt: branding.logoAlt?.trim() || 'Report logo', title: branding.title?.trim() || 'QA Sprint Report', subtitle: branding.subtitle?.trim() || '' }); }
@@ -63,10 +65,10 @@ export function setUserAnthropicKey(key: string): void { setUserLlmKey('anthropi
 
 function readConnections<T>(key: string): T[] { return readStoredObject<T[]>(key, []); }
 function writeConnections<T>(key: string, value: T[]): void { writeStoredObject(key, value); }
-export const getJiraConnections = (): JiraConnectionInput[] => readConnections<JiraConnectionInput>(JIRA_CONNECTIONS_STORAGE);
-export const setJiraConnections = (conns: JiraConnectionInput[]): void => writeConnections(JIRA_CONNECTIONS_STORAGE, conns);
-export const getQmetryConnections = (): QmetryConnectionInput[] => readConnections<QmetryConnectionInput>(QMETRY_CONNECTIONS_STORAGE).map((c) => ({ ...c, cycleIds: [] }));
-export const setQmetryConnections = (conns: QmetryConnectionInput[]): void => writeConnections(QMETRY_CONNECTIONS_STORAGE, conns.map((c) => ({ ...c, cycleIds: [] })));
+export const getJiraConnections = (): JiraConnectionInput[] => readConnections<JiraConnectionInput>(JIRA_CONNECTIONS_STORAGE).map(normalizeJiraConnection);
+export const setJiraConnections = (conns: JiraConnectionInput[]): void => writeConnections(JIRA_CONNECTIONS_STORAGE, conns.map(normalizeJiraConnection));
+export const getQmetryConnections = (): QmetryConnectionInput[] => readConnections<QmetryConnectionInput>(QMETRY_CONNECTIONS_STORAGE).map(normalizeQmetryConnection);
+export const setQmetryConnections = (conns: QmetryConnectionInput[]): void => writeConnections(QMETRY_CONNECTIONS_STORAGE, conns.map(normalizeQmetryConnection));
 export function newConnectionId(): string { return `c${Date.now()}${Math.random().toString(36).slice(2, 8)}`; }
 
 api.interceptors.request.use((config) => {
