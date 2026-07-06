@@ -12,6 +12,8 @@ export interface QmetryCycleHealthSummary { key: string; name: string; total: nu
 export interface QmetryCycleSearchResult { cycles: QmetryCycleSummary[]; total: number; error?: string }
 export interface QmetryFolderSearchResult { folders: QmetryFolderSummary[]; total: number; error?: string }
 
+type QmetrySessionConfig = QmetryIntegrationConfig & { sessionHeader?: string; sessionId?: string; xsrfToken?: string };
+
 function authHeader(cfg: QmetryIntegrationConfig): string | null {
   const encoded = getEncodedAuth(cfg.authEncodedEnv);
   if (encoded) return encoded.startsWith('Basic ') ? encoded : `Basic ${encoded}`;
@@ -19,11 +21,29 @@ function authHeader(cfg: QmetryIntegrationConfig): string | null {
   return basic ? `Basic ${basic}` : null;
 }
 
+function cleanSessionHeader(value: string): string {
+  return value.replace(/^Cookie:\s*/i, '').trim();
+}
+
+function qmetrySessionHeader(cfg: QmetryIntegrationConfig): string | null {
+  const sessionCfg = cfg as QmetrySessionConfig;
+  const full = sessionCfg.sessionHeader || process.env.QMETRY_SESSION_HEADER || process.env.JIRA_SESSION_HEADER || process.env.JIRA_COOKIE;
+  if (full?.trim()) return cleanSessionHeader(full);
+  const sessionId = sessionCfg.sessionId || process.env.QMETRY_SESSION_ID || process.env.JIRA_SESSION_ID;
+  const xsrf = sessionCfg.xsrfToken || process.env.QMETRY_XSRF_TOKEN || process.env.JIRA_XSRF_TOKEN || process.env.ATLASSIAN_XSRF_TOKEN;
+  const parts: string[] = [];
+  if (sessionId?.trim()) parts.push(`JSESSIONID=${sessionId.trim()}`);
+  if (xsrf?.trim()) parts.push(`atlassian.xsrf.token=${xsrf.trim()}`);
+  return parts.length ? parts.join('; ') : null;
+}
+
 async function qmetryFetch(cfg: QmetryIntegrationConfig, method: 'GET' | 'POST', path: string, body?: unknown): Promise<{ ok: boolean; data?: unknown; error?: string }> {
   const auth = authHeader(cfg);
   if (!auth) return { ok: false, error: 'QMetry credentials not configured' };
   const url = `${cfg.baseUrl}${cfg.apiPrefix}${path}`;
   const headers: Record<string, string> = { Authorization: auth, Accept: 'application/json' };
+  const sessionHeader = qmetrySessionHeader(cfg);
+  if (sessionHeader) headers.Cookie = sessionHeader;
   const init: RequestInit = { method, headers };
   if (body !== undefined) { headers['Content-Type'] = 'application/json'; init.body = JSON.stringify(body); }
   try {
