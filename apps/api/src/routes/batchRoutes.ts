@@ -44,14 +44,8 @@ function requestId(req: Request): string {
   return (req as Request & { requestId?: string }).requestId || req.header('x-request-id') || 'no-request-id';
 }
 
-function log(req: Request, message: string, data?: Record<string, unknown>): void {
-  console.log(`[api] [${requestId(req)}] ${message}`, data || '');
-}
-
-function logError(req: Request, message: string, err: unknown, data?: Record<string, unknown>): void {
-  console.error(`[api] [${requestId(req)}] ${message}`, { ...data, error: err instanceof Error ? err.message : String(err) });
-}
-
+function log(req: Request, message: string, data?: Record<string, unknown>): void { console.log(`[api] [${requestId(req)}] ${message}`, data || ''); }
+function logError(req: Request, message: string, err: unknown, data?: Record<string, unknown>): void { console.error(`[api] [${requestId(req)}] ${message}`, { ...data, error: err instanceof Error ? err.message : String(err) }); }
 function outputPath(fileName: string): string { return path.join(OUTPUT_DIR, fileName); }
 function removeOutputFile(fileName: string): string | null { const filePath = outputPath(fileName); if (!fs.existsSync(filePath)) return null; fs.unlinkSync(filePath); return fileName; }
 function clearOutputFiles(fileNames: string[] = GENERATED_OUTPUT_FILES): string[] { const removed = new Set<string>(); for (const fileName of fileNames) { const deleted = removeOutputFile(fileName); if (deleted) removed.add(deleted); } return [...removed]; }
@@ -90,10 +84,7 @@ function resolveConnections(req: Request): UserConnections {
     const connections = { jira: Array.isArray(parsed.jira) ? parsed.jira : [], qmetry: Array.isArray(parsed.qmetry) ? parsed.qmetry : [] };
     log(req, 'resolved browser connections', connectionSummary(connections));
     return connections;
-  } catch (err) {
-    logError(req, 'failed to parse x-user-connections header', err);
-    return emptyConnections();
-  }
+  } catch (err) { logError(req, 'failed to parse x-user-connections header', err); return emptyConnections(); }
 }
 
 function resolveAnthropicKey(req: Request): { key: string; source: 'user' | 'server' | 'none' } {
@@ -116,27 +107,15 @@ async function ensureDataset(req: Request, connections: UserConnections): Promis
     if (totalRows(dataset) === 0) { const removed = clearOutputFiles(); log(req, 'ensureDataset:no data; cleared stale outputs', { removed }); return null; }
     saveRawDataset(OUTPUT_DIR, dataset, fingerprint);
     return { dataset, fingerprint };
-  } catch (err) {
-    logError(req, 'ensureDataset:build failed', err);
-    return dataset ? { dataset, fingerprint: cached || fingerprint } : null;
-  }
+  } catch (err) { logError(req, 'ensureDataset:build failed', err); return dataset ? { dataset, fingerprint: cached || fingerprint } : null; }
 }
 
 function parseFilterParams(req: Request) {
   return { startDate: req.query.startDate as string | undefined, endDate: req.query.endDate as string | undefined, search: req.query.search as string | undefined, result: (req.query.result as 'all' | 'PASS' | 'FAIL' | 'BLOCKED') || 'all', project: req.query.project as string | undefined };
 }
 
-function queryString(value: unknown, fallback = ''): string {
-  if (typeof value === 'string') return value;
-  if (Array.isArray(value) && typeof value[0] === 'string') return value[0];
-  return fallback;
-}
-
-function selectQmetryConnection(connections: UserConnections, connectionId?: string): QmetryConnectionInput | null {
-  if (!connections.qmetry.length) return null;
-  if (connectionId) return connections.qmetry.find((c) => c.id === connectionId) || connections.qmetry[0];
-  return connections.qmetry[0];
-}
+function queryString(value: unknown, fallback = ''): string { if (typeof value === 'string') return value; if (Array.isArray(value) && typeof value[0] === 'string') return value[0]; return fallback; }
+function selectQmetryConnection(connections: UserConnections, connectionId?: string): QmetryConnectionInput | null { if (!connections.qmetry.length) return null; if (connectionId) return connections.qmetry.find((c) => c.id === connectionId) || connections.qmetry[0]; return connections.qmetry[0]; }
 
 router.get('/status', (_req: Request, res: Response) => res.json({ apiKeyConfigured: Boolean(process.env.ANTHROPIC_API_KEY || process.env.OPENAI_API_KEY || process.env.GEMINI_API_KEY || process.env.CUSTOM_LLM_API_KEY), llmProvidersConfigured: { anthropic: Boolean(process.env.ANTHROPIC_API_KEY), openai: Boolean(process.env.OPENAI_API_KEY), gemini: Boolean(process.env.GEMINI_API_KEY), custom: Boolean(process.env.CUSTOM_LLM_API_KEY) }, jiraConfigured: Boolean(process.env.JIRA_EMAIL && process.env.JIRA_API_TOKEN), projectRoot: process.env.PROJECT_ROOT || ROOT }));
 router.get('/env', (_req: Request, res: Response) => res.json(getEnvStatus()));
@@ -180,6 +159,22 @@ router.get('/dashboard', async (req: Request, res: Response) => {
   const file = path.join(OUTPUT_DIR, 'dashboard-data.json');
   if (!fs.existsSync(file)) return res.status(404).json({ error: 'No dashboard generated yet. Click Sync on Import Data or generate a report.', requestId: requestId(req) });
   res.json(JSON.parse(fs.readFileSync(file, 'utf8')));
+});
+
+router.post('/dashboard/search', async (req: Request, res: Response) => {
+  const { startDate, endDate, search, result, project } = req.body as { startDate?: string; endDate?: string; search?: string; result?: 'all' | 'PASS' | 'FAIL' | 'BLOCKED'; project?: string };
+  const connections = resolveConnections(req);
+  log(req, 'POST /dashboard/search:start', { startDate, endDate, search, result, project, connections: connectionSummary(connections) });
+  if (!startDate || !endDate) return res.status(400).json({ ok: false, error: 'startDate and endDate are required', requestId: requestId(req) });
+  try {
+    const dataset = await buildDataset(INPUT_DIR, CONFIG_DIR, connections, { jiraSearchScope: { startDate, endDate, project } });
+    const dashboard = refilterDashboard(dataset, { startDate, endDate, search, result: result || 'all', project });
+    log(req, 'POST /dashboard/search:done', { rowCounts: rowCounts(dataset), overview: dashboard.overview, warnings: dataset.meta.warnings });
+    return res.json({ ok: true, dashboard, rowCounts: rowCounts(dataset), warnings: dataset.meta.warnings, requestId: requestId(req) });
+  } catch (err) {
+    logError(req, 'POST /dashboard/search:failed', err);
+    return res.status(500).json({ ok: false, error: (err as Error).message, requestId: requestId(req) });
+  }
 });
 
 router.get('/cycles/folders', async (req: Request, res: Response) => {
