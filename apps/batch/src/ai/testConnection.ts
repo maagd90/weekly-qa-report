@@ -34,12 +34,14 @@ function formatError(err: unknown, model: string, route: 'direct' | 'proxy'): st
   let hint = '';
   if (/timed out|timeout|aborted|abort/.test(lower)) {
     hint = ' — request timed out.';
+  } else if (/self.signed|self-signed|unable to verify|cert|unauthorized certificate/.test(lower)) {
+    hint = route === 'proxy'
+      ? ' — office proxy TLS issue; keep integrationAllowSelfSignedCerts=true in config/runtime.json.'
+      : ' — office network TLS issue; configure officeProxyUrl in config/runtime.json.';
   } else if (/connection error|fetch failed|econnrefused|etimedout|enotfound|eai_again|socket|connect/.test(lower)) {
     hint = route === 'proxy'
-      ? ' — check proxy URL in .env or config/report.json.'
-      : ' — Docker/office networks may block direct outbound HTTPS. Try host dev mode or configure proxy.';
-  } else if (/self.signed|unable to verify|cert|unauthorized certificate|self signed/.test(lower)) {
-    hint = ' — TLS certificate issue; configure NODE_EXTRA_CA_CERTS for the corporate CA.';
+      ? ' — check officeProxyUrl in config/runtime.json.'
+      : ' — Docker/office networks may block direct outbound HTTPS. Configure officeProxyUrl in config/runtime.json.';
   } else if (/401|authentication|invalid x-api-key|unauthorized/.test(lower)) {
     hint = ' — key is missing, invalid, or revoked.';
   } else if (/not_found_error|model|400|bad request/.test(lower)) {
@@ -57,10 +59,10 @@ export async function testAnthropicConnection(apiKey: string, configDir: string)
   log('runtime', `node=${process.version} platform=${process.platform}`);
   log('route', route === 'proxy'
     ? `proxy via ${maskProxyUrl(getOptionalAnthropicProxyUrl()!)} (${anthropicProxySource()})`
-    : 'direct — set ANTHROPIC_PROXY_URL or HTTPS_PROXY in .env for office networks');
+    : 'direct — set officeProxyUrl in config/runtime.json for office networks');
 
   if (!apiKey) {
-    log('API key check', 'missing — set ANTHROPIC_API_KEY in .env or Settings');
+    log('API key check', 'missing — add the key in Settings or config/runtime.json');
     return { ok: false, route, elapsedMs: Date.now() - started, error: 'ANTHROPIC_API_KEY is not configured', logs: lines };
   }
 
