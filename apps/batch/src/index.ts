@@ -21,3 +21,4 @@ export { loadIntegrations, integrationsSummary, jiraConfigFromConnection, qmetry
 export { buildDataset, loadRawDataset, computeFingerprint, loadFingerprint, saveRawDataset } from './cache/datasetCache';
 export { fetchJiraIssues } from './integrations/jiraClient';
 export { fetchQmetryExecutions, fetchProjectCycles } from './integrations/qmetryClient';
+export { searchQmetryTestCycles } from './integrations/qmetryClient';
