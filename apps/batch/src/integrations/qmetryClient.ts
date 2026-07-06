@@ -2,7 +2,7 @@ import type { ExecutionRow } from '../types/dataset';
 import { emptyDataset } from '../types/dataset';
 import type { IntegrationsConfig, QmetryIntegrationConfig } from '../config/loadIntegrations';
 import { getBasicAuth, getEncodedAuth } from '../config/loadIntegrations';
-import { fetchWithTimeout, safeApiError } from '../utils/fetchWithTimeout';
+import { fetchWithTimeout, safeApiError, describeFetchError } from '../utils/fetchWithTimeout';
 import { mapExecutionResult, projectFromKey, sanitizeText } from '../utils/excel';
 import { isoDateFromApi } from '../utils/jiraHelpers';
 
@@ -41,7 +41,7 @@ async function qmetryFetch(
     }
     return { ok: true, data: await res.json() };
   } catch (err) {
-    return { ok: false, error: `QMetry API timeout: ${(err as Error).message}` };
+    return { ok: false, error: `QMetry API request failed: ${describeFetchError(err)}` };
   }
 }
 
@@ -180,38 +180,29 @@ export async function fetchQmetryExecutions(cfg: QmetryIntegrationConfig): Promi
     };
   }
 
-  const executions: ExecutionRow[] = [];
+  const all: ExecutionRow[] = [];
   const cycleMeta = new Map<string, string>();
-  const errors: string[] = [];
-
+  const warnings: string[] = [];
   for (const cycleId of cycleIds) {
-    const { executions: batch, cycleKey, cycleName, error } = await fetchCycleExecutions(cfg, cycleId);
-    if (error) errors.push(`Cycle ${cycleId}: ${error}`);
-    executions.push(...batch);
-    cycleMeta.set(cycleKey, cycleName);
+    const result = await fetchCycleExecutions(cfg, cycleId);
+    if (result.error) warnings.push(`${cycleId}: ${result.error}`);
+    all.push(...result.executions);
+    cycleMeta.set(result.cycleKey, result.cycleName);
   }
-
-  return { executions, cycleMeta, error: errors.length ? errors.join('; ') : undefined };
+  return { executions: all, cycleMeta, error: warnings.join('; ') || undefined };
 }
 
 export async function fetchQmetryDataset(cfg: IntegrationsConfig) {
   const ds = emptyDataset();
-  const { executions, error } = await fetchQmetryExecutions(cfg.qmetry);
+  const { executions, cycleMeta, error } = await fetchQmetryExecutions(cfg.qmetry);
   ds.executions = executions;
   ds.meta.integrations.qmetry = true;
   ds.meta.fetchedAt = new Date().toISOString();
   if (error) ds.meta.warnings.push(error);
   if (executions.length) {
-    ds.files.push({
-      name: 'qmetry-api',
-      ext: 'API',
-      project: executions[0]?.project || cfg.qmetry.projectKey,
-      rows: executions.length,
-      status: 'parsed',
-      detectedType: 'test-execution',
-      source: 'qmetry-api',
-    });
+    ds.files.push({ name: 'qmetry-api', ext: 'API', project: cfg.qmetry.projectKey, rows: executions.length, status: 'parsed', detectedType: 'test-execution', source: 'qmetry-api' });
     ds.projects = [...new Set(executions.map((e) => e.project))];
+    ds.meta.sourceFiles.push(`qmetry-api:${cfg.qmetry.cycleIds.join(',') || 'project'}`);
   }
-  return ds;
+  return { ...ds, cycleMeta };
 }
