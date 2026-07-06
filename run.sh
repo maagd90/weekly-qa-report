@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# DLM QA Dashboard — project runner
+# Weekly QA Dashboard — project runner
 # Usage:
 #   ./run.sh              # show help
-#   ./run.sh setup        # first-time setup (dirs, .env, npm install)
+#   ./run.sh setup        # first-time setup (dirs, runtime config, npm install)
 #   ./run.sh dev          # local dev (API :3001 + UI :5173)
 #   ./run.sh build        # production build
 #   ./run.sh test         # parser regression tests
@@ -32,6 +32,12 @@ require_cmd() {
   fi
 }
 
+ensure_runtime_files() {
+  mkdir -p input output config
+  [[ -f config/runtime.json ]] || cp config/runtime.example.json config/runtime.json
+  [[ -f config/integrations.json ]] || cp config/integrations.example.json config/integrations.json
+}
+
 cmd_setup() {
   bash "$ROOT/scripts/setup.sh"
 }
@@ -40,6 +46,7 @@ cmd_dev() {
   require_cmd node
   require_cmd npm
   [[ -d node_modules ]] || cmd_setup
+  ensure_runtime_files
   info "Starting dev servers (API http://localhost:3001, UI http://localhost:5173)"
   npm run dev
 }
@@ -72,9 +79,7 @@ cmd_docker() {
 
   case "$sub" in
     up|start)
-      [[ -f .env ]] || cmd_setup
-      mkdir -p input output config
-      [[ -f config/integrations.json ]] || cp config/integrations.example.json config/integrations.json
+      ensure_runtime_files
       info "Building and starting Docker containers"
       docker compose up --build -d
       echo ""
@@ -82,8 +87,8 @@ cmd_docker() {
       echo "  UI:  http://localhost:3000"
       echo "  API: http://localhost:3001/health"
       echo ""
-      echo "Stage Excel files in ./input/ or configure ./config/integrations.json"
-      echo "Then open the UI → AI Report → Generate Report"
+      echo "Stage Excel files in ./input/ or configure the app through Settings."
+      echo "Optional server runtime overrides live in ./config/runtime.json."
       ;;
     down|stop)
       info "Stopping Docker containers"
@@ -110,12 +115,12 @@ cmd_docker() {
 
 show_help() {
   cat <<'EOF'
-DLM QA Dashboard
+Weekly QA Dashboard
 
 Usage: ./run.sh <command>
 
 Commands:
-  setup       First-time setup (.env, config, npm install)
+  setup       First-time setup (runtime config, folders, npm install)
   dev         Run locally (API :3001, Vite UI :5173)
   build       Production build (batch + api + web)
   test        Run parser regression tests
@@ -141,10 +146,9 @@ Quick start (Docker):
   ./run.sh docker
   open http://localhost:3000
 
-Environment (.env):
-  ANTHROPIC_API_KEY   Optional — needed for AI reports
-  JIRA_EMAIL          Optional — live JIRA fetch
-  JIRA_API_TOKEN      Optional — live JIRA/QMetry fetch
+Configuration:
+  Use the Settings screen for JIRA/QMetry/LLM credentials.
+  Use config/runtime.json only for server-side runtime defaults such as proxy, TLS, paths, or Docker PDF settings.
 EOF
 }
 
