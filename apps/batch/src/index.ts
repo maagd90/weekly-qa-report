@@ -7,7 +7,7 @@ export { parseJira } from './parse/parseJira';
 export { parseOdl } from './parse/parseOdl';
 export { mergeDatasets } from './merge/mergeDataset';
 export { buildDashboardPayload } from './export/buildDashboardPayload';
-export type { DashboardPayload, FilterParams, ReportType, GenerateParams } from './types/dataset';
+export type { DashboardPayload, FilterParams, ReportType, GenerateParams, ApiFetchScope } from './types/dataset';
 export type { JiraConnectionInput, QmetryConnectionInput, UserConnections, JiraDeploymentType, JiraAuthType } from './types/connections';
 export { emptyConnections } from './types/connections';
 export { resultColor } from './types/dataset';
