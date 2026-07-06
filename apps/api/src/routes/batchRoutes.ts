@@ -96,14 +96,14 @@ async function refreshGeneratedOutputs(req: Request, connections: UserConnection
   if (totalRows(dataset) === 0) {
     removed.push(...clearOutputFiles(['raw-dataset.json', 'dataset-fingerprint.txt', 'dashboard-data.json']));
     log(req, 'generated outputs cleared; no source data remains', { rowCounts: counts, removed });
-    return { rebuilt: false, rowCounts: counts, removed, warnings: dataset.meta.warnings };
+    return { rebuilt: false, rowCounts: counts, removed, warnings: dataset.meta.warnings, files: dataset.files, projects: dataset.projects };
   }
 
   saveRawDataset(OUTPUT_DIR, dataset, fingerprint);
   const payload = refilterDashboard(dataset, {});
   fs.writeFileSync(outputPath('dashboard-data.json'), JSON.stringify(payload, null, 2));
-  log(req, 'generated outputs refreshed after input change', { rowCounts: counts, warnings: dataset.meta.warnings });
-  return { rebuilt: true, rowCounts: counts, removed, warnings: dataset.meta.warnings };
+  log(req, 'generated outputs refreshed after input change', { rowCounts: counts, warnings: dataset.meta.warnings, projects: dataset.projects });
+  return { rebuilt: true, rowCounts: counts, removed, warnings: dataset.meta.warnings, files: dataset.files, projects: dataset.projects };
 }
 
 function connectionSummary(connections: UserConnections) {
@@ -275,7 +275,7 @@ router.get('/dashboard', async (req: Request, res: Response) => {
   const cached = await ensureDataset(req, connections);
   if (cached) return res.json(refilterDashboard(cached.dataset, filter));
   const file = path.join(OUTPUT_DIR, 'dashboard-data.json');
-  if (!fs.existsSync(file)) return res.status(404).json({ error: 'No dashboard generated yet. Click Generate Report or configure integrations.', requestId: requestId(req) });
+  if (!fs.existsSync(file)) return res.status(404).json({ error: 'No dashboard generated yet. Click Sync on Import Data or generate a report.', requestId: requestId(req) });
   res.json(JSON.parse(fs.readFileSync(file, 'utf8')));
 });
 
@@ -320,7 +320,7 @@ router.post('/report/pdf', async (req: Request, res: Response) => {
   const type = ['full', 'executive', 'testers', 'cycles'].includes(reportType || '') ? reportType! : 'executive';
   const kpi = ['editorial', 'framed', 'minimal'].includes(kpiStyle || '') ? kpiStyle! : 'editorial';
   const cached = await ensureDataset(req, connections);
-  if (!cached) return res.status(404).json({ error: 'No dashboard data. Generate a report first.', requestId: requestId(req) });
+  if (!cached) return res.status(404).json({ error: 'No dashboard data. Click Sync on Import Data first.', requestId: requestId(req) });
 
   const payload = refilterDashboard(cached.dataset, { startDate, endDate, project });
   log(req, 'POST /report/pdf:payload ready', { totalCases: payload.overview.totalCases, uatTotal: payload.uat?.total ?? 0, project: payload.scope.project });
@@ -392,10 +392,23 @@ router.post('/integrations/test-connection', async (req: Request, res: Response)
   }
 });
 
+router.post('/input/sync', async (req: Request, res: Response) => {
+  const connections = resolveConnections(req);
+  log(req, 'POST /input/sync:start', { connections: connectionSummary(connections) });
+  try {
+    const sync = await refreshGeneratedOutputs(req, connections);
+    log(req, 'POST /input/sync:done', { rebuilt: sync.rebuilt, rowCounts: sync.rowCounts, projects: sync.projects, warnings: sync.warnings });
+    return res.json({ ok: true, ...sync, requestId: requestId(req) });
+  } catch (err) {
+    logError(req, 'POST /input/sync:failed', err);
+    return res.status(500).json({ ok: false, error: (err as Error).message, requestId: requestId(req) });
+  }
+});
+
 router.post('/upload', upload.single('file'), (req: Request, res: Response) => {
   if (!req.file) return res.status(400).json({ error: 'No file uploaded', requestId: requestId(req) });
   log(req, 'POST /upload:done', { filename: req.file.filename, size: req.file.size });
-  res.json({ ok: true, filename: req.file.filename, path: req.file.path, message: 'File staged. Run Generate Report to process.' });
+  res.json({ ok: true, filename: req.file.filename, path: req.file.path, message: 'File staged. Click Sync to update dashboard data.' });
 });
 
 router.get('/input/files', (_req: Request, res: Response) => {
