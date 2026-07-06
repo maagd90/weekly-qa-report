@@ -7,6 +7,7 @@ import { QaKpiCard, QaKpiGrid } from '../components/qa/QaKpiCard';
 import { ResultDonut } from '../components/qa/ResultDonut';
 import { StackedMonthChart } from '../components/qa/StackedMonthChart';
 import { HorizBar } from '../components/qa/SegBar';
+import { projectDisplayName } from '../lib/projectDisplay';
 
 interface OverviewPageProps {
   dashboard: DashboardPayload;
@@ -137,7 +138,7 @@ export function OverviewPage({ dashboard, kpiStyle }: OverviewPageProps) {
           {byProject.map((p) => (
             <div key={p.project}>
               <div className="flex items-baseline gap-2.5 mb-3.5 pb-2 border-b-2 border-qa-ink">
-                <h3 className="font-spectral font-extrabold text-[20px] m-0 tracking-tight">{p.project}</h3>
+                <h3 className="font-spectral font-extrabold text-[20px] m-0 tracking-tight">{projectDisplayName(p.project)}</h3>
                 <span className="font-mono-qa text-[10px] tracking-wider uppercase text-qa-muted-light">
                   {p.overview.totalCases ? `${fmt(p.overview.totalCases)} test cases` : p.storyBug.bug ? `${fmt(p.storyBug.bug)} defects` : 'no metrics in scope'}
                 </span>
