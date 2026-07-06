@@ -5,6 +5,8 @@ export interface JiraConnectionInput {
   id: string;
   name: string;
   baseUrl: string;
+  enabled?: boolean;
+  syncIssues?: boolean;
   deploymentType?: JiraDeploymentType;
   authType?: JiraAuthType;
   email: string;
@@ -24,6 +26,8 @@ export interface QmetryConnectionInput {
   id: string;
   name: string;
   baseUrl: string;
+  enabled?: boolean;
+  syncExecutions?: boolean;
   email: string;
   apiToken?: string;
   credential?: string;
