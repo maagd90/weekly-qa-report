@@ -100,6 +100,12 @@ export interface FilterParams {
   project?: string;
 }
 
+export interface ApiFetchScope {
+  startDate?: string;
+  endDate?: string;
+  project?: string;
+}
+
 export interface GenerateParams extends FilterParams {
   reportType: ReportType;
   inputDir?: string;
@@ -108,93 +114,4 @@ export interface GenerateParams extends FilterParams {
   apiKey?: string;
   llm?: import('../ai/llmProviders').LlmSelectionInput;
   connections?: import('./connections').UserConnections;
-}
-
-export interface ReportMeta {
-  generatedAt: string;
-  params: GenerateParams;
-  toolCalls: { toolName: string; rowCount: number }[];
-  llm?: {
-    provider: string;
-    model: string;
-    baseUrl?: string;
-    maxTokens?: number;
-  };
-}
-
-export interface GenerateResult {
-  ok: boolean;
-  filesParsed: number;
-  rowCounts: Record<string, number>;
-  warnings: string[];
-  paths: { dashboard: string; report: string; meta: string; raw: string };
-  payload?: DashboardPayload;
-  report?: { markdown: string; meta: ReportMeta };
-  error?: string;
-  requestId?: string;
-}
-
-export interface DashboardScope extends FilterParams {
-  project: string;
-  projects: string[];
-}
-
-const RESULT_COLORS: Record<string, string> = {
-  PASS: '#22c55e',
-  FAIL: '#ef4444',
-  BLOCKED: '#f59e0b',
-  NE: '#94a3b8',
-  NA: '#cbd5e1',
-};
-
-export function resultColor(code: string): string {
-  return RESULT_COLORS[code] || '#64748b';
-}
-
-export interface DashboardPayload {
-  scope: DashboardScope;
-  overview: {
-    totalCases: number;
-    executed: number;
-    passRate: number;
-    failed: number;
-    blocked: number;
-    resultMix: { code: string; label: string; count: number; pct: number; color: string }[];
-    byMonth: { ym: string; label: string; pass: number; blocked: number; fail: number }[];
-    chartSeries: { resultMix: { name: string; value: number; color: string }[] };
-  };
-  testers: { name: string; executed: number; pass: number; fail: number; blocked: number; na: number; passPct: number }[];
-  cycles: { key: string; name: string; total: number; pass: number; fail: number; blocked: number; ne: number; na: number; passPct: number; coverage: number; status: string }[];
-  cyclesByPassPctAsc: { key: string; name: string; total: number; pass: number; fail: number; blocked: number; ne: number; na: number; passPct: number; coverage: number; status: string }[];
-  storyBug: { story: number; bug: number; storyOpen: number; storyDone: number; bugOpen: number; bugDone: number };
-  traceability: { area: string; stories: number; done: number; open: number; bugs: number; openBugs: number; completion: number; status: string }[];
-  defectBacklog: {
-    openTotal: number;
-    byPriority: { priority: string; open: number; total: number }[];
-    topPriorities: { priority: string; open: number; total: number }[];
-    byOwner: { name: string; open: number }[];
-  };
-  uat: {
-    total: number;
-    open: number;
-    closed: number;
-    closureRate: number;
-    urgentOpen: number;
-    byStatus: { status: string; count: number }[];
-    byPriority: { priority: string; count: number }[];
-    byArea: { area: string; count: number }[];
-    bySubmitter: { name: string; count: number }[];
-    rows: { id: string; subject: string; area: string; priority: string; status: string; submitter: string; submittedAt: string; updatedAt: string; cr: string; project?: string }[];
-  } | null;
-  byProject?: {
-    project: string;
-    overview: DashboardPayload['overview'];
-    storyBug: DashboardPayload['storyBug'];
-    defectBacklog: DashboardPayload['defectBacklog'];
-    cycles: DashboardPayload['cycles'];
-    testers: DashboardPayload['testers'];
-    uat: DashboardPayload['uat'];
-  }[];
-  files: FileMeta[];
-  meta: { generatedAt: string; parsedAt: string; fetchedAt: string | null; warnings: string[]; dataMin: string | null; dataMax: string | null };
 }
