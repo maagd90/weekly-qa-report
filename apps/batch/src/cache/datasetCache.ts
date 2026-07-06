@@ -28,6 +28,7 @@ async function buildJiraConnectionDataset(configDir: string, connections?: UserC
   const apiScope = cleanApiScope(options?.apiScope);
   if (connections?.jira?.length) {
     for (const conn of connections.jira) {
+      if (conn.enabled === false || conn.syncIssues === false) continue;
       const jiraCfg = jiraConfigFromConnection(conn);
       const { issues, error, jql } = await fetchJiraIssues(jiraCfg, apiScope);
       const ds = emptyDataset();
@@ -58,6 +59,7 @@ async function buildQmetryConnectionDataset(configDir: string, connections?: Use
   const apiScope = cleanApiScope(options?.apiScope);
   if (connections?.qmetry?.length) {
     for (const conn of connections.qmetry) {
+      if (conn.enabled === false || conn.syncExecutions === false) continue;
       const qmetryCfg = qmetryConfigFromConnection(conn);
       const { executions, error } = await fetchQmetryExecutions(qmetryCfg, apiScope);
       const ds = emptyDataset();
