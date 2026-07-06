@@ -1,4 +1,4 @@
-import type { ExecutionRow } from '../types/dataset';
+import type { ApiFetchScope, ExecutionRow } from '../types/dataset';
 import { emptyDataset } from '../types/dataset';
 import type { IntegrationsConfig, QmetryIntegrationConfig } from '../config/loadIntegrations';
 import { getBasicAuth, getEncodedAuth } from '../config/loadIntegrations';
@@ -86,6 +86,20 @@ function cycleSearchPath(cfg: QmetryIntegrationConfig, startAt: number, maxResul
   return `${basePath}?${new URLSearchParams({ startAt: String(startAt), maxResults: String(maxResults) })}`;
 }
 
+function dateInScope(value: string | null | undefined, scope?: ApiFetchScope): boolean {
+  if (!scope?.startDate && !scope?.endDate) return true;
+  const date = (value || '').slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return false;
+  if (scope.startDate && date < scope.startDate) return false;
+  if (scope.endDate && date > scope.endDate) return false;
+  return true;
+}
+
+function executionInScope(row: ExecutionRow, scope?: ApiFetchScope): boolean {
+  if (scope?.project && scope.project !== 'all' && row.project !== scope.project) return false;
+  return dateInScope(row.executedAt || row.updatedAt, scope);
+}
+
 export async function searchQmetryTestCycles(cfg: QmetryIntegrationConfig, options: { startAt?: number; maxResults?: number; folderId?: string } = {}): Promise<QmetryCycleSearchResult> {
   if (!cfg.enabled) return { cycles: [], total: 0 };
   if (!cfg.projectId && !cfg.testCyclesSearchBody) return { cycles: [], total: 0, error: 'QMetry projectId is required for test cycle search' };
@@ -151,7 +165,7 @@ function normalizeTestCase(tc: Record<string, unknown>, cycleKey: string, cycleN
   return { project: projectFromKey(caseKey), cycleKey, cycleName, caseKey, result: mapExecutionResult(tc.executionResult || tc.status), tester: sanitizeText(tc.executedBy || tc.executionAssignee) || null, executedAt, updatedAt: isoDateFromApi(tc.lastModified) || executedAt, source: 'qmetry' };
 }
 
-async function fetchCycleExecutions(cfg: QmetryIntegrationConfig, cycleId: string, cycleNameHint?: string): Promise<{ executions: ExecutionRow[]; cycleKey: string; cycleName: string; error?: string }> {
+async function fetchCycleExecutions(cfg: QmetryIntegrationConfig, cycleId: string, cycleNameHint?: string, scope?: ApiFetchScope): Promise<{ executions: ExecutionRow[]; cycleKey: string; cycleName: string; error?: string }> {
   const executions: ExecutionRow[] = [];
   let cycleKey = cycleId;
   let cycleName = cycleNameHint || cycleId;
@@ -167,7 +181,7 @@ async function fetchCycleExecutions(cfg: QmetryIntegrationConfig, cycleId: strin
       if (item.cycleKey) cycleKey = sanitizeText(item.cycleKey);
       if (item.cycleSummary || item.cycleName) cycleName = sanitizeText(item.cycleSummary || item.cycleName);
       const row = normalizeTestCase(item, cycleKey, cycleName);
-      if (row) executions.push(row);
+      if (row && executionInScope(row, scope)) executions.push(row);
     }
     const total = extractTotal(result.data, startAt + items.length);
     startAt += items.length;
@@ -214,7 +228,7 @@ async function fetchProjectCycleIds(cfg: QmetryIntegrationConfig): Promise<{ ids
   return { ids };
 }
 
-export async function fetchQmetryExecutions(cfg: QmetryIntegrationConfig): Promise<{ executions: ExecutionRow[]; cycleMeta: Map<string, string>; error?: string }> {
+export async function fetchQmetryExecutions(cfg: QmetryIntegrationConfig, scope?: ApiFetchScope): Promise<{ executions: ExecutionRow[]; cycleMeta: Map<string, string>; error?: string }> {
   if (!cfg.enabled) return { executions: [], cycleMeta: new Map() };
   let cycleIds = [...cfg.cycleIds];
   if (!cycleIds.length && cfg.projectId) {
@@ -227,7 +241,7 @@ export async function fetchQmetryExecutions(cfg: QmetryIntegrationConfig): Promi
   const cycleMeta = new Map<string, string>();
   const warnings: string[] = [];
   for (const cycleId of cycleIds) {
-    const result = await fetchCycleExecutions(cfg, cycleId);
+    const result = await fetchCycleExecutions(cfg, cycleId, undefined, scope);
     if (result.error) warnings.push(`${cycleId}: ${result.error}`);
     all.push(...result.executions);
     cycleMeta.set(result.cycleKey, result.cycleName);
@@ -236,13 +250,14 @@ export async function fetchQmetryExecutions(cfg: QmetryIntegrationConfig): Promi
   return error ? { executions: all, cycleMeta, error } : { executions: all, cycleMeta };
 }
 
-export async function fetchQmetryDataset(cfg: IntegrationsConfig) {
+export async function fetchQmetryDataset(cfg: IntegrationsConfig, scope?: ApiFetchScope) {
   const ds = emptyDataset();
-  const { executions, error } = await fetchQmetryExecutions(cfg.qmetry);
+  const { executions, error } = await fetchQmetryExecutions(cfg.qmetry, scope);
   ds.executions = executions;
   ds.meta.integrations.qmetry = true;
   ds.meta.fetchedAt = new Date().toISOString();
   if (error) ds.meta.warnings.push(error);
+  if (scope?.startDate || scope?.endDate) ds.meta.sourceFiles.push(`qmetry-api:overview-date-search:${scope.startDate || 'any'}:${scope.endDate || 'any'}`);
   if (executions.length) {
     ds.files.push({ name: 'qmetry-api', ext: 'API', project: cfg.qmetry.projectKey, rows: executions.length, status: 'parsed', detectedType: 'test-execution', source: 'qmetry-api' });
     ds.projects = [...new Set(executions.map((e) => e.project))];
