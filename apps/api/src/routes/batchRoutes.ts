@@ -19,6 +19,7 @@ import {
   fetchJiraIssues,
   fetchQmetryExecutions,
   fetchProjectCycles,
+  searchQmetryTestCycles,
   emptyConnections,
 } from 'qa-dashboard-batch';
 import type { Dataset, LlmSelectionInput, UserConnections, JiraConnectionInput, QmetryConnectionInput } from 'qa-dashboard-batch';
@@ -108,7 +109,7 @@ async function refreshGeneratedOutputs(req: Request, connections: UserConnection
 function connectionSummary(connections: UserConnections) {
   return {
     jira: connections.jira.map((c) => ({ name: c.name, baseUrl: c.baseUrl, projectKeys: c.projectKeys?.join(',') || '' })),
-    qmetry: connections.qmetry.map((c) => ({ name: c.name, baseUrl: c.baseUrl, projectKey: c.projectKey, cycleIds: c.cycleIds?.length ?? 0 })),
+    qmetry: connections.qmetry.map((c) => ({ name: c.name, baseUrl: c.baseUrl, projectKey: c.projectKey, projectId: c.projectId || '', folderId: c.folderId || '', cycleIds: c.cycleIds?.length ?? 0 })),
   };
 }
 
@@ -380,10 +381,11 @@ router.post('/integrations/test-connection', async (req: Request, res: Response)
       if (error) return res.json({ ok: false, error });
       return res.json({ ok: true, count: issues.length });
     }
-    const { executions, error } = await fetchQmetryExecutions(qmetryConfigFromConnection(connection as QmetryConnectionInput));
-    log(req, 'POST /integrations/test-connection:qmetry done', { count: executions.length, error });
-    if (error) return res.json({ ok: false, error });
-    return res.json({ ok: true, count: executions.length });
+    const qmetryCfg = qmetryConfigFromConnection(connection as QmetryConnectionInput);
+    const cycles = await searchQmetryTestCycles(qmetryCfg, { startAt: 0, maxResults: 5 });
+    log(req, 'POST /integrations/test-connection:qmetry cycle search done', { count: cycles.cycles.length, total: cycles.total, error: cycles.error });
+    if (cycles.error) return res.json({ ok: false, error: cycles.error });
+    return res.json({ ok: true, count: cycles.total, sampleCycles: cycles.cycles });
   } catch (err) {
     logError(req, 'POST /integrations/test-connection:failed', err);
     return res.status(500).json({ ok: false, error: (err as Error).message, requestId: requestId(req) });
