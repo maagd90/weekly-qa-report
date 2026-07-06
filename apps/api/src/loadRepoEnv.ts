@@ -1,4 +1,3 @@
-import dotenv from 'dotenv';
 import fs from 'fs';
 import path from 'path';
 
@@ -8,11 +7,61 @@ const PATH_ENV_KEYS = [
   'INPUT_DIR',
   'OUTPUT_DIR',
   'CONFIG_DIR',
+  'PROJECT_ROOT',
 ];
 
-let envPath: string | undefined;
+type RuntimeConfigValue = string | number | boolean | null | undefined;
+
+interface RuntimeConfig {
+  env?: Record<string, RuntimeConfigValue>;
+  paths?: {
+    projectRoot?: RuntimeConfigValue;
+    inputDir?: RuntimeConfigValue;
+    outputDir?: RuntimeConfigValue;
+    configDir?: RuntimeConfigValue;
+    puppeteerExecutablePath?: RuntimeConfigValue;
+    pdfPrintUrl?: RuntimeConfigValue;
+  };
+  network?: {
+    httpsProxy?: RuntimeConfigValue;
+    httpProxy?: RuntimeConfigValue;
+    anthropicProxyUrl?: RuntimeConfigValue;
+    nodeExtraCaCerts?: RuntimeConfigValue;
+    integrationAllowSelfSignedCerts?: RuntimeConfigValue;
+    jiraAllowSelfSigned?: RuntimeConfigValue;
+  };
+  llm?: {
+    provider?: RuntimeConfigValue;
+    model?: RuntimeConfigValue;
+    anthropicModel?: RuntimeConfigValue;
+    openaiModel?: RuntimeConfigValue;
+    geminiModel?: RuntimeConfigValue;
+    customLlmModel?: RuntimeConfigValue;
+    customLlmBaseUrl?: RuntimeConfigValue;
+    anthropicApiKey?: RuntimeConfigValue;
+    openaiApiKey?: RuntimeConfigValue;
+    geminiApiKey?: RuntimeConfigValue;
+    customLlmApiKey?: RuntimeConfigValue;
+  };
+  jira?: {
+    email?: RuntimeConfigValue;
+    apiToken?: RuntimeConfigValue;
+    cloudEmail?: RuntimeConfigValue;
+    cloudSecret?: RuntimeConfigValue;
+    onPremSecret?: RuntimeConfigValue;
+    sessionHeader?: RuntimeConfigValue;
+    sessionId?: RuntimeConfigValue;
+    xsrfToken?: RuntimeConfigValue;
+  };
+  qmetry?: {
+    basicAuth?: RuntimeConfigValue;
+  };
+}
+
+let runtimeConfigPath: string | undefined;
+let runtimeConfigLoaded = false;
+let runtimeLoadError: string | undefined;
 let repoRoot: string | undefined;
-let loadError: string | undefined;
 
 function stripQuotes(value: string): string {
   const v = value.trim();
@@ -30,58 +79,122 @@ function normalizeEnvPath(value: string): string {
   return path.normalize(p);
 }
 
-function applyPathNormalizations(parsed: Record<string, string>): void {
+function applyPathNormalizations(): void {
   for (const key of PATH_ENV_KEYS) {
-    const raw = parsed[key];
-    if (raw?.trim()) {
-      const normalized = normalizeEnvPath(raw);
-      parsed[key] = normalized;
-      process.env[key] = normalized;
-    }
+    const raw = process.env[key];
+    if (raw?.trim()) process.env[key] = normalizeEnvPath(raw);
   }
 }
 
-(function loadRepoEnv() {
-  let dir = __dirname;
-  for (let i = 0; i < 8; i++) {
-    const candidate = path.join(dir, '.env');
-    if (fs.existsSync(candidate)) {
-      try {
-        let content = fs.readFileSync(candidate, 'utf8');
-        if (content.charCodeAt(0) === 0xfeff) content = content.slice(1);
-        const parsed = dotenv.parse(content);
-        for (const [k, v] of Object.entries(parsed)) {
-          if (process.env[k] === undefined) process.env[k] = v;
-        }
-        applyPathNormalizations(parsed);
-        envPath = candidate;
-        repoRoot = dir;
-        process.env.PROJECT_ROOT = process.env.PROJECT_ROOT || dir;
-        const keyOk = Boolean((parsed.ANTHROPIC_API_KEY || process.env.ANTHROPIC_API_KEY || '').trim());
-        const proxy =
-          (parsed.HTTPS_PROXY || process.env.HTTPS_PROXY || '').trim() ||
-          (parsed.ANTHROPIC_PROXY_URL || process.env.ANTHROPIC_PROXY_URL || '').trim();
-        console.log(
-          `[env] loaded ${candidate} (ANTHROPIC_API_KEY=${keyOk ? 'set' : 'missing'}, proxy=${proxy || 'none'})`,
-        );
-        if (!keyOk) {
-          console.warn('[env] ANTHROPIC_API_KEY is empty in .env — add your key on its own line.');
-        }
-      } catch (err) {
-        loadError = err instanceof Error ? err.message : String(err);
-        console.warn(`[env] failed to load ${candidate}: ${loadError}`);
-      }
-      return;
-    }
+function asEnvString(value: RuntimeConfigValue): string | undefined {
+  if (value === undefined || value === null) return undefined;
+  const rendered = String(value).trim();
+  return rendered ? rendered : undefined;
+}
+
+function setEnv(key: string, value: RuntimeConfigValue): void {
+  const rendered = asEnvString(value);
+  if (rendered !== undefined) process.env[key] = rendered;
+}
+
+function applyMap(values: Record<string, RuntimeConfigValue> | undefined): void {
+  if (!values) return;
+  for (const [key, value] of Object.entries(values)) setEnv(key, value);
+}
+
+function findRootFrom(start: string): string | undefined {
+  let dir = start;
+  for (let i = 0; i < 10; i++) {
+    if (fs.existsSync(path.join(dir, 'package.json'))) return dir;
     const parent = path.dirname(dir);
     if (parent === dir) break;
     dir = parent;
   }
+  return undefined;
+}
 
-  const result = dotenv.config();
-  applyPathNormalizations(result.parsed || {});
-  if (result.error) loadError = result.error.message;
-  console.warn('[env] no repo-root .env found — using process environment only');
+function findRepoRoot(): string {
+  return process.env.PROJECT_ROOT
+    || findRootFrom(process.cwd())
+    || findRootFrom(__dirname)
+    || process.cwd();
+}
+
+function candidateRuntimeConfigPaths(root: string): string[] {
+  const configured = process.env.RUNTIME_CONFIG_PATH?.trim();
+  const configDir = process.env.CONFIG_DIR?.trim() || path.join(root, 'config');
+  return [...new Set([
+    ...(configured ? [configured] : []),
+    path.join(configDir, 'runtime.json'),
+    path.join(root, 'config', 'runtime.json'),
+  ].map((p) => path.resolve(p)))];
+}
+
+function applyRuntimeConfig(config: RuntimeConfig): void {
+  applyMap(config.env);
+
+  setEnv('PROJECT_ROOT', config.paths?.projectRoot);
+  setEnv('INPUT_DIR', config.paths?.inputDir);
+  setEnv('OUTPUT_DIR', config.paths?.outputDir);
+  setEnv('CONFIG_DIR', config.paths?.configDir);
+  setEnv('PUPPETEER_EXECUTABLE_PATH', config.paths?.puppeteerExecutablePath);
+  setEnv('PDF_PRINT_URL', config.paths?.pdfPrintUrl);
+
+  setEnv('HTTPS_PROXY', config.network?.httpsProxy);
+  setEnv('HTTP_PROXY', config.network?.httpProxy);
+  setEnv('ANTHROPIC_PROXY_URL', config.network?.anthropicProxyUrl);
+  setEnv('NODE_EXTRA_CA_CERTS', config.network?.nodeExtraCaCerts);
+  setEnv('INTEGRATION_ALLOW_SELF_SIGNED_CERTS', config.network?.integrationAllowSelfSignedCerts);
+  setEnv('JIRA_ALLOW_SELF_SIGNED', config.network?.jiraAllowSelfSigned);
+
+  setEnv('LLM_PROVIDER', config.llm?.provider);
+  setEnv('LLM_MODEL', config.llm?.model);
+  setEnv('ANTHROPIC_MODEL', config.llm?.anthropicModel);
+  setEnv('OPENAI_MODEL', config.llm?.openaiModel);
+  setEnv('GEMINI_MODEL', config.llm?.geminiModel);
+  setEnv('CUSTOM_LLM_MODEL', config.llm?.customLlmModel);
+  setEnv('CUSTOM_LLM_BASE_URL', config.llm?.customLlmBaseUrl);
+  setEnv('ANTHROPIC_API_KEY', config.llm?.anthropicApiKey);
+  setEnv('OPENAI_API_KEY', config.llm?.openaiApiKey);
+  setEnv('GEMINI_API_KEY', config.llm?.geminiApiKey);
+  setEnv('CUSTOM_LLM_API_KEY', config.llm?.customLlmApiKey);
+
+  setEnv('JIRA_EMAIL', config.jira?.email);
+  setEnv('JIRA_API_TOKEN', config.jira?.apiToken);
+  setEnv('JIRA_CLOUD_EMAIL', config.jira?.cloudEmail);
+  setEnv('JIRA_CLOUD_SECRET', config.jira?.cloudSecret);
+  setEnv('JIRA_ONPREM_SECRET', config.jira?.onPremSecret);
+  setEnv('JIRA_SESSION_HEADER', config.jira?.sessionHeader);
+  setEnv('JIRA_SESSION_ID', config.jira?.sessionId);
+  setEnv('JIRA_XSRF_TOKEN', config.jira?.xsrfToken);
+
+  setEnv('QMETRY_BASIC_AUTH', config.qmetry?.basicAuth);
+}
+
+(function loadRuntimeConfig() {
+  const root = findRepoRoot();
+  repoRoot = root;
+  process.env.PROJECT_ROOT = process.env.PROJECT_ROOT || root;
+  process.env.CONFIG_DIR = process.env.CONFIG_DIR || path.join(root, 'config');
+
+  for (const candidate of candidateRuntimeConfigPaths(root)) {
+    if (!fs.existsSync(candidate)) continue;
+    try {
+      const config = JSON.parse(fs.readFileSync(candidate, 'utf8')) as RuntimeConfig;
+      applyRuntimeConfig(config);
+      applyPathNormalizations();
+      runtimeConfigPath = candidate;
+      runtimeConfigLoaded = true;
+      console.log(`[runtime-config] loaded ${candidate}`);
+    } catch (err) {
+      runtimeLoadError = err instanceof Error ? err.message : String(err);
+      console.warn(`[runtime-config] failed to load ${candidate}: ${runtimeLoadError}`);
+    }
+    return;
+  }
+
+  applyPathNormalizations();
+  console.log('[runtime-config] no config/runtime.json found — using built-in defaults and browser Settings only');
 })();
 
 export function getEnvStatus() {
@@ -93,9 +206,11 @@ export function getEnvStatus() {
     platform: process.platform,
     cwd: process.cwd(),
     repoRoot: repoRoot || process.env.PROJECT_ROOT || null,
-    envPath: envPath || null,
-    envFileExists: Boolean(envPath && fs.existsSync(envPath)),
-    apiKeyConfigured: Boolean((process.env.ANTHROPIC_API_KEY || '').trim()),
+    runtimeConfigPath: runtimeConfigPath || null,
+    runtimeConfigLoaded,
+    envPath: null,
+    envFileExists: false,
+    apiKeyConfigured: Boolean((process.env.ANTHROPIC_API_KEY || process.env.OPENAI_API_KEY || process.env.GEMINI_API_KEY || process.env.CUSTOM_LLM_API_KEY || '').trim()),
     proxyConfigured: Boolean(proxy),
     proxySource: proxy
       ? (process.env.ANTHROPIC_PROXY_URL || '').trim()
@@ -104,6 +219,8 @@ export function getEnvStatus() {
           ? 'HTTPS_PROXY'
           : 'HTTP_PROXY'
       : 'none',
-    loadError: loadError || null,
+    integrationAllowSelfSigned: process.env.INTEGRATION_ALLOW_SELF_SIGNED_CERTS || null,
+    jiraAllowSelfSigned: process.env.JIRA_ALLOW_SELF_SIGNED || null,
+    loadError: runtimeLoadError || null,
   };
 }
