@@ -211,7 +211,7 @@ export function qmetryConfigFromConnection(conn: QmetryConnectionInput): QmetryI
     projectId,
     testCyclesSearchPath: QMETRY_TEST_CYCLES_SEARCH_PATH,
     testCyclesSearchBody: qmetryCycleSearchBody(projectId, conn.folderId),
-    cycleIds: conn.cycleIds?.filter(Boolean) || [],
+    cycleIds: [],
     testCasesSearchBody: DEFAULTS.qmetry.testCasesSearchBody,
   };
 }
