@@ -2,18 +2,12 @@ import type { IntegrationsConfig } from '../config/loadIntegrations';
 import { getAuthHeader } from '../config/loadIntegrations';
 import { fetchWithTimeout, safeApiError, describeFetchError } from '../utils/fetchWithTimeout';
 import { mapIssueType, isoDateFromApi } from '../utils/jiraHelpers';
-import type { IssueRow } from '../types/dataset';
+import type { ApiFetchScope, IssueRow } from '../types/dataset';
 import { emptyDataset } from '../types/dataset';
 import { deriveArea } from '../utils/deriveArea';
 import { mapJiraStatus, projectFromKey, sanitizeText } from '../utils/excel';
 
 const MAX_PAGES = 500;
-
-export interface JiraSearchScope {
-  startDate?: string;
-  endDate?: string;
-  project?: string;
-}
 
 function cleanHeaderValue(value: string): string {
   return value.replace(/^Cookie:\s*/i, '').trim();
@@ -43,28 +37,25 @@ function splitOrderBy(jql: string): { base: string; orderBy: string } {
   return { base: jql.slice(0, match.index).trim(), orderBy: match[0].trim() };
 }
 
-function quoteJqlDate(date: string, endOfDay = false): string {
-  const clean = date.slice(0, 10);
+function quoteJqlDate(date: string, endOfDay = false): string | null {
+  const clean = (date || '').trim().slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(clean)) return null;
   return endOfDay ? `"${clean} 23:59"` : `"${clean}"`;
 }
 
-function normalizeProjectKey(project?: string): string | null {
-  const clean = (project || '').trim();
-  if (!clean || clean === 'all') return null;
-  return /^[A-Z][A-Z0-9_]*$/i.test(clean) ? clean.toUpperCase() : null;
-}
-
-function scopedJql(originalJql: string, scope?: JiraSearchScope): string {
+function scopedJql(originalJql: string, scope?: ApiFetchScope): string {
+  const start = quoteJqlDate(scope?.startDate || '');
+  const end = quoteJqlDate(scope?.endDate || '', true);
   const conditions: string[] = [];
-  const project = normalizeProjectKey(scope?.project);
-  if (project) conditions.push(`project = ${project}`);
-  if (scope?.startDate && scope?.endDate) {
-    conditions.push(`updated >= ${quoteJqlDate(scope.startDate)} AND updated <= ${quoteJqlDate(scope.endDate, true)}`);
-  }
+
+  // Keep the configured/project-specific JQL as the source of truth. Date fields from
+  // the Overview filter only narrow the API search window.
+  if (start) conditions.push(`(created >= ${start} OR updated >= ${start} OR resolutiondate >= ${start})`);
+  if (end) conditions.push(`(created <= ${end} OR updated <= ${end} OR resolutiondate <= ${end})`);
   if (!conditions.length) return originalJql;
 
   const { base, orderBy } = splitOrderBy(originalJql || 'ORDER BY updated DESC');
-  const scoped = `${base ? `(${base}) AND ` : ''}${conditions.map((c) => `(${c})`).join(' AND ')}`;
+  const scoped = `${base ? `(${base}) AND ` : ''}${conditions.join(' AND ')}`;
   return orderBy ? `${scoped} ${orderBy}` : `${scoped} ORDER BY updated DESC`;
 }
 
@@ -82,7 +73,7 @@ async function parseJiraResponse(res: Response): Promise<{ issues?: Record<strin
   }
 }
 
-export async function fetchJiraIssues(cfg: IntegrationsConfig['jira'], scope?: JiraSearchScope): Promise<{ issues: IssueRow[]; error?: string; jql?: string }> {
+export async function fetchJiraIssues(cfg: IntegrationsConfig['jira'], scope?: ApiFetchScope): Promise<{ issues: IssueRow[]; error?: string; jql?: string }> {
   if (!cfg.enabled) return { issues: [] };
   const authHeader = getAuthHeader(cfg.auth);
   if (!authHeader) return { issues: [], error: 'JIRA credentials not configured' };
@@ -147,13 +138,14 @@ export async function fetchJiraIssues(cfg: IntegrationsConfig['jira'], scope?: J
   return { issues, jql };
 }
 
-export async function fetchJiraDataset(cfg: IntegrationsConfig, scope?: JiraSearchScope) {
+export async function fetchJiraDataset(cfg: IntegrationsConfig, scope?: ApiFetchScope) {
   const ds = emptyDataset();
-  const { issues, error } = await fetchJiraIssues(cfg.jira, scope);
+  const { issues, error, jql } = await fetchJiraIssues(cfg.jira, scope);
   ds.issues = issues;
   ds.meta.integrations.jira = true;
   ds.meta.fetchedAt = new Date().toISOString();
   if (error) ds.meta.warnings.push(error);
+  if (jql) ds.meta.sourceFiles.push(`jira-api:jql:${jql}`);
   if (issues.length) {
     ds.files.push({ name: 'jira-api', ext: 'API', project: issues[0]?.project || 'DLM', rows: issues.length, status: 'parsed', detectedType: 'jira', source: 'jira-api' });
     ds.projects = [...new Set(issues.map((i) => i.project))];
