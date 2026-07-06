@@ -20,5 +20,6 @@ export type { LlmProvider, LlmSelectionInput, LlmModelOption } from './ai/llmPro
 export { loadIntegrations, integrationsSummary, jiraConfigFromConnection, qmetryConfigFromConnection } from './config/loadIntegrations';
 export { buildDataset, loadRawDataset, computeFingerprint, loadFingerprint, saveRawDataset } from './cache/datasetCache';
 export { fetchJiraIssues } from './integrations/jiraClient';
-export { fetchQmetryExecutions, fetchProjectCycles } from './integrations/qmetryClient';
-export { searchQmetryTestCycles } from './integrations/qmetryClient';
+export { fetchQmetryExecutions, fetchProjectCycles, fetchProjectFolders, fetchFolderCycleHealth } from './integrations/qmetryClient';
+export { searchQmetryTestCycles, searchQmetryFolders } from './integrations/qmetryClient';
+export type { QmetryCycleHealthSummary, QmetryFolderSummary } from './integrations/qmetryClient';
