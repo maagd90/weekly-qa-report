@@ -21,7 +21,7 @@ import {
   fetchProjectCycles,
   emptyConnections,
 } from 'qa-dashboard-batch';
-import type { LlmSelectionInput, UserConnections, JiraConnectionInput, QmetryConnectionInput } from 'qa-dashboard-batch';
+import type { Dataset, LlmSelectionInput, UserConnections, JiraConnectionInput, QmetryConnectionInput } from 'qa-dashboard-batch';
 import { getEnvStatus } from '../loadRepoEnv';
 import { generateReportPdf, type ReportBrandingPayload } from '../services/reportPdf';
 
@@ -35,6 +35,16 @@ fs.mkdirSync(INPUT_DIR, { recursive: true });
 fs.mkdirSync(OUTPUT_DIR, { recursive: true });
 fs.mkdirSync(CONFIG_DIR, { recursive: true });
 
+const GENERATED_OUTPUT_FILES = [
+  'raw-dataset.json',
+  'dataset-fingerprint.txt',
+  'dashboard-data.json',
+  'report.md',
+  'report-meta.json',
+];
+
+const REPORT_OUTPUT_FILES = ['report.md', 'report-meta.json'];
+
 function requestId(req: Request): string {
   return (req as Request & { requestId?: string }).requestId || req.header('x-request-id') || 'no-request-id';
 }
@@ -45,6 +55,54 @@ function log(req: Request, message: string, data?: Record<string, unknown>): voi
 
 function logError(req: Request, message: string, err: unknown, data?: Record<string, unknown>): void {
   console.error(`[api] [${requestId(req)}] ${message}`, { ...data, error: err instanceof Error ? err.message : String(err) });
+}
+
+function outputPath(fileName: string): string {
+  return path.join(OUTPUT_DIR, fileName);
+}
+
+function removeOutputFile(fileName: string): string | null {
+  const filePath = outputPath(fileName);
+  if (!fs.existsSync(filePath)) return null;
+  fs.unlinkSync(filePath);
+  return fileName;
+}
+
+function clearOutputFiles(fileNames: string[] = GENERATED_OUTPUT_FILES): string[] {
+  const removed = new Set<string>();
+  for (const fileName of fileNames) {
+    const deleted = removeOutputFile(fileName);
+    if (deleted) removed.add(deleted);
+  }
+  return [...removed];
+}
+
+function rowCounts(dataset: Dataset): { executions: number; issues: number; uat: number } {
+  return { executions: dataset.executions.length, issues: dataset.issues.length, uat: dataset.uat.length };
+}
+
+function totalRows(dataset: Dataset): number {
+  const counts = rowCounts(dataset);
+  return counts.executions + counts.issues + counts.uat;
+}
+
+async function refreshGeneratedOutputs(req: Request, connections: UserConnections) {
+  const fingerprint = computeFingerprint(INPUT_DIR, CONFIG_DIR, connections);
+  const dataset = await buildDataset(INPUT_DIR, CONFIG_DIR, connections);
+  const counts = rowCounts(dataset);
+  const removed = clearOutputFiles(REPORT_OUTPUT_FILES);
+
+  if (totalRows(dataset) === 0) {
+    removed.push(...clearOutputFiles(['raw-dataset.json', 'dataset-fingerprint.txt', 'dashboard-data.json']));
+    log(req, 'generated outputs cleared; no source data remains', { rowCounts: counts, removed });
+    return { rebuilt: false, rowCounts: counts, removed, warnings: dataset.meta.warnings };
+  }
+
+  saveRawDataset(OUTPUT_DIR, dataset, fingerprint);
+  const payload = refilterDashboard(dataset, {});
+  fs.writeFileSync(outputPath('dashboard-data.json'), JSON.stringify(payload, null, 2));
+  log(req, 'generated outputs refreshed after input change', { rowCounts: counts, warnings: dataset.meta.warnings });
+  return { rebuilt: true, rowCounts: counts, removed, warnings: dataset.meta.warnings };
 }
 
 function connectionSummary(connections: UserConnections) {
@@ -79,7 +137,7 @@ function resolveAnthropicKey(req: Request): { key: string; source: 'user' | 'ser
   return { key: '', source: 'none' };
 }
 
-async function ensureDataset(req: Request, connections: UserConnections): Promise<{ dataset: import('qa-dashboard-batch').Dataset; fingerprint: string } | null> {
+async function ensureDataset(req: Request, connections: UserConnections): Promise<{ dataset: Dataset; fingerprint: string } | null> {
   const fingerprint = computeFingerprint(INPUT_DIR, CONFIG_DIR, connections);
   const cached = loadFingerprint(OUTPUT_DIR);
   let dataset = loadRawDataset(OUTPUT_DIR);
@@ -93,7 +151,11 @@ async function ensureDataset(req: Request, connections: UserConnections): Promis
   try {
     dataset = await buildDataset(INPUT_DIR, CONFIG_DIR, connections);
     log(req, 'ensureDataset:built dataset', { executions: dataset.executions.length, issues: dataset.issues.length, uat: dataset.uat.length, warnings: dataset.meta.warnings });
-    if (!dataset.executions.length && !dataset.issues.length && !dataset.uat.length) return null;
+    if (totalRows(dataset) === 0) {
+      const removed = clearOutputFiles();
+      log(req, 'ensureDataset:no data; cleared stale outputs', { removed });
+      return null;
+    }
     saveRawDataset(OUTPUT_DIR, dataset, fingerprint);
     return { dataset, fingerprint };
   } catch (err) {
@@ -343,12 +405,23 @@ router.get('/input/files', (_req: Request, res: Response) => {
   res.json(files);
 });
 
-router.delete('/input/:filename', (req: Request, res: Response) => {
-  const filePath = path.join(INPUT_DIR, path.basename(req.params.filename));
+router.delete('/input/:filename', async (req: Request, res: Response) => {
+  const filename = path.basename(req.params.filename);
+  const filePath = path.join(INPUT_DIR, filename);
   if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'File not found', requestId: requestId(req) });
+
   fs.unlinkSync(filePath);
-  log(req, 'DELETE /input:done', { filename: req.params.filename });
-  res.json({ ok: true });
+  const connections = resolveConnections(req);
+  log(req, 'DELETE /input:file removed', { filename, connections: connectionSummary(connections) });
+
+  try {
+    const refresh = await refreshGeneratedOutputs(req, connections);
+    return res.json({ ok: true, filename, ...refresh });
+  } catch (err) {
+    const removed = clearOutputFiles();
+    logError(req, 'DELETE /input:refresh failed; cleared stale outputs', err, { filename, removed });
+    return res.json({ ok: true, filename, rebuilt: false, rowCounts: { executions: 0, issues: 0, uat: 0 }, removed, warnings: [`File removed, but generated data refresh failed: ${(err as Error).message}`] });
+  }
 });
 
 export default router;
