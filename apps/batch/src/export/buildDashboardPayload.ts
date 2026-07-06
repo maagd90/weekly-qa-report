@@ -136,7 +136,7 @@ export function buildDashboardPayload(
   const byOwner = Object.entries(ownerMap).map(([name, open]) => ({ name, open })).sort((a, b) => b.open - a.open);
 
   let uatPayload: DashboardPayload['uat'] = null;
-  if (uat.length > 0 && params.project === 'DLM') {
+  if (uat.length > 0 && (!params.project || params.project === 'DLM')) {
     const total = uat.length;
     const closed = uat.filter((r) => !r.open).length;
     const open = total - closed;
