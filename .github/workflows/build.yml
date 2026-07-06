@@ -11,6 +11,11 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
+      - name: Quiet Git messages
+        run: |
+          git config --global init.defaultBranch main
+          git config --global advice.detachedHead false
+
       - name: Checkout
         uses: actions/checkout@v4
         with:
