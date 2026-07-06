@@ -8,12 +8,26 @@ function firstNonEmpty(...values: Array<string | undefined>): string | undefined
   return undefined;
 }
 
-function insecureTlsEnabled(): boolean {
-  return /^(1|true|yes)$/i.test((process.env.ANTHROPIC_PROXY_INSECURE_TLS || '').trim());
+function truthyEnv(value?: string): boolean {
+  return /^(1|true|yes|y|on)$/i.test((value || '').trim());
+}
+
+function falsyEnv(value?: string): boolean {
+  return /^(0|false|no|n|off)$/i.test((value || '').trim());
+}
+
+function relaxedProxyTlsEnabled(): boolean {
+  if (falsyEnv(process.env.ANTHROPIC_PROXY_INSECURE_TLS)) return false;
+  if (falsyEnv(process.env.INTEGRATION_ALLOW_SELF_SIGNED_CERTS) || falsyEnv(process.env.JIRA_ALLOW_SELF_SIGNED)) return false;
+
+  return truthyEnv(process.env.ANTHROPIC_PROXY_INSECURE_TLS)
+    || truthyEnv(process.env.INTEGRATION_ALLOW_SELF_SIGNED_CERTS)
+    || truthyEnv(process.env.JIRA_ALLOW_SELF_SIGNED)
+    || process.env.NODE_TLS_REJECT_UNAUTHORIZED === '0';
 }
 
 /**
- * Corporate proxy for Anthropic only (JIRA/QMetry stay direct).
+ * Corporate proxy for Anthropic / LLM calls.
  * Precedence: ANTHROPIC_PROXY_URL → HTTPS_PROXY → HTTP_PROXY (skip empty strings).
  */
 export function getOptionalAnthropicProxyUrl(): string | undefined {
@@ -53,16 +67,16 @@ export function getOptionalAnthropicFetchOptions(
   if (!proxyUrl) return undefined;
 
   const source = anthropicProxySource();
-  const insecure = insecureTlsEnabled();
+  const relaxedTls = relaxedProxyTlsEnabled();
   log?.('proxy active', `${source}=${maskProxyUrl(proxyUrl)}`);
-  if (insecure) {
+  if (relaxedTls) {
     log?.(
       'proxy TLS',
-      'ANTHROPIC_PROXY_INSECURE_TLS=1 — skipping certificate verification (Zscaler/no CA only)',
+      'office-network TLS compatibility enabled for proxied LLM requests',
     );
   }
 
-  const tls = insecure ? { rejectUnauthorized: false as const } : undefined;
+  const tls = relaxedTls ? { rejectUnauthorized: false as const } : undefined;
 
   return {
     dispatcher: new ProxyAgent({
