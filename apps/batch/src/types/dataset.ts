@@ -124,21 +124,63 @@ export function resultColor(code: string): string {
   return '#B3AEA3';
 }
 
+export interface DashboardResultMixItem { code: string; label: string; count: number; pct: number; color: string }
+export interface DashboardMonthItem { ym: string; label: string; pass: number; blocked: number; fail: number }
+export interface DashboardTesterItem { name: string; executed: number; pass: number; fail: number; blocked: number; na: number; passPct: number }
+export interface DashboardCycleItem { key: string; name: string; total: number; pass: number; fail: number; blocked: number; ne: number; na: number; passPct: number; coverage: number; status: string }
+export interface DashboardTraceabilityItem { area: string; stories: number; done: number; open: number; bugs: number; openBugs: number; completion: number; status: string }
+export interface DashboardWorkItem { key: string; summary: string; issueType: IssueType; status: IssueStatus; priority: string; assignee: string; sprint: string; sprintId?: unknown; area: string; project: string; updatedAt: string }
+export interface DashboardPriorityItem { priority: string; open: number; total: number }
+export interface DashboardOwnerItem { name: string; open: number }
+export interface DashboardStoryBug { story: number; bug: number; storyOpen: number; storyDone: number; bugOpen: number; bugDone: number }
+export interface DashboardDefectBacklog { openTotal: number; byPriority: DashboardPriorityItem[]; topPriorities: DashboardPriorityItem[]; byOwner: DashboardOwnerItem[] }
+export interface DashboardOverview {
+  totalCases: number;
+  executed: number;
+  passRate: number;
+  failed: number;
+  blocked: number;
+  resultMix: DashboardResultMixItem[];
+  byMonth: DashboardMonthItem[];
+  chartSeries: { resultMix: { name: string; value: number; color: string }[] };
+}
+export interface DashboardUatRow { id: string; subject: string; area: string; priority: string; status: string; submitter: string; submittedAt: string; updatedAt: string; cr: string }
+export interface DashboardUatPayload {
+  total: number;
+  open: number;
+  closed: number;
+  closureRate: number;
+  urgentOpen: number;
+  byStatus: { status: string; count: number }[];
+  byPriority: { priority: string; count: number }[];
+  byArea: { area: string; count: number }[];
+  bySubmitter: { name: string; count: number }[];
+  rows: DashboardUatRow[];
+}
+export interface DashboardByProject {
+  project: string;
+  overview: DashboardOverview;
+  storyBug: DashboardStoryBug;
+  defectBacklog: DashboardDefectBacklog;
+  cycles: DashboardCycleItem[];
+  testers: DashboardTesterItem[];
+  uat: DashboardUatPayload | null;
+}
+
 export interface DashboardPayload {
-  [key: string]: any;
-  scope: any;
-  overview: any;
-  testers: any[];
-  cycles: any[];
-  cyclesByPassPctAsc: any[];
-  storyBug: any;
-  traceability: any[];
-  workItems?: any[];
-  defectBacklog: any;
-  uat: any;
-  byProject?: any[];
+  scope: { startDate?: string; endDate?: string; search: string; result: string; project: string; projects: string[] };
+  overview: DashboardOverview;
+  testers: DashboardTesterItem[];
+  cycles: DashboardCycleItem[];
+  cyclesByPassPctAsc: DashboardCycleItem[];
+  storyBug: DashboardStoryBug;
+  traceability: DashboardTraceabilityItem[];
+  workItems?: DashboardWorkItem[];
+  defectBacklog: DashboardDefectBacklog;
+  uat: DashboardUatPayload | null;
+  byProject?: DashboardByProject[];
   files: FileMeta[];
-  meta: any;
+  meta: { generatedAt: string; parsedAt: string; fetchedAt: string | null; warnings: string[]; dataMin?: string | null; dataMax?: string | null };
 }
 
 export interface GenerateResult {
