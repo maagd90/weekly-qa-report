@@ -30,12 +30,42 @@ interface AiReportPageProps {
   onGenerated?: () => void;
 }
 
+function overlapsDataRange(startDate: string, endDate: string, dashboard?: DashboardPayload | null): boolean {
+  const dataMin = dashboard?.meta.dataMin;
+  const dataMax = dashboard?.meta.dataMax;
+  if (!startDate || !endDate) return false;
+  if (!dataMin || !dataMax) return true;
+  return !(endDate < dataMin || startDate > dataMax);
+}
+
+function dashboardRange(dashboard?: DashboardPayload | null): { startDate: string; endDate: string } {
+  const today = new Date().toISOString().slice(0, 10);
+  const weekAgo = new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString().slice(0, 10);
+  return {
+    startDate: dashboard?.scope.startDate || dashboard?.meta.dataMin || weekAgo,
+    endDate: dashboard?.scope.endDate || dashboard?.meta.dataMax || today,
+  };
+}
+
+function hasMetrics(dashboard?: DashboardPayload | null): boolean {
+  if (!dashboard) return false;
+  return Boolean(
+    dashboard.overview.totalCases ||
+    dashboard.storyBug.story ||
+    dashboard.storyBug.bug ||
+    dashboard.defectBacklog.openTotal ||
+    dashboard.cycles.length ||
+    dashboard.testers.length ||
+    dashboard.uat?.total
+  );
+}
+
 export function AiReportPage({ dashboard, kpiStyle, project, onGenerated }: AiReportPageProps) {
   const queryClient = useQueryClient();
   const today = new Date().toISOString().slice(0, 10);
-  const weekAgo = new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString().slice(0, 10);
-  const [startDate, setStartDate] = useState(weekAgo);
-  const [endDate, setEndDate] = useState(today);
+  const seededRange = dashboardRange(dashboard);
+  const [startDate, setStartDate] = useState(seededRange.startDate);
+  const [endDate, setEndDate] = useState(seededRange.endDate);
   const [reportType, setReportType] = useState<ReportType>('executive');
   const [reportProject, setReportProject] = useState(project || 'all');
   const [error, setError] = useState<string | null>(null);
@@ -62,6 +92,15 @@ export function AiReportPage({ dashboard, kpiStyle, project, onGenerated }: AiRe
   }, [project]);
 
   useEffect(() => {
+    if (!dashboard) return;
+    if (!overlapsDataRange(startDate, endDate, dashboard)) {
+      const next = dashboardRange(dashboard);
+      setStartDate(next.startDate);
+      setEndDate(next.endDate);
+    }
+  }, [dashboard?.meta.dataMin, dashboard?.meta.dataMax, dashboard?.scope.startDate, dashboard?.scope.endDate, reportProject]);
+
+  useEffect(() => {
     if (!reportData) return;
     const meta = reportData.meta as ReportMeta | undefined;
     if (reportData.markdown) setReportMarkdown(reportData.markdown);
@@ -78,7 +117,10 @@ export function AiReportPage({ dashboard, kpiStyle, project, onGenerated }: AiRe
     onSuccess: (result) => {
       setError(result.error || (!result.ok ? 'Generation failed' : null));
       const skipped = result.warnings?.find((w: string) => w.includes('API key') || w.includes('narrative skipped'));
-      setWarning(skipped || null);
+      const emptyScope = result.payload && !hasMetrics(result.payload) && hasMetrics(dashboard);
+      setWarning(emptyScope
+        ? 'No metrics in the selected report range. Use full data range or widen the dates.'
+        : skipped || null);
       if (result.payload) setReportDashboard(result.payload);
       if (result.report?.markdown) {
         const meta = result.report.meta as ReportMeta | undefined;
@@ -98,6 +140,7 @@ export function AiReportPage({ dashboard, kpiStyle, project, onGenerated }: AiRe
   const hasNarrative = Boolean(reportMarkdown);
   const hasReport = !generating && (Boolean(chartData) || hasNarrative);
   const datePresets = [{ label: '7d', days: 7 }, { label: '30d', days: 30 }, { label: '90d', days: 90 }];
+  const fullRange = dashboardRange(dashboard);
 
   async function handleDownloadPdf() {
     setDownloading(true);
@@ -140,6 +183,7 @@ export function AiReportPage({ dashboard, kpiStyle, project, onGenerated }: AiRe
                 {datePresets.map((d) => (
                   <button key={d.label} type="button" onClick={() => { setEndDate(today); setStartDate(new Date(Date.now() - d.days * 86400000).toISOString().slice(0, 10)); }} className="font-mono-qa text-[10px] px-2 py-1 border border-[#44423d] bg-[#2a2825] text-[#F5F3ED]">{d.label}</button>
                 ))}
+                <button type="button" onClick={() => { setStartDate(fullRange.startDate); setEndDate(fullRange.endDate); }} className="font-mono-qa text-[10px] px-2 py-1 border border-[#44423d] bg-[#2a2825] text-[#F5F3ED]">Full range</button>
               </div>
               <div className="font-mono-qa text-[10px] text-qa-muted-light mb-1.5">Scope</div>
               <div className="font-mono-qa text-[11.5px] bg-[#2a2825] px-2.5 py-2 mb-4">{selectedProjectLabel} · {startDate} → {endDate}</div>

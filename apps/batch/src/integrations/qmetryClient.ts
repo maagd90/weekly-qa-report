@@ -26,6 +26,17 @@ function authHeader(cfg: QmetryIntegrationConfig): string | null {
 
 function cleanSessionHeader(value: string): string { return value.replace(/^Cookie:\s*/i, '').trim(); }
 
+function nonJsonAuthError(text: string): string | null {
+  const compact = text.replace(/\s+/g, ' ').trim();
+  if (/<html/i.test(compact) && /BIG-IP logout page|apm\.css|logout|login|Sign In|SSO/i.test(compact)) {
+    return 'QMetry returned an HTML login/logout page instead of JSON. The browser session cookie is expired or not valid for API requests. Paste a fresh JSESSIONID / MRHSession / atlassian.xsrf.token cookie from an active JIRA tab and retry.';
+  }
+  if (/<html/i.test(compact)) {
+    return `QMetry returned HTML instead of JSON. This usually means the request was redirected to login/SSO. Preview: ${compact.slice(0, 180)}`;
+  }
+  return null;
+}
+
 function qmetrySessionHeader(cfg: QmetryIntegrationConfig): string | null {
   const sessionCfg = cfg as QmetrySessionConfig;
   const full = sessionCfg.sessionHeader || process.env.QMETRY_SESSION_HEADER || process.env.JIRA_SESSION_HEADER || process.env.JIRA_COOKIE;
@@ -51,6 +62,8 @@ async function qmetryFetch(cfg: QmetryIntegrationConfig, method: 'GET' | 'POST',
     const res = await fetchWithTimeout(url, init);
     const text = await res.text();
     if (!res.ok) return { ok: false, error: safeApiError('QMetry API', res.status, text) };
+    const authError = nonJsonAuthError(text);
+    if (authError) return { ok: false, error: authError };
     try { return { ok: true, data: text ? JSON.parse(text) : null }; } catch (err) { return { ok: false, error: `QMetry API returned invalid JSON: ${(err as Error).message}` }; }
   } catch (err) { return { ok: false, error: `QMetry API request failed: ${describeFetchError(err)}` }; }
 }

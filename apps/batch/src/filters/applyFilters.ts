@@ -60,7 +60,9 @@ function filterIssues(rows: IssueRow[], filter: FilterParams, allDates: boolean)
   if (!allDates && filter.startDate && filter.endDate) {
     const { startDate, endDate } = filter;
     out = out.filter((r) =>
+      inRange(r.updatedAt, startDate, endDate) ||
       (r.resolvedAt ? inRange(r.resolvedAt, startDate, endDate) : false) ||
+      (r.createdAt ? inRange(r.createdAt, startDate, endDate) : false) ||
       (r.status === 'open' && r.createdAt !== null && r.createdAt <= endDate)
     );
   }

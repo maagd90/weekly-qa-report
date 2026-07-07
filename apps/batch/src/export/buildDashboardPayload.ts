@@ -61,8 +61,9 @@ export function buildDashboardPayload(
 
   const monthBuckets: Record<string, { pass: number; blocked: number; fail: number }> = {};
   for (const r of executions) {
-    if (!r.executedAt) continue;
-    const ym = r.executedAt.slice(0, 7);
+    const bucketDate = r.executedAt || r.updatedAt;
+    if (!bucketDate) continue;
+    const ym = bucketDate.slice(0, 7);
     if (!monthBuckets[ym]) monthBuckets[ym] = { pass: 0, blocked: 0, fail: 0 };
     if (r.result === 'PASS') monthBuckets[ym].pass++;
     else if (r.result === 'BLOCKED') monthBuckets[ym].blocked++;

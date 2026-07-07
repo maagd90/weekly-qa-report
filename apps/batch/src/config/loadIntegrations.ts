@@ -64,6 +64,35 @@ export interface IntegrationsConfig {
   qmetry: QmetryIntegrationConfig;
 }
 
+interface RuntimeConfig {
+  jira?: {
+    enabled?: boolean;
+    deploymentType?: 'cloud' | 'on-prem';
+    baseUrl?: string;
+    searchPath?: string;
+    email?: string;
+    apiToken?: string;
+    onPremSecret?: string;
+    sessionHeader?: string;
+    sessionId?: string;
+    xsrfToken?: string;
+    projectKeys?: string[];
+    jql?: string;
+    applicationCiFieldId?: string;
+  };
+  qmetry?: {
+    enabled?: boolean;
+    baseUrl?: string;
+    apiPrefix?: string;
+    basicAuth?: string;
+    email?: string;
+    apiToken?: string;
+    projectKey?: string;
+    projectId?: string;
+    folderId?: string;
+  };
+}
+
 const DEFAULT_JIRA: JiraIntegrationConfig = {
   enabled: false,
   name: 'Default JIRA',
@@ -125,15 +154,72 @@ function mergeQmetry(raw: Partial<QmetryIntegrationConfig> | undefined): QmetryI
   };
 }
 
+function readRuntimeConfig(configDir: string): RuntimeConfig {
+  const file = path.join(configDir, 'runtime.json');
+  if (!fs.existsSync(file)) return {};
+  try {
+    return JSON.parse(fs.readFileSync(file, 'utf8')) as RuntimeConfig;
+  } catch {
+    return {};
+  }
+}
+
+function qmetryRuntimeSearchBody(projectId: string | null, folderId?: string): Record<string, unknown> | null {
+  if (!projectId && !folderId?.trim()) return null;
+  const filter: Record<string, unknown> = {};
+  if (projectId) filter.projectId = /^\d+$/.test(projectId) ? Number(projectId) : projectId;
+  if (folderId?.trim()) filter.folderId = folderId.trim();
+  return { filter };
+}
+
+function runtimeJiraOverride(runtime: RuntimeConfig): Partial<JiraIntegrationConfig> {
+  const jira = runtime.jira || {};
+  const secret = jira.onPremSecret || jira.apiToken;
+  return {
+    ...(jira.enabled !== undefined ? { enabled: jira.enabled } : {}),
+    ...(jira.deploymentType ? { deploymentType: jira.deploymentType } : {}),
+    ...(jira.baseUrl ? { baseUrl: jira.baseUrl } : {}),
+    ...(jira.searchPath ? { searchPath: jira.searchPath } : {}),
+    ...(jira.projectKeys?.length ? { projectKeys: jira.projectKeys } : {}),
+    ...(jira.jql ? { jql: jira.jql } : {}),
+    ...(jira.sessionHeader ? { cookie: jira.sessionHeader } : {}),
+    ...(jira.sessionId ? { jiraSessionId: jira.sessionId } : {}),
+    ...(jira.xsrfToken ? { jiraXsrfToken: jira.xsrfToken } : {}),
+    ...(jira.applicationCiFieldId ? { applicationCiFieldId: jira.applicationCiFieldId } : {}),
+    ...(jira.email || secret ? { auth: { type: 'basic' as const, email: jira.email, token: secret } } : {}),
+  };
+}
+
+function runtimeQmetryOverride(runtime: RuntimeConfig): Partial<QmetryIntegrationConfig> {
+  const qmetry = runtime.qmetry || {};
+  const projectId = qmetry.projectId?.trim() || null;
+  return {
+    ...(qmetry.enabled !== undefined ? { enabled: qmetry.enabled } : {}),
+    ...(qmetry.baseUrl ? { baseUrl: qmetry.baseUrl } : {}),
+    ...(qmetry.apiPrefix ? { apiPrefix: qmetry.apiPrefix } : {}),
+    ...(qmetry.projectKey ? { projectKey: qmetry.projectKey } : {}),
+    ...(projectId ? { projectId } : {}),
+    ...(qmetry.basicAuth || qmetry.email || qmetry.apiToken ? { auth: { type: 'basic' as const, email: qmetry.email, token: qmetry.basicAuth || qmetry.apiToken }, authEncodedEnv: '' } : {}),
+    ...(projectId || qmetry.folderId ? { testCyclesSearchBody: qmetryRuntimeSearchBody(projectId, qmetry.folderId) } : {}),
+  };
+}
+
 export function loadIntegrations(configDir: string): IntegrationsConfig {
+  const runtime = readRuntimeConfig(configDir);
   const file = path.join(configDir, 'integrations.json');
-  if (!fs.existsSync(file)) return structuredClone(DEFAULTS);
+  if (!fs.existsSync(file)) {
+    return {
+      jira: mergeJira({ ...runtimeJiraOverride(runtime) }),
+      jiraProfiles: [],
+      qmetry: mergeQmetry({ ...runtimeQmetryOverride(runtime) }),
+    };
+  }
   try {
     const raw = JSON.parse(fs.readFileSync(file, 'utf8'));
     return {
-      jira: mergeJira(raw.jira),
+      jira: mergeJira({ ...raw.jira, ...runtimeJiraOverride(runtime) }),
       jiraProfiles: Array.isArray(raw.jiraProfiles) ? raw.jiraProfiles.map((p: Partial<JiraIntegrationConfig>, i: number) => mergeJira(p, i)) : [],
-      qmetry: mergeQmetry(raw.qmetry),
+      qmetry: mergeQmetry({ ...raw.qmetry, ...runtimeQmetryOverride(runtime) }),
     };
   } catch (err) {
     console.error('[integrations] Failed to parse integrations.json:', (err as Error).message);

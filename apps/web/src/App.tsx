@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { QueryClient, QueryClientProvider, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import React, { useState } from 'react';
+import { QueryClient, QueryClientProvider, useMutation, useQuery } from '@tanstack/react-query';
 import clsx from 'clsx';
 import { QaMasthead } from './components/layout/QaMasthead';
 import { QaTabNav, buildTabs } from './components/layout/QaTabNav';
@@ -26,9 +26,8 @@ const queryClient = new QueryClient({
 
 function AppContent() {
   const [activeTab, setActiveTab] = useState<QaTab>('overview');
-  const [searchedDashboard, setSearchedDashboard] = useState<DashboardPayload | null>(null);
+  const [filteredDashboard, setFilteredDashboard] = useState<DashboardPayload | null>(null);
   const ui = useUiPreferences();
-  const client = useQueryClient();
 
   const { data: initialDashboard, isLoading, refetch } = useQuery<DashboardPayload | null>({
     queryKey: ['dashboard-init'],
@@ -36,22 +35,17 @@ function AppContent() {
     retry: false,
   });
 
-  useEffect(() => {
-    if (initialDashboard) setSearchedDashboard(initialDashboard);
-  }, [initialDashboard]);
-
-  const display = searchedDashboard ?? initialDashboard;
+  const display = filteredDashboard ?? initialDashboard;
   const filters = useFilters(display ?? undefined);
 
-  const setDashboard = (freshDashboard: DashboardPayload | null) => {
+  const setFilteredView = (freshDashboard: DashboardPayload | null) => {
     if (!freshDashboard) return;
-    setSearchedDashboard(freshDashboard);
-    client.setQueryData(['dashboard-init'], freshDashboard);
+    setFilteredDashboard(freshDashboard);
   };
 
   const filterCachedDashboard = useMutation({
     mutationFn: (params?: Partial<FilterParams>) => batchApi.getDashboard(params || filters.filterParams),
-    onSuccess: (freshDashboard) => setDashboard(freshDashboard),
+    onSuccess: (freshDashboard) => setFilteredView(freshDashboard),
   });
 
   const showUat = !!display?.uat;
@@ -84,7 +78,7 @@ function AppContent() {
 
   const handleGenerated = async () => {
     const refreshed = await refetch();
-    if (refreshed.data) setSearchedDashboard(refreshed.data);
+    if (refreshed.data) setFilteredDashboard(null);
   };
 
   return (

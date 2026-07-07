@@ -30,14 +30,23 @@
     "customLlmBaseUrl": ""
   },
   "jira": {
+    "enabled": false,
+    "baseUrl": "",
     "email": "",
     "apiToken": "",
     "onPremSecret": "",
     "sessionHeader": "",
     "sessionId": "",
-    "xsrfToken": ""
+    "xsrfToken": "",
+    "projectKeys": ["DLM"],
+    "jql": "project = DLM AND issuetype in (Story, Bug) ORDER BY updated DESC"
   },
   "qmetry": {
-    "basicAuth": ""
+    "enabled": false,
+    "baseUrl": "",
+    "basicAuth": "",
+    "projectKey": "DLM",
+    "projectId": "",
+    "folderId": ""
   }
 }
