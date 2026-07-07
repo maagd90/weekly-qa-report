@@ -6,6 +6,7 @@ import { buildDashboardPayload } from './export/buildDashboardPayload';
 import { generateReportFromDataset, resolveReportLlmConfig } from './ai/reportWriter';
 import { LLM_PROVIDER_LABELS, envKeyForProvider } from './ai/llmProviders';
 import { discoverInputFiles } from './parse/dispatcher';
+import { canonicalProjectOrUndefined } from './projects/projectKey';
 
 function resolveRoot(): string { return path.resolve(__dirname, '../../..'); }
 
@@ -23,9 +24,8 @@ function sanitizeParamsForMeta(params: GenerateParams): GenerateParams {
 }
 
 function apiScopeFromParams(params: GenerateParams): ApiFetchScope | undefined {
-  const scope: ApiFetchScope = {};
-  if (params.project && params.project !== 'all') scope.project = params.project;
-  return scope.project ? scope : undefined;
+  const project = canonicalProjectOrUndefined(params.project);
+  return project ? { project } : undefined;
 }
 
 export async function runGenerate(params: GenerateParams): Promise<GenerateResult> {
@@ -37,7 +37,8 @@ export async function runGenerate(params: GenerateParams): Promise<GenerateResul
   fs.mkdirSync(inputDir, { recursive: true });
   fs.mkdirSync(outputDir, { recursive: true });
 
-  const filterParams = { startDate: params.startDate, endDate: params.endDate, search: params.search, result: params.result, project: params.project };
+  const project = canonicalProjectOrUndefined(params.project);
+  const filterParams = { startDate: params.startDate, endDate: params.endDate, search: params.search, result: params.result, project };
   const apiScope = apiScopeFromParams(params);
 
   let dataset;
@@ -69,8 +70,8 @@ export async function runGenerate(params: GenerateParams): Promise<GenerateResul
   }
 
   try {
-    const report = await generateReportFromDataset(dataset, params, llmConfig.apiKey, filterParams);
-    const reportMeta = { generatedAt: new Date().toISOString(), params: sanitizeParamsForMeta(params), toolCalls: report.toolCalls, llm: report.llm };
+    const report = await generateReportFromDataset(dataset, { ...params, project }, llmConfig.apiKey, filterParams);
+    const reportMeta = { generatedAt: new Date().toISOString(), params: sanitizeParamsForMeta({ ...params, project }), toolCalls: report.toolCalls, llm: report.llm };
     fs.writeFileSync(reportPath, report.markdown);
     fs.writeFileSync(metaPath, JSON.stringify(reportMeta, null, 2));
     return { ok: true, filesParsed: fileCount, rowCounts: { executions: dataset.executions.length, issues: dataset.issues.length, uat: dataset.uat.length }, warnings: dataset.meta.warnings, paths: { dashboard: dashboardPath, report: reportPath, meta: metaPath, raw: rawPath }, payload, report: { markdown: report.markdown, meta: reportMeta } };
