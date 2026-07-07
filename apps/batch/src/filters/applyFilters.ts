@@ -1,4 +1,5 @@
 import type { Dataset, ExecutionRow, FilterParams, IssueRow, UatRow } from '../types/dataset';
+import { canonicalProjectKey } from '../projects/projectKey';
 
 function inRange(date: string | null | undefined, start: string, end: string): boolean {
   if (!date) return false;
@@ -31,8 +32,9 @@ function dataDateBounds(dataset: Dataset): { min: string | null; max: string | n
 }
 
 function filterByProject<T extends { project: string }>(rows: T[], project?: string): T[] {
-  if (!project || project === 'all') return rows;
-  return rows.filter((r) => r.project === project);
+  const selected = canonicalProjectKey(project);
+  if (!selected || selected === 'all') return rows;
+  return rows.filter((r) => canonicalProjectKey(r.project) === selected);
 }
 
 function filterExecutions(rows: ExecutionRow[], filter: FilterParams, allDates: boolean): ExecutionRow[] {
