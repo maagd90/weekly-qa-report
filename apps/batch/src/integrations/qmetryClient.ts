@@ -4,15 +4,18 @@ import type { IntegrationsConfig, QmetryIntegrationConfig } from '../config/load
 import { getBasicAuth, getEncodedAuth } from '../config/loadIntegrations';
 import { fetchWithTimeout, safeApiError, describeFetchError } from '../utils/fetchWithTimeout';
 import { mapExecutionResult, projectFromKey, sanitizeText } from '../utils/excel';
-import { isoDateFromApi } from '../utils/jiraHelpers';
 
-export interface QmetryCycleSummary { id: string; key?: string; name: string; status?: string; folderId?: string }
+export interface QmetryCycleProgressEntry { name: string; count: number }
+export interface QmetryCycleSummary { id: string; key?: string; name: string; status?: string; folderId?: string; updated?: string; plannedStartDate?: string; plannedEndDate?: string; progress?: QmetryCycleProgressEntry[] }
 export interface QmetryFolderSummary { id: string; name: string; parentId?: string; path?: string }
 export interface QmetryCycleHealthSummary { key: string; name: string; total: number; pass: number; fail: number; blocked: number; ne: number; na: number; passPct: number; coverage: number; status: string }
 export interface QmetryCycleSearchResult { cycles: QmetryCycleSummary[]; total: number; error?: string }
 export interface QmetryFolderSearchResult { folders: QmetryFolderSummary[]; total: number; error?: string }
 
 type QmetrySessionConfig = QmetryIntegrationConfig & { sessionHeader?: string; sessionId?: string; xsrfToken?: string };
+
+const TEST_CYCLE_FIELDS = 'key,summary,priority,status,assignee,reporter,testcaseExecutionProgress,plannedStartDate,plannedEndDate,updated,automationRule';
+const MONTHS: Record<string, string> = { jan: '01', feb: '02', mar: '03', apr: '04', may: '05', jun: '06', jul: '07', aug: '08', sep: '09', oct: '10', nov: '11', dec: '12' };
 
 function authHeader(cfg: QmetryIntegrationConfig): string | null {
   const encoded = getEncodedAuth(cfg.authEncodedEnv);
@@ -57,14 +60,46 @@ async function qmetryFetch(cfg: QmetryIntegrationConfig, method: 'GET' | 'POST',
 
 function extractItems(data: unknown): Record<string, unknown>[] {
   if (Array.isArray(data)) return data as Record<string, unknown>[];
-  const p = data as { data?: Record<string, unknown>[]; values?: Record<string, unknown>[]; items?: Record<string, unknown>[]; results?: Record<string, unknown>[]; testCycles?: Record<string, unknown>[]; testCases?: Record<string, unknown>[]; folders?: Record<string, unknown>[] };
-  return p?.data || p?.values || p?.items || p?.results || p?.testCycles || p?.testCases || p?.folders || [];
+  const p = data as { data?: unknown; values?: Record<string, unknown>[]; items?: Record<string, unknown>[]; results?: Record<string, unknown>[]; testCycles?: Record<string, unknown>[]; testCases?: Record<string, unknown>[]; folders?: Record<string, unknown>[]; rootFolders?: Record<string, unknown>[]; children?: Record<string, unknown>[] };
+  if (Array.isArray(p?.data)) return p.data as Record<string, unknown>[];
+  if (p?.data && typeof p.data === 'object') return extractItems(p.data);
+  return p?.values || p?.items || p?.results || p?.testCycles || p?.testCases || p?.folders || p?.rootFolders || p?.children || [];
 }
 
 function extractTotal(data: unknown, fallback: number): number {
   const p = data as { total?: unknown; totalCount?: unknown; count?: unknown; recordsTotal?: unknown };
   const parsed = Number(p?.total ?? p?.totalCount ?? p?.recordsTotal ?? p?.count);
   return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function unwrapName(value: unknown): string {
+  if (value && typeof value === 'object') {
+    const o = value as Record<string, unknown>;
+    return sanitizeText(o.name ?? o.displayName ?? o.fullName ?? o.value ?? o.key);
+  }
+  return sanitizeText(value);
+}
+
+function qmetryDate(raw: unknown): string | null {
+  if (raw === null || raw === undefined || raw === '') return null;
+  if (typeof raw === 'number' || /^\d{12,}$/.test(String(raw))) {
+    const d = new Date(Number(raw));
+    return Number.isNaN(d.getTime()) ? null : d.toISOString().slice(0, 10);
+  }
+  if (raw && typeof raw === 'object') {
+    const o = raw as Record<string, unknown>;
+    return qmetryDate(o.updatedOn ?? o.executedOn ?? o.lastModified ?? o.value ?? o.date);
+  }
+  const s = sanitizeText(raw);
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+  const m = s.match(/^(\d{1,2})\/([A-Za-z]{3})\/(\d{2,4})/);
+  if (m) {
+    const [, dd, mon, yy] = m;
+    const mm = MONTHS[mon.toLowerCase()];
+    if (mm) return `${yy.length === 2 ? `20${yy}` : yy}-${mm}-${dd.padStart(2, '0')}`;
+  }
+  const d = new Date(s);
+  return Number.isNaN(d.getTime()) ? null : d.toISOString().slice(0, 10);
 }
 
 function normalizeCycle(item: Record<string, unknown>): QmetryCycleSummary | null {
@@ -74,12 +109,40 @@ function normalizeCycle(item: Record<string, unknown>): QmetryCycleSummary | nul
   const resolvedId = id || key;
   if (!resolvedId) return null;
   const cycle: QmetryCycleSummary = { id: resolvedId, name };
-  const status = sanitizeText(item.status || item.executionStatus);
+  const status = unwrapName(item.status || item.executionStatus);
   const folderId = sanitizeText(item.folderId || item.folder || item.folderID);
+  const updated = qmetryDate(item.updated || item.updatedOn || item.lastModified);
+  const plannedStart = qmetryDate(item.plannedStartDate);
+  const plannedEnd = qmetryDate(item.plannedEndDate);
   if (key) cycle.key = key;
   if (status) cycle.status = status;
   if (folderId) cycle.folderId = folderId;
+  if (updated) cycle.updated = updated;
+  if (plannedStart) cycle.plannedStartDate = plannedStart;
+  if (plannedEnd) cycle.plannedEndDate = plannedEnd;
+  if (Array.isArray(item.testcaseExecutionProgress)) {
+    const progress = (item.testcaseExecutionProgress as Record<string, unknown>[]).map((e) => ({ name: unwrapName(e.name), count: Number(e.count) || 0 })).filter((e) => e.name);
+    if (progress.length) cycle.progress = progress;
+  }
   return cycle;
+}
+
+function flattenFolderItems(items: Record<string, unknown>[], parentPath = '', parentId = ''): Record<string, unknown>[] {
+  const out: Record<string, unknown>[] = [];
+  for (const item of items) {
+    const name = sanitizeText(item.name || item.folderName || item.summary || item.label);
+    const currentPath = parentPath && name ? `${parentPath} / ${name}` : name;
+    const entry: Record<string, unknown> = { ...item };
+    if (currentPath && !entry.path) entry.path = currentPath;
+    if (parentId && !entry.parentId) entry.parentId = parentId;
+    out.push(entry);
+    const children = item.children ?? item.subFolders ?? item.childFolders ?? item.folders ?? item.childNodes;
+    if (Array.isArray(children) && children.length) {
+      const id = sanitizeText(item.id || item.folderId || item.folderID || item.entityId || item.key);
+      out.push(...flattenFolderItems(children as Record<string, unknown>[], currentPath, id));
+    }
+  }
+  return out;
 }
 
 function normalizeFolder(item: Record<string, unknown>): QmetryFolderSummary | null {
@@ -94,16 +157,28 @@ function normalizeFolder(item: Record<string, unknown>): QmetryFolderSummary | n
   return folder;
 }
 
-function filterBody(cfg: QmetryIntegrationConfig, folderId?: string): Record<string, unknown> {
+function numericProjectId(cfg: QmetryIntegrationConfig): number | string | null {
+  if (!cfg.projectId) return null;
+  return /^\d+$/.test(cfg.projectId) ? Number(cfg.projectId) : cfg.projectId;
+}
+
+function projectBody(cfg: QmetryIntegrationConfig): Record<string, unknown> {
   const filter: Record<string, unknown> = {};
-  if (cfg.projectId) filter.projectId = /^\d+$/.test(cfg.projectId) ? Number(cfg.projectId) : cfg.projectId;
-  if (folderId && folderId !== 'all') filter.folderId = folderId;
+  const projectId = numericProjectId(cfg);
+  if (projectId !== null) filter.projectId = projectId;
   return { filter };
+}
+
+function filterBody(cfg: QmetryIntegrationConfig, folderId?: string): Record<string, unknown> {
+  const body = projectBody(cfg);
+  const filter = body.filter as Record<string, unknown>;
+  if (folderId && folderId !== 'all') filter.folderId = folderId;
+  return body;
 }
 
 function cycleSearchPath(cfg: QmetryIntegrationConfig, startAt: number, maxResults: number): string {
   const basePath = (cfg.testCyclesSearchPath || '/testcycles/search').replace('{projectId}', encodeURIComponent(cfg.projectId || ''));
-  return `${basePath}?${new URLSearchParams({ startAt: String(startAt), maxResults: String(maxResults) })}`;
+  return `${basePath}?${new URLSearchParams({ startAt: String(startAt), maxResults: String(maxResults), fields: TEST_CYCLE_FIELDS })}`;
 }
 
 function dateInScope(value: string | null | undefined, scope?: ApiFetchScope): boolean {
@@ -118,6 +193,14 @@ function dateInScope(value: string | null | undefined, scope?: ApiFetchScope): b
 function executionInScope(row: ExecutionRow, scope?: ApiFetchScope): boolean {
   if (scope?.project && scope.project !== 'all' && row.project !== scope.project) return false;
   return dateInScope(row.executedAt || row.updatedAt, scope);
+}
+
+function compactWarnings(warnings: string[]): string {
+  const max = 8;
+  if (!warnings.length) return '';
+  const visible = warnings.slice(0, max);
+  const hidden = warnings.length - visible.length;
+  return hidden > 0 ? `${visible.join('; ')}; ${hidden} more QMetry cycle request(s) failed` : visible.join('; ');
 }
 
 export async function searchQmetryTestCycles(cfg: QmetryIntegrationConfig, options: { startAt?: number; maxResults?: number; folderId?: string } = {}): Promise<QmetryCycleSearchResult> {
@@ -136,17 +219,20 @@ export async function searchQmetryFolders(cfg: QmetryIntegrationConfig, options:
   if (!cfg.enabled) return { folders: [], total: 0 };
   if (!cfg.projectId) return { folders: [], total: 0, error: 'QMetry projectId is required for folder search' };
   const qs = new URLSearchParams({ startAt: String(options.startAt ?? 0), maxResults: String(options.maxResults ?? cfg.pageSize) });
-  const candidates: Array<{ method: 'GET' | 'POST'; path: string }> = [
-    { method: 'POST', path: `/testcycles/folders/search?${qs}` },
-    { method: 'POST', path: `/folders/search?${qs}` },
+  const candidates: Array<{ method: 'GET' | 'POST'; path: string; body?: Record<string, unknown> }> = [
+    { method: 'POST', path: `/projects/${encodeURIComponent(cfg.projectId)}/testcycle-folders?sort=NAME:ASC`, body: projectBody(cfg) },
+    { method: 'GET', path: `/projects/${encodeURIComponent(cfg.projectId)}/testcycle-folders?sort=NAME:ASC` },
+    { method: 'POST', path: `/testcycles/folders/search?${qs}`, body: projectBody(cfg) },
+    { method: 'POST', path: `/folders/search?${qs}`, body: projectBody(cfg) },
     { method: 'GET', path: `/testcycles/folders?${qs}` },
   ];
   let lastError = '';
-  for (const c of candidates) {
-    const result = await qmetryFetch(cfg, c.method, c.path, c.method === 'POST' ? filterBody(cfg) : undefined);
+  for (const candidate of candidates) {
+    const result = await qmetryFetch(cfg, candidate.method, candidate.path, candidate.body);
     if (!result.ok) { lastError = result.error || 'Folder search failed'; continue; }
-    const items = extractItems(result.data);
+    const items = flattenFolderItems(extractItems(result.data));
     const folders = items.map(normalizeFolder).filter((f): f is QmetryFolderSummary => Boolean(f));
+    if (!folders.length) { lastError = 'Folder endpoint responded but no folders were parsed'; continue; }
     return { folders, total: extractTotal(result.data, folders.length) };
   }
   return { folders: [], total: 0, error: lastError || 'QMetry folder search failed' };
@@ -181,8 +267,14 @@ export async function fetchProjectCycles(cfg: QmetryIntegrationConfig, folderId?
 function normalizeTestCase(tc: Record<string, unknown>, cycleKey: string, cycleName: string): ExecutionRow | null {
   const caseKey = sanitizeText(tc.key);
   if (!caseKey) return null;
-  const executedAt = isoDateFromApi(tc.executedOn || tc.lastModified);
-  return { project: projectFromKey(caseKey), cycleKey, cycleName, caseKey, result: mapExecutionResult(tc.executionResult || tc.status), tester: sanitizeText(tc.executedBy || tc.executionAssignee) || null, executedAt, updatedAt: isoDateFromApi(tc.lastModified) || executedAt, source: 'qmetry' };
+  const executedAt = qmetryDate(tc.executedOn) || qmetryDate(tc.lastModified);
+  const resultText = unwrapName(tc.executionResult) || unwrapName(tc.status);
+  const tester = unwrapName(tc.executedBy) || unwrapName(tc.executionAssignee);
+  return { project: projectFromKey(caseKey), cycleKey, cycleName, caseKey, result: mapExecutionResult(resultText), tester: tester || null, executedAt, updatedAt: qmetryDate(tc.lastModified) || executedAt, source: 'qmetry' };
+}
+
+function testCaseSearchBody(cfg: QmetryIntegrationConfig): Record<string, unknown> {
+  return cfg.testCasesSearchBody || projectBody(cfg);
 }
 
 async function fetchCycleExecutions(cfg: QmetryIntegrationConfig, cycleId: string, cycleNameHint?: string, scope?: ApiFetchScope): Promise<{ executions: ExecutionRow[]; cycleKey: string; cycleName: string; error?: string }> {
@@ -190,10 +282,20 @@ async function fetchCycleExecutions(cfg: QmetryIntegrationConfig, cycleId: strin
   let cycleKey = cycleId;
   let cycleName = cycleNameHint || cycleId;
   let startAt = 0;
+  let includeFields = true;
   const searchPath = cfg.testCasesSearchPath.replace('{cycleId}', encodeURIComponent(cycleId));
+  const body = testCaseSearchBody(cfg);
   for (let page = 0; page < cfg.maxPages; page++) {
-    const qs = new URLSearchParams({ startAt: String(startAt), maxResults: String(cfg.pageSize), fields: cfg.testCaseFields });
-    const result = cfg.usePostSearch ? await qmetryFetch(cfg, 'POST', `${searchPath}?${qs}`, cfg.testCasesSearchBody || { filter: { filter: { folderId: -1 } } }) : await qmetryFetch(cfg, 'GET', `${searchPath}?${qs}`);
+    const buildQs = (withFields: boolean) => {
+      const qs = new URLSearchParams({ startAt: String(startAt), maxResults: String(cfg.pageSize) });
+      if (withFields && cfg.testCaseFields) qs.set('fields', cfg.testCaseFields);
+      return qs;
+    };
+    let result = cfg.usePostSearch ? await qmetryFetch(cfg, 'POST', `${searchPath}?${buildQs(includeFields)}`, body) : await qmetryFetch(cfg, 'GET', `${searchPath}?${buildQs(includeFields)}`);
+    if (!result.ok && includeFields && /field|fields|invalid|not supported/i.test(result.error || '')) {
+      result = cfg.usePostSearch ? await qmetryFetch(cfg, 'POST', `${searchPath}?${buildQs(false)}`, body) : await qmetryFetch(cfg, 'GET', `${searchPath}?${buildQs(false)}`);
+      if (result.ok) includeFields = false;
+    }
     if (!result.ok) return { executions, cycleKey, cycleName, error: result.error };
     const items = extractItems(result.data);
     if (!items.length) break;
@@ -221,17 +323,17 @@ function summarizeCycle(cycleKey: string, cycleName: string, executions: Executi
   return { key: cycleKey, name: cycleName, total, pass, fail, blocked, ne, na, passPct: executed ? Math.round((pass / executed) * 100) : 0, coverage: total ? Math.round((executed / total) * 100) : 0, status: !total ? 'NOT STARTED' : fail || blocked ? 'AT RISK' : ne ? 'IN PROGRESS' : 'CLEAN' };
 }
 
-export async function fetchFolderCycleHealth(cfg: QmetryIntegrationConfig, folderId?: string): Promise<{ cycles: QmetryCycleHealthSummary[]; error?: string }> {
+export async function fetchFolderCycleHealth(cfg: QmetryIntegrationConfig, folderId?: string, scope?: ApiFetchScope): Promise<{ cycles: QmetryCycleHealthSummary[]; error?: string }> {
   const found = await searchQmetryTestCycles(cfg, { startAt: 0, maxResults: cfg.pageSize, folderId });
   if (found.error) return { cycles: [], error: found.error };
   const cycles: QmetryCycleHealthSummary[] = [];
   const warnings: string[] = [];
   for (const cycle of found.cycles) {
-    const result = await fetchCycleExecutions(cfg, cycle.id, cycle.name);
+    const result = await fetchCycleExecutions(cfg, cycle.id, cycle.name, scope);
     if (result.error) warnings.push(`${cycle.name}: ${result.error}`);
     cycles.push(summarizeCycle(result.cycleKey, result.cycleName || cycle.name, result.executions));
   }
-  const error = warnings.join('; ');
+  const error = compactWarnings(warnings);
   return error ? { cycles, error } : { cycles };
 }
 
@@ -266,7 +368,7 @@ export async function fetchQmetryExecutions(cfg: QmetryIntegrationConfig, scope?
     all.push(...result.executions);
     cycleMeta.set(result.cycleKey, result.cycleName);
   }
-  const error = warnings.join('; ');
+  const error = compactWarnings(warnings);
   return error ? { executions: all, cycleMeta, error } : { executions: all, cycleMeta };
 }
 
