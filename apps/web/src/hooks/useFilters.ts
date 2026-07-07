@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import type { DashboardPayload, FilterParams } from 'qa-dashboard-batch';
 import { getActiveProject, setActiveProject, getActiveDateRange, setActiveDateRange } from '../lib/api';
+import { canonicalProjectOrAll, canonicalProjectOrUndefined, uniqueCanonicalProjects } from '../lib/projectKey';
 
 function overlapsDataRange(startDate: string | undefined, endDate: string | undefined, dataMin?: string | null, dataMax?: string | null): boolean {
   if (!startDate || !endDate) return false;
@@ -21,7 +22,7 @@ function initialRange(dashboard: DashboardPayload | undefined): { startDate: str
 }
 
 export function useFilters(dashboard: DashboardPayload | undefined) {
-  const storedProject = getActiveProject();
+  const storedProject = canonicalProjectOrAll(getActiveProject());
   const seededRange = initialRange(dashboard);
 
   const [startDate, setStartDate] = useState(seededRange.startDate);
@@ -44,20 +45,24 @@ export function useFilters(dashboard: DashboardPayload | undefined) {
   }, [startDate, endDate]);
 
   const projects = useMemo(() => {
-    const values = new Set<string>(['all']);
-    for (const p of dashboard?.scope.projects || []) if (p) values.add(p);
-    return [...values];
+    return ['all', ...uniqueCanonicalProjects(dashboard?.scope.projects || [])];
   }, [dashboard?.scope.projects]);
 
   useEffect(() => {
-    if (project !== 'all' && dashboard?.scope.projects?.length && !dashboard.scope.projects.includes(project)) {
+    const canonical = canonicalProjectOrAll(project);
+    if (canonical !== project) {
+      setProjectState(canonical);
+      setActiveProject(canonical);
+      return;
+    }
+    if (canonical !== 'all' && dashboard?.scope.projects?.length && !uniqueCanonicalProjects(dashboard.scope.projects).includes(canonical)) {
       setProjectState('all');
       setActiveProject('all');
     }
   }, [dashboard?.scope.projects, project]);
 
   const setProject = useCallback((next: string) => {
-    const value = next || 'all';
+    const value = canonicalProjectOrAll(next);
     setProjectState(value);
     setActiveProject(value);
   }, []);
@@ -67,7 +72,7 @@ export function useFilters(dashboard: DashboardPayload | undefined) {
     endDate,
     search: search || undefined,
     result,
-    project: project === 'all' ? undefined : project,
+    project: canonicalProjectOrUndefined(project),
   }), [startDate, endDate, search, result, project]);
 
   return {
