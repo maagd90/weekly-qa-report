@@ -24,9 +24,7 @@ function authHeader(cfg: QmetryIntegrationConfig): string | null {
   return basic ? `Basic ${basic}` : null;
 }
 
-function cleanSessionHeader(value: string): string {
-  return value.replace(/^Cookie:\s*/i, '').trim();
-}
+function cleanSessionHeader(value: string): string { return value.replace(/^Cookie:\s*/i, '').trim(); }
 
 function qmetrySessionHeader(cfg: QmetryIntegrationConfig): string | null {
   const sessionCfg = cfg as QmetrySessionConfig;
@@ -54,9 +52,7 @@ async function qmetryFetch(cfg: QmetryIntegrationConfig, method: 'GET' | 'POST',
     const text = await res.text();
     if (!res.ok) return { ok: false, error: safeApiError('QMetry API', res.status, text) };
     try { return { ok: true, data: text ? JSON.parse(text) : null }; } catch (err) { return { ok: false, error: `QMetry API returned invalid JSON: ${(err as Error).message}` }; }
-  } catch (err) {
-    return { ok: false, error: `QMetry API request failed: ${describeFetchError(err)}` };
-  }
+  } catch (err) { return { ok: false, error: `QMetry API request failed: ${describeFetchError(err)}` }; }
 }
 
 function extractItems(data: unknown): Record<string, unknown>[] {
@@ -211,15 +207,19 @@ function cycleInScope(cycle: QmetryCycleSummary, scope?: ApiFetchScope): boolean
   return true;
 }
 
+function cycleHasUsableScopeDate(cycle: QmetryCycleSummary): boolean {
+  return Boolean(cycle.plannedStartDate || cycle.plannedEndDate || cycle.updated);
+}
+
 function sameProject(left: string | null | undefined, right: string | null | undefined): boolean {
   return sanitizeText(left).toUpperCase() === sanitizeText(right).toUpperCase();
 }
 
-function executionInScope(row: ExecutionRow, scope?: ApiFetchScope): boolean {
+function executionInScope(row: ExecutionRow, scope?: ApiFetchScope, allowUndatedScopedCycleRows = false): boolean {
   if (scope?.project && scope.project !== 'all' && !sameProject(row.project, scope.project)) return false;
   if (!scope?.startDate && !scope?.endDate) return true;
   if (row.executedAt) return dateInScope(row.executedAt, scope);
-  return row.result === 'NE';
+  return allowUndatedScopedCycleRows || row.result === 'NE';
 }
 
 function compactWarnings(warnings: string[]): string {
@@ -302,11 +302,9 @@ function normalizeTestCase(tc: Record<string, unknown>, cycleKey: string, cycleN
   return { project: projectFromKey(caseKey), cycleKey, cycleName, caseKey, result: mapExecutionResult(resultText), tester: tester || null, executedAt, updatedAt, source: 'qmetry' };
 }
 
-function testCaseSearchBody(cfg: QmetryIntegrationConfig): Record<string, unknown> {
-  return cfg.testCasesSearchBody || projectBody(cfg);
-}
+function testCaseSearchBody(cfg: QmetryIntegrationConfig): Record<string, unknown> { return cfg.testCasesSearchBody || projectBody(cfg); }
 
-async function fetchCycleExecutions(cfg: QmetryIntegrationConfig, cycleId: string, cycleNameHint?: string, scope?: ApiFetchScope, cycleKeyHint?: string): Promise<{ executions: ExecutionRow[]; cycleKey: string; cycleName: string; error?: string }> {
+async function fetchCycleExecutions(cfg: QmetryIntegrationConfig, cycleId: string, cycleNameHint?: string, scope?: ApiFetchScope, cycleKeyHint?: string, allowUndatedScopedCycleRows = false): Promise<{ executions: ExecutionRow[]; cycleKey: string; cycleName: string; error?: string }> {
   const executions: ExecutionRow[] = [];
   let cycleKey = cycleKeyHint || cycleId;
   let cycleName = cycleNameHint || cycleId;
@@ -332,7 +330,7 @@ async function fetchCycleExecutions(cfg: QmetryIntegrationConfig, cycleId: strin
       if (item.cycleKey) cycleKey = sanitizeText(item.cycleKey);
       if (item.cycleSummary || item.cycleName) cycleName = sanitizeText(item.cycleSummary || item.cycleName);
       const row = normalizeTestCase(item, cycleKey, cycleName);
-      if (row && executionInScope(row, scope)) executions.push(row);
+      if (row && executionInScope(row, scope, allowUndatedScopedCycleRows)) executions.push(row);
     }
     const total = extractTotal(result.data, startAt + items.length);
     startAt += items.length;
@@ -359,7 +357,7 @@ export async function fetchFolderCycleHealth(cfg: QmetryIntegrationConfig, folde
   const warnings: string[] = [];
   const scopedCycles = found.cycles.filter((cycle) => cycleInScope(cycle, scope));
   for (const cycle of scopedCycles) {
-    const result = await fetchCycleExecutions(cfg, cycle.id, cycle.name, scope, cycle.key || cycle.id);
+    const result = await fetchCycleExecutions(cfg, cycle.id, cycle.name, scope, cycle.key || cycle.id, cycleHasUsableScopeDate(cycle));
     if (result.error) warnings.push(`${cycle.name}: ${result.error}`);
     cycles.push(summarizeCycle(result.cycleKey || cycle.key || cycle.id, result.cycleName || cycle.name, result.executions));
   }
@@ -393,7 +391,7 @@ export async function fetchQmetryExecutions(cfg: QmetryIntegrationConfig, scope?
   const cycleMeta = new Map<string, string>();
   const warnings: string[] = [];
   for (const cycle of cycles) {
-    const result = await fetchCycleExecutions(cfg, cycle.id, cycle.name, scope, cycle.key || cycle.id);
+    const result = await fetchCycleExecutions(cfg, cycle.id, cycle.name, scope, cycle.key || cycle.id, cycleHasUsableScopeDate(cycle));
     if (result.error) warnings.push(`${cycle.name || cycle.id}: ${result.error}`);
     all.push(...result.executions);
     cycleMeta.set(result.cycleKey || cycle.key || cycle.id, result.cycleName || cycle.name || cycle.id);
