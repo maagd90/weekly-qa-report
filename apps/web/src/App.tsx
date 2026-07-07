@@ -26,39 +26,36 @@ const queryClient = new QueryClient({
 
 function AppContent() {
   const [activeTab, setActiveTab] = useState<QaTab>('overview');
+  const [searchedDashboard, setSearchedDashboard] = useState<DashboardPayload | null>(null);
   const ui = useUiPreferences();
   const client = useQueryClient();
 
-  const { data: initialDashboard } = useQuery<DashboardPayload | null>({
+  const { data: initialDashboard, isLoading, refetch } = useQuery<DashboardPayload | null>({
     queryKey: ['dashboard-init'],
     queryFn: () => batchApi.getDashboard(),
     retry: false,
   });
 
-  const filters = useFilters(initialDashboard ?? undefined);
+  const display = searchedDashboard ?? initialDashboard;
+  const filters = useFilters(display ?? undefined);
 
-  const { data: dashboard, isLoading, refetch } = useQuery<DashboardPayload | null>({
-    queryKey: ['dashboard', filters.filterParams],
-    queryFn: () => batchApi.getDashboard(filters.filterParams),
-    retry: false,
-    enabled: !!initialDashboard,
-  });
-
-  const searchApis = useMutation({
+  const searchTestCases = useMutation({
     mutationFn: () => batchApi.searchDashboardByDates(filters.filterParams),
     onSuccess: (freshDashboard) => {
-      client.setQueryData(['dashboard', filters.filterParams], freshDashboard);
+      setSearchedDashboard(freshDashboard);
       client.setQueryData(['dashboard-init'], freshDashboard);
       client.invalidateQueries({ queryKey: ['settings-dashboard-projects'] });
+      client.invalidateQueries({ queryKey: ['cycle-folders'] });
+      client.invalidateQueries({ queryKey: ['cycles-by-folder-table'] });
     },
   });
 
-  const display = dashboard ?? initialDashboard;
   const showUat = !!display?.uat;
   const tabs = buildTabs(showUat);
   const currentTab = tabs.find((t) => t.id === activeTab) ?? tabs[0];
   const showFilters = !currentTab.hideFilters;
   const hasDashboard = !!display;
+  const canSearchLive = activeTab === 'overview' || activeTab === 'cycles';
 
   const handleTabChange = (tab: QaTab) => {
     setActiveTab(tab);
@@ -66,6 +63,11 @@ function AppContent() {
   };
 
   const goGenerate = () => setActiveTab('ai');
+
+  const handleGenerated = async () => {
+    const refreshed = await refetch();
+    if (refreshed.data) setSearchedDashboard(refreshed.data);
+  };
 
   return (
     <div className="min-h-screen bg-qa-bg text-qa-ink flex flex-col qa-scroll">
@@ -89,23 +91,24 @@ function AppContent() {
           onKpiStyleChange={ui.setKpiStyle}
           dataMin={display?.meta.dataMin}
           dataMax={display?.meta.dataMax}
-          onSearchApis={activeTab === 'overview' ? () => searchApis.mutate() : undefined}
-          isSearchingApis={searchApis.isPending}
+          onSearchApis={canSearchLive ? () => searchTestCases.mutate() : undefined}
+          searchApisLabel={activeTab === 'cycles' ? 'Search Test Cycle' : 'Search Test Cases'}
+          isSearchingApis={searchTestCases.isPending}
         />
       )}
 
-      {searchApis.isError && activeTab === 'overview' && (
+      {searchTestCases.isError && canSearchLive && (
         <div className="max-w-qa mx-auto w-full px-8 pt-3 print:hidden">
           <div className="p-3 border border-[#ecccc2] bg-[#f8ece8] text-[#a13d2c] text-sm">
-            {(searchApis.error as Error).message}
+            {(searchTestCases.error as Error).message}
           </div>
         </div>
       )}
 
       <div className={clsx('flex-1', activeTab === 'ai' ? 'flex flex-col overflow-hidden min-h-0' : 'overflow-auto')}>
-        {isLoading && showFilters && hasDashboard && (
+        {isLoading && showFilters && (
           <div className="flex items-center justify-center h-64 font-mono-qa text-sm text-qa-muted-light">
-            Refreshing filters…
+            Loading dashboard…
           </div>
         )}
 
@@ -115,11 +118,11 @@ function AppContent() {
 
         {display && activeTab === 'overview' && <OverviewPage dashboard={display} kpiStyle={ui.kpiStyle} />}
         {display && activeTab === 'testers' && <TestersPage dashboard={display} kpiStyle={ui.kpiStyle} />}
-        {display && activeTab === 'cycles' && <CyclesPage dashboard={display} kpiStyle={ui.kpiStyle} selectedCycle={ui.selectedCycle} onSelectCycle={ui.setSelectedCycle} />}
+        {display && activeTab === 'cycles' && <CyclesPage dashboard={display} kpiStyle={ui.kpiStyle} selectedCycle={ui.selectedCycle} onSelectCycle={ui.setSelectedCycle} filterParams={filters.filterParams} />}
         {display && activeTab === 'trace' && <TraceabilityPage dashboard={display} kpiStyle={ui.kpiStyle} />}
         {display && activeTab === 'uat' && showUat && <UatPage dashboard={display} kpiStyle={ui.kpiStyle} />}
         {activeTab === 'import' && <ImportStatusPage />}
-        {activeTab === 'ai' && <AiReportPage dashboard={display} kpiStyle={ui.kpiStyle} project={filters.project} onGenerated={() => refetch()} />}
+        {activeTab === 'ai' && <AiReportPage dashboard={display} kpiStyle={ui.kpiStyle} project={filters.project} onGenerated={handleGenerated} />}
         {activeTab === 'settings' && <SettingsPage />}
       </div>
 
