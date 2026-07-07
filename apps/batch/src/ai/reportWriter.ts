@@ -11,9 +11,17 @@ const SYSTEM = [
   'When a metric is missing, say Not available instead of guessing.',
 ].join(' ');
 
+function projectDisplayName(project?: string): string {
+  const key = (project || '').trim().toUpperCase();
+  if (!key || key === 'ALL') return 'All Projects';
+  if (key === 'DP') return 'WonderMiles';
+  if (key === 'DN4_FT') return 'DN4 Flight';
+  return project || key;
+}
+
 function reportPrompt(reportType: ReportType, filter: FilterParams, metricsJson: string): string {
   const scope = `${filter.startDate || 'all'} to ${filter.endDate || 'all'}`;
-  const project = filter.project || 'All Projects';
+  const project = projectDisplayName(filter.project);
   return [
     `Generate a ${reportType} QA Sprint Report for ${scope}. Project scope: ${project}.`,
     '',
@@ -78,7 +86,7 @@ export async function generateReportFromDataset(
   const markdown = await generateLlmText({
     ...llm,
     system: SYSTEM,
-    prompt: reportPrompt(params.reportType, filter, JSON.stringify({ scope: filter, metrics }, null, 2)),
+    prompt: reportPrompt(params.reportType, filter, JSON.stringify({ scope: { ...filter, projectLabel: projectDisplayName(filter.project) }, metrics }, null, 2)),
   });
   return {
     markdown: markdown || '# QA Sprint Report\n\nNo content generated.',
