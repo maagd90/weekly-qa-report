@@ -126,10 +126,11 @@ function hasDirectory(dir: string, name: string): boolean {
 }
 
 function isRepoRootCandidate(dir: string, pkg: PackageJson): boolean {
+  const hasApps = hasDirectory(dir, 'apps');
+  const hasConfig = hasDirectory(dir, 'config');
   return Boolean(
     pkg.workspaces ||
-    hasDirectory(dir, 'apps') ||
-    hasDirectory(dir, 'config')
+    (hasApps && hasConfig)
   );
 }
 
