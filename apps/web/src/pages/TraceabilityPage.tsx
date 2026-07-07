@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import type { DashboardPayload } from 'qa-dashboard-batch';
 import type { KpiStyle } from '../theme/qaTheme';
 import { QA, fmt, coverageColor } from '../theme/qaTheme';
@@ -26,9 +26,22 @@ type WorkItem = {
   updatedAt: string;
 };
 
+const PAGE_SIZE = 10;
+
 export function TraceabilityPage({ dashboard, kpiStyle }: TraceabilityPageProps) {
   const { traceability, storyBug, defectBacklog } = dashboard;
-  const workItems = (((dashboard as unknown as { workItems?: WorkItem[] }).workItems) || []).slice(0, 80);
+  const [page, setPage] = useState(0);
+  const allWorkItems = useMemo(() => {
+    const rows = (((dashboard as unknown as { workItems?: WorkItem[] }).workItems) || []);
+    return [...rows].sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || '') || a.key.localeCompare(b.key));
+  }, [dashboard]);
+  const totalPages = Math.max(1, Math.ceil(allWorkItems.length / PAGE_SIZE));
+  const safePage = Math.min(page, totalPages - 1);
+  const workItems = allWorkItems.slice(safePage * PAGE_SIZE, safePage * PAGE_SIZE + PAGE_SIZE);
+
+  useEffect(() => {
+    if (page > totalPages - 1) setPage(Math.max(0, totalPages - 1));
+  }, [page, totalPages]);
 
   const traceKpis = useMemo(() => {
     const verified = traceability.filter((t) => t.status === 'Verified').length;
@@ -41,6 +54,14 @@ export function TraceabilityPage({ dashboard, kpiStyle }: TraceabilityPageProps)
 
   const openMax = Math.max(1, ...defectBacklog.byPriority.map((p) => p.open));
   const ownerMax = Math.max(1, ...defectBacklog.byOwner.map((o) => o.open));
+
+  const pager = allWorkItems.length > PAGE_SIZE ? (
+    <div className="flex items-center gap-2 font-mono-qa text-[10.5px] text-qa-muted-light">
+      <span>{safePage + 1}/{totalPages} · {PAGE_SIZE} rows/page</span>
+      <button type="button" onClick={() => setPage((p) => Math.max(0, p - 1))} disabled={safePage === 0} className="px-2 py-1 border border-qa-border bg-white text-qa-ink disabled:opacity-40">Prev</button>
+      <button type="button" onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))} disabled={safePage >= totalPages - 1} className="px-2 py-1 border border-qa-border bg-white text-qa-ink disabled:opacity-40">Next</button>
+    </div>
+  ) : <span className="font-mono-qa text-[10.5px] text-qa-muted-light">latest first</span>;
 
   return (
     <QaPageShell
@@ -57,16 +78,7 @@ export function TraceabilityPage({ dashboard, kpiStyle }: TraceabilityPageProps)
 
       <QaSection title="Story Delivery by Feature Area" noPadding className="mb-[22px]" headerRight={<div className="flex gap-3.5 flex-wrap">{[{ label: 'Verified', border: '#2f6a48', bg: '#e7f0e9' }, { label: 'In Progress', border: '#9a6a12', bg: '#f6efd9' }, { label: 'At Risk', border: '#a13d2c', bg: '#f6e4df' }].map((l) => <span key={l.label} className="flex items-center gap-1 text-[10.5px] text-qa-muted"><span className="w-2.5 h-2.5 border" style={{ background: l.bg, borderColor: l.border }} />{l.label}</span>)}</div>}>
         <QaTable>
-          <QaThead cols={[
-            { label: 'Feature Area', className: 'pl-[22px]' },
-            { label: 'Status' },
-            { label: 'Completion', className: 'w-[150px]' },
-            { label: 'Stories', align: 'right' },
-            { label: 'Done', align: 'right' },
-            { label: 'Open', align: 'right' },
-            { label: 'Bugs', align: 'right' },
-            { label: 'Open Bugs', align: 'right', className: 'pr-[22px]' },
-          ]} />
+          <QaThead cols={[{ label: 'Feature Area', className: 'pl-[22px]' }, { label: 'Status' }, { label: 'Completion', className: 'w-[150px]' }, { label: 'Stories', align: 'right' }, { label: 'Done', align: 'right' }, { label: 'Open', align: 'right' }, { label: 'Bugs', align: 'right' }, { label: 'Open Bugs', align: 'right', className: 'pr-[22px]' }]} />
           <tbody>
             {traceability.map((r) => (
               <tr key={r.area} className="border-t border-[#f0ede5]">
@@ -85,17 +97,9 @@ export function TraceabilityPage({ dashboard, kpiStyle }: TraceabilityPageProps)
         {!traceability.length && <div className="py-8 text-center text-[13px] text-qa-muted-light">No Story requirements match the current filters.</div>}
       </QaSection>
 
-      <QaSection title="Bugs and Stories by Sprint" subtitle="JIRA Story/Bug rows with sprint mapping when available" noPadding className="mb-[22px]">
+      <QaSection title="Bugs and Stories by Sprint" subtitle="latest JIRA Story/Bug rows with sprint mapping when available" noPadding className="mb-[22px]" headerRight={pager}>
         <QaTable>
-          <QaThead cols={[
-            { label: 'Key', className: 'pl-[22px]' },
-            { label: 'Type' },
-            { label: 'Sprint No.' },
-            { label: 'Summary' },
-            { label: 'Priority' },
-            { label: 'Status' },
-            { label: 'Assignee', className: 'pr-[22px]' },
-          ]} />
+          <QaThead cols={[{ label: 'Key', className: 'pl-[22px]' }, { label: 'Type' }, { label: 'Sprint No.' }, { label: 'Summary' }, { label: 'Priority' }, { label: 'Status' }, { label: 'Updated' }, { label: 'Assignee', className: 'pr-[22px]' }]} />
           <tbody>
             {workItems.map((w) => (
               <tr key={w.key} className="border-t border-[#f0ede5]">
@@ -105,6 +109,7 @@ export function TraceabilityPage({ dashboard, kpiStyle }: TraceabilityPageProps)
                 <td className="py-2.5 px-3 max-w-[360px]"><div className="truncate">{w.summary || w.area}</div></td>
                 <td className="py-2.5 px-3 text-[12px]">{w.priority}</td>
                 <td className="py-2.5 px-3 text-[12px]" style={{ color: w.status === 'done' ? QA.PASS : QA.BLOCKED }}>{w.status}</td>
+                <td className="py-2.5 px-3 font-mono-qa text-[11px] text-qa-muted whitespace-nowrap">{w.updatedAt || '-'}</td>
                 <td className="py-2.5 pr-[22px] text-qa-muted whitespace-nowrap">{w.assignee}</td>
               </tr>
             ))}
@@ -126,7 +131,7 @@ export function TraceabilityPage({ dashboard, kpiStyle }: TraceabilityPageProps)
           <div className="flex-1 min-w-[230px] border-l border-[#efece4] pl-6">
             <div className="font-mono-qa text-[9.5px] tracking-wider uppercase text-qa-muted-light mb-3.5">Open bugs by owner</div>
             <div className="flex flex-col gap-3">{defectBacklog.byOwner.map((o) => <div key={o.name}><div className="flex justify-between items-baseline mb-1"><span className="text-[13px] font-semibold">{o.name}</span><span className="font-mono-qa text-xs text-qa-muted">{o.open}</span></div><HorizBar pct={(o.open / ownerMax) * 100} color={QA.FAIL} /></div>)}</div>
-            {defectBacklog.openTotal === 0 && <div className="py-4 text-[12.5px] text-qa-muted-light">—</div>}
+            {defectBacklog.openTotal === 0 && <div className="py-4 text-[12.5px] text-qa-muted-light">-</div>}
           </div>
         </div>
       </QaSection>
