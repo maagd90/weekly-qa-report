@@ -49,7 +49,7 @@ function logApi(event: string, data: Record<string, unknown>): void { console.lo
 function normalizeProvider(value: unknown): LlmProvider { return value === 'openai' || value === 'gemini' || value === 'openai-compatible' || value === 'anthropic' ? value : 'anthropic'; }
 function readStoredObject<T>(key: string, fallback: T): T { try { const raw = window.localStorage.getItem(key); return raw ? (JSON.parse(raw) as T) : fallback; } catch { return fallback; } }
 function writeStoredObject<T>(key: string, value: T): void { try { window.localStorage.setItem(key, JSON.stringify(value)); } catch { /* storage unavailable */ } }
-function normalizeJiraConnection(c: JiraConnectionInput): JiraConnectionInput { return { ...c, enabled: c.enabled !== false, syncIssues: c.syncIssues !== false }; }
+function normalizeJiraConnection(c: JiraConnectionInput): JiraConnectionInput { return { ...c, deploymentType: c.deploymentType || 'on-prem', enabled: c.enabled !== false, syncIssues: c.syncIssues !== false }; }
 function normalizeQmetryConnection(c: QmetryConnectionInput): QmetryConnectionInput { return { ...c, enabled: c.enabled !== false, syncExecutions: c.syncExecutions !== false, cycleIds: [] }; }
 
 export function getReportBranding(): ReportBranding { return readStoredObject<ReportBranding>(REPORT_BRANDING_STORAGE, { logoUrl: '', logoAlt: 'Report logo', title: 'QA Sprint Report', subtitle: '' }); }
@@ -116,7 +116,7 @@ export const batchApi = {
   testIntegrations: () => api.post('/integrations/test').then((r) => r.data),
   testConnection: (type: 'jira' | 'qmetry', connection: JiraConnectionInput | QmetryConnectionInput) => api.post('/integrations/test-connection', { type, connection }, { timeout: 35_000 }).then((r) => r.data as { ok: boolean; count?: number; error?: string }).catch((err) => ({ ok: false, error: apiErrorMessage(err, 'Connection test failed') })),
   getCycleFolders: () => api.get('/cycles/folders', { timeout: 45_000 }).then((r) => r.data as CycleFoldersResult),
-  getCyclesByFolder: (folderId: string, connectionId?: string) => api.get('/cycles/by-folder', { params: { folderId, connectionId }, timeout: 180_000 }).then((r) => r.data as FolderCycleHealthResult),
+  getCyclesByFolder: (folderId: string, connectionId?: string, filter?: Partial<FilterParams>) => api.get('/cycles/by-folder', { params: { folderId, connectionId, startDate: filter?.startDate, endDate: filter?.endDate, project: filter?.project }, timeout: 180_000 }).then((r) => r.data as FolderCycleHealthResult),
   downloadReportPdf: async ({ startDate, endDate, reportType, kpiStyle, project, branding }: { startDate: string; endDate: string; reportType: ReportType; kpiStyle: string; project?: string; branding?: ReportBranding }) => {
     try {
       const selectedBranding = branding || getReportBranding();
