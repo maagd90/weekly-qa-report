@@ -77,6 +77,18 @@ function focusedDataset(): Dataset {
   console.log('✓ project filter');
 }
 
+// DLM display label must behave exactly like DLM
+{
+  const canonical = buildDashboardPayload(focusedDataset(), { project: 'DLM', startDate: '2026-07-01', endDate: '2026-07-31' });
+  const displayLabel = buildDashboardPayload(focusedDataset(), { project: 'DN4_FT - Supply & DMC', startDate: '2026-07-01', endDate: '2026-07-31' });
+  assert.strictEqual(displayLabel.scope.project, 'DLM');
+  assert.strictEqual(displayLabel.overview.totalCases, canonical.overview.totalCases);
+  assert.strictEqual(displayLabel.storyBug.story, canonical.storyBug.story);
+  assert.strictEqual(displayLabel.storyBug.bug, canonical.storyBug.bug);
+  assert.strictEqual(displayLabel.traceability.length, canonical.traceability.length);
+  console.log('✓ DLM display label canonical filter');
+}
+
 // Empty search with impossible term
 {
   const p = buildDashboardPayload(ds, { search: 'zzz_no_match_xyz_12345' });
