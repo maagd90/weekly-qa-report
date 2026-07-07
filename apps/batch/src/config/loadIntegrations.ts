@@ -92,8 +92,8 @@ const DEFAULTS: IntegrationsConfig = {
     testCyclesSearchPath: QMETRY_TEST_CYCLES_SEARCH_PATH,
     testCyclesSearchBody: null,
     testCasesSearchPath: '/testcycles/{cycleId}/testcases/search',
-    testCasesSearchBody: { filter: { filter: { folderId: -1 } } },
-    usePostSearch: true,
+    testCasesSearchBody: null,
+    usePostSearch: false,
     testCaseFields: 'seqNo,key,versionNo,summary,priority,status,environment,executionResult,executionAssignee,executedOn,executedBy,lastModified,build',
     cycleIds: [],
     pageSize: 50,
@@ -213,7 +213,8 @@ export function qmetryConfigFromConnection(conn: QmetryConnectionInput): QmetryI
     testCyclesSearchPath: QMETRY_TEST_CYCLES_SEARCH_PATH,
     testCyclesSearchBody: qmetryCycleSearchBody(projectId, conn.folderId),
     cycleIds: [],
-    testCasesSearchBody: DEFAULTS.qmetry.testCasesSearchBody,
+    testCasesSearchBody: null,
+    usePostSearch: false,
   };
 }
 
