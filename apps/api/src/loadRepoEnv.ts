@@ -59,6 +59,10 @@ interface RuntimeConfig {
   };
 }
 
+interface PackageJson {
+  workspaces?: unknown;
+}
+
 let runtimeConfigPath: string | undefined;
 let runtimeConfigLoaded = false;
 let runtimeLoadError: string | undefined;
@@ -103,19 +107,61 @@ function applyMap(values: Record<string, RuntimeConfigValue> | undefined): void 
   for (const [key, value] of Object.entries(values)) setEnv(key, value);
 }
 
+function readPackageJson(dir: string): PackageJson | undefined {
+  const file = path.join(dir, 'package.json');
+  if (!fs.existsSync(file)) return undefined;
+  try {
+    return JSON.parse(fs.readFileSync(file, 'utf8')) as PackageJson;
+  } catch {
+    return undefined;
+  }
+}
+
+function hasDirectory(dir: string, name: string): boolean {
+  try {
+    return fs.statSync(path.join(dir, name)).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+function isRepoRootCandidate(dir: string, pkg: PackageJson): boolean {
+  return Boolean(
+    pkg.workspaces ||
+    hasDirectory(dir, 'apps') ||
+    hasDirectory(dir, 'config')
+  );
+}
+
 function findRootFrom(start: string): string | undefined {
-  let dir = start;
-  for (let i = 0; i < 10; i++) {
-    if (fs.existsSync(path.join(dir, 'package.json'))) return dir;
+  let dir = path.resolve(start);
+  try {
+    if (fs.existsSync(dir) && fs.statSync(dir).isFile()) dir = path.dirname(dir);
+  } catch {
+    // Keep the resolved start path and walk upward; this is only a best-effort root probe.
+  }
+
+  let firstPackageDir: string | undefined;
+  for (let i = 0; i < 20; i++) {
+    const pkg = readPackageJson(dir);
+    if (pkg) {
+      firstPackageDir = firstPackageDir || dir;
+      if (isRepoRootCandidate(dir, pkg)) return dir;
+    }
     const parent = path.dirname(dir);
     if (parent === dir) break;
     dir = parent;
   }
-  return undefined;
+  return firstPackageDir;
+}
+
+function configuredProjectRoot(): string | undefined {
+  const configured = process.env.PROJECT_ROOT?.trim();
+  return configured ? path.resolve(normalizeEnvPath(configured)) : undefined;
 }
 
 function findRepoRoot(): string {
-  return process.env.PROJECT_ROOT
+  return configuredProjectRoot()
     || findRootFrom(process.cwd())
     || findRootFrom(__dirname)
     || process.cwd();
@@ -185,18 +231,20 @@ function applyRuntimeConfig(config: RuntimeConfig): void {
       const config = JSON.parse(fs.readFileSync(candidate, 'utf8')) as RuntimeConfig;
       applyRuntimeConfig(config);
       applyPathNormalizations();
+      repoRoot = process.env.PROJECT_ROOT || root;
       runtimeConfigPath = candidate;
       runtimeConfigLoaded = true;
-      console.log(`[runtime-config] loaded ${candidate}`);
+      console.log(`[runtime-config] root=${repoRoot} loaded=${candidate}`);
     } catch (err) {
       runtimeLoadError = err instanceof Error ? err.message : String(err);
-      console.warn(`[runtime-config] failed to load ${candidate}: ${runtimeLoadError}`);
+      console.warn(`[runtime-config] root=${root} failed to load ${candidate}: ${runtimeLoadError}`);
     }
     return;
   }
 
   applyPathNormalizations();
-  console.log('[runtime-config] no config/runtime.json found — using built-in defaults and browser Settings only');
+  repoRoot = process.env.PROJECT_ROOT || root;
+  console.log(`[runtime-config] root=${repoRoot} no config/runtime.json found — using built-in defaults and browser Settings only`);
 })();
 
 export function getEnvStatus() {
