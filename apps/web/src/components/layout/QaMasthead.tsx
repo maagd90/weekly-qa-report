@@ -5,13 +5,12 @@ import { projectDisplayName } from '../../lib/projectDisplay';
 
 interface QaMastheadProps {
   dashboard?: DashboardPayload | null;
+  project: string;
+  projects: string[];
+  onProjectChange: (project: string) => void;
 }
 
-export function QaMasthead({ dashboard }: QaMastheadProps) {
-  const projectLabel = dashboard?.scope.project && dashboard.scope.project !== 'all'
-    ? projectDisplayName(dashboard.scope.project)
-    : 'All projects';
-
+export function QaMasthead({ dashboard, project, projects, onProjectChange }: QaMastheadProps) {
   const totalCases = dashboard?.overview.totalCases ?? 0;
   const cycleCount = dashboard?.cycles.length ?? 0;
 
@@ -30,7 +29,16 @@ export function QaMasthead({ dashboard }: QaMastheadProps) {
           </div>
           <div className="text-right pb-0.5">
             <div className="font-mono-qa text-[10px] tracking-wider uppercase text-qa-muted-light">Project</div>
-            <div className="font-spectral font-semibold text-[15px]">{projectLabel}</div>
+            <div className="relative inline-flex items-center mt-1">
+              <select
+                value={project}
+                onChange={(e) => onProjectChange(e.target.value)}
+                className="appearance-none font-spectral font-semibold text-[15px] py-1 pl-2 pr-7 border border-qa-ink bg-white text-qa-ink cursor-pointer"
+              >
+                {projects.map((p) => <option key={p} value={p}>{projectDisplayName(p)}</option>)}
+              </select>
+              <span className="absolute right-2 pointer-events-none text-[9px] text-qa-ink">▼</span>
+            </div>
           </div>
         </div>
         <div className="flex items-center justify-between py-1.5 border-b border-qa-ink">

@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import type { ApiFetchScope, DashboardPayload, GenerateParams, GenerateResult } from './types/dataset';
-import { buildDataset, computeFingerprint, saveRawDataset } from './cache/datasetCache';
+import { buildDataset, computeFingerprint, loadRawDataset, saveRawDataset } from './cache/datasetCache';
 import { buildDashboardPayload } from './export/buildDashboardPayload';
 import { generateReportFromDataset, resolveReportLlmConfig } from './ai/reportWriter';
 import { LLM_PROVIDER_LABELS, envKeyForProvider } from './ai/llmProviders';
@@ -24,10 +24,8 @@ function sanitizeParamsForMeta(params: GenerateParams): GenerateParams {
 
 function apiScopeFromParams(params: GenerateParams): ApiFetchScope | undefined {
   const scope: ApiFetchScope = {};
-  if (/^\d{4}-\d{2}-\d{2}$/.test(params.startDate || '')) scope.startDate = params.startDate;
-  if (/^\d{4}-\d{2}-\d{2}$/.test(params.endDate || '')) scope.endDate = params.endDate;
   if (params.project && params.project !== 'all') scope.project = params.project;
-  return scope.startDate || scope.endDate || scope.project ? scope : undefined;
+  return scope.project ? scope : undefined;
 }
 
 export async function runGenerate(params: GenerateParams): Promise<GenerateResult> {
@@ -44,7 +42,7 @@ export async function runGenerate(params: GenerateParams): Promise<GenerateResul
 
   let dataset;
   try {
-    dataset = await buildDataset(inputDir, configDir, params.connections, { apiScope });
+    dataset = loadRawDataset(outputDir) || await buildDataset(inputDir, configDir, params.connections, { apiScope });
   } catch (err) {
     return { ok: false, filesParsed: 0, rowCounts: {}, warnings: [], paths: { dashboard: '', report: '', meta: '', raw: '' }, error: (err as Error).message };
   }
@@ -57,7 +55,7 @@ export async function runGenerate(params: GenerateParams): Promise<GenerateResul
 
   const fingerprint = computeFingerprint(inputDir, configDir, params.connections, { apiScope });
   const rawPath = path.join(outputDir, 'raw-dataset.json');
-  saveRawDataset(outputDir, dataset, fingerprint);
+  if (!fs.existsSync(rawPath)) saveRawDataset(outputDir, dataset, fingerprint);
 
   const dashboardPath = path.join(outputDir, 'dashboard-data.json');
   const reportPath = path.join(outputDir, 'report.md');

@@ -13,6 +13,7 @@ import { mergeDatasets } from '../merge/mergeDataset';
 export interface BuildDatasetOptions {
   apiScope?: ApiFetchScope;
   liveSync?: boolean;
+  includeFiles?: boolean;
 }
 
 function projectKey(value?: string | null): string {
@@ -113,8 +114,10 @@ export async function buildDataset(inputDir: string, configDir: string, connecti
     ...(await buildJiraConnectionDataset(configDir, connections, options)),
     ...(await buildQmetryConnectionDataset(configDir, connections, options)),
   ];
-  const files = discoverInputFiles(inputDir);
-  if (files.length) parts.push(parseAllFiles(files));
+  if (options?.includeFiles !== false) {
+    const files = discoverInputFiles(inputDir);
+    if (files.length) parts.push(parseAllFiles(files));
+  }
   return mergeDatasets(parts);
 }
 
@@ -126,6 +129,7 @@ export function computeFingerprint(inputDir: string, configDir: string, connecti
   parts.push(`conn:${JSON.stringify(connections || {})}`);
   parts.push(`apiScope:${JSON.stringify(cleanApiScope(options?.apiScope) || {})}`);
   parts.push(`liveSync:${liveSyncEnabled(options)}`);
+  parts.push(`includeFiles:${options?.includeFiles !== false}`);
   if (fs.existsSync(inputDir)) {
     for (const f of fs.readdirSync(inputDir).sort()) {
       if (f.startsWith('.')) continue;

@@ -2,7 +2,6 @@ import React from 'react';
 import clsx from 'clsx';
 import type { KpiStyle } from '../../theme/qaTheme';
 import { QA } from '../../theme/qaTheme';
-import { projectDisplayName } from '../../lib/projectDisplay';
 
 interface QaFilterBarProps {
   startDate: string;
@@ -13,9 +12,6 @@ interface QaFilterBarProps {
   onSearchChange: (s: string) => void;
   result: 'all' | 'PASS' | 'FAIL' | 'BLOCKED';
   onResultChange: (r: 'all' | 'PASS' | 'FAIL' | 'BLOCKED') => void;
-  project: string;
-  onProjectChange: (p: string) => void;
-  projects: string[];
   kpiStyle: KpiStyle;
   onKpiStyleChange: (s: KpiStyle) => void;
   showResult?: boolean;
@@ -45,7 +41,6 @@ export function QaFilterBar(props: QaFilterBarProps) {
   const {
     startDate, endDate, onStartDateChange, onEndDateChange,
     search, onSearchChange, result, onResultChange,
-    project, onProjectChange, projects,
     kpiStyle, onKpiStyleChange,
     showResult = true,
     dataMin, dataMax,
@@ -58,16 +53,6 @@ export function QaFilterBar(props: QaFilterBarProps) {
 
   return (
     <div className="max-w-qa mx-auto px-8 py-3.5 flex items-center gap-[18px] flex-wrap border-b border-[#e7e3d9] print:hidden">
-      <div className="flex items-center gap-2.5">
-        <span className="font-mono-qa text-[10px] tracking-wider uppercase text-qa-muted-light">Project</span>
-        <div className="relative flex items-center">
-          <select value={project} onChange={(e) => onProjectChange(e.target.value)} className="appearance-none font-sans text-[13px] font-semibold py-2 pl-3 pr-8 border border-qa-ink bg-white text-qa-ink cursor-pointer">
-            {projects.map((p) => <option key={p} value={p}>{projectDisplayName(p)}</option>)}
-          </select>
-          <span className="absolute right-2.5 pointer-events-none text-[9px] text-qa-ink">▼</span>
-        </div>
-      </div>
-
       <div className="flex items-center gap-2">
         <span className="font-mono-qa text-[10px] tracking-wider uppercase text-qa-muted-light">Period</span>
         <input type="date" value={startDate} onChange={(e) => onStartDateChange(e.target.value)} title={dataRangeLabel} className={inputDateClass} />
@@ -78,7 +63,7 @@ export function QaFilterBar(props: QaFilterBarProps) {
             type="button"
             onClick={onSearchApis}
             disabled={isSearchingApis || !startDate || !endDate}
-            title="Refresh test data using the selected period"
+            title="Filter cached data using the selected period"
             className="font-mono-qa text-[10px] font-semibold tracking-wider uppercase px-3 py-[7px] border border-qa-ink bg-qa-ink text-[#F5F3ED] cursor-pointer disabled:opacity-50 disabled:cursor-wait"
           >
             {isSearchingApis ? 'Searching...' : searchApisLabel}

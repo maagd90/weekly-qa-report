@@ -17,7 +17,7 @@ import { EmptyDashboard } from './components/common/EmptyDashboard';
 import { useFilters } from './hooks/useFilters';
 import { useUiPreferences } from './hooks/useUiPreferences';
 import { batchApi } from './lib/api';
-import type { DashboardPayload } from 'qa-dashboard-batch';
+import type { DashboardPayload, FilterParams } from 'qa-dashboard-batch';
 import type { QaTab } from './theme/qaTheme';
 
 const queryClient = new QueryClient({
@@ -49,17 +49,8 @@ function AppContent() {
     client.setQueryData(['dashboard-init'], freshDashboard);
   };
 
-  const searchTestCases = useMutation({
-    mutationFn: () => batchApi.searchDashboardByDates(filters.filterParams),
-    onSuccess: (freshDashboard) => {
-      setDashboard(freshDashboard);
-      client.invalidateQueries({ queryKey: ['settings-dashboard-projects'] });
-      client.invalidateQueries({ queryKey: ['report'] });
-    },
-  });
-
-  const searchCachedDashboard = useMutation({
-    mutationFn: () => batchApi.getDashboard(filters.filterParams),
+  const filterCachedDashboard = useMutation({
+    mutationFn: (params?: Partial<FilterParams>) => batchApi.getDashboard(params || filters.filterParams),
     onSuccess: (freshDashboard) => setDashboard(freshDashboard),
   });
 
@@ -68,13 +59,25 @@ function AppContent() {
   const currentTab = tabs.find((t) => t.id === activeTab) ?? tabs[0];
   const showFilters = !currentTab.hideFilters;
   const hasDashboard = !!display;
-  const canSearchLive = activeTab === 'overview';
-  const canSearchCached = activeTab === 'trace' || activeTab === 'uat';
-  const activeSearch = canSearchLive ? searchTestCases : searchCachedDashboard;
+  const canFilterCached = activeTab === 'overview' || activeTab === 'testers' || activeTab === 'cycles' || activeTab === 'trace' || activeTab === 'uat';
 
   const handleTabChange = (tab: QaTab) => {
     setActiveTab(tab);
     ui.clearSelectedCycle();
+  };
+
+  const handleProjectChange = (project: string) => {
+    const nextProject = project || 'all';
+    filters.setProject(nextProject);
+    filters.setSearch('');
+    filters.setResult('all');
+    ui.clearSelectedCycle();
+    filterCachedDashboard.mutate({
+      ...filters.filterParams,
+      project: nextProject === 'all' ? undefined : nextProject,
+      search: undefined,
+      result: 'all',
+    });
   };
 
   const goGenerate = () => setActiveTab('ai');
@@ -86,7 +89,7 @@ function AppContent() {
 
   return (
     <div className="min-h-screen bg-qa-bg text-qa-ink flex flex-col qa-scroll">
-      <QaMasthead dashboard={display} />
+      <QaMasthead dashboard={display} project={filters.project} projects={filters.projects} onProjectChange={handleProjectChange} />
       <QaTabNav tabs={tabs} activeTab={activeTab} onTabChange={handleTabChange} />
 
       {showFilters && (
@@ -99,23 +102,20 @@ function AppContent() {
           onSearchChange={filters.setSearch}
           result={filters.result}
           onResultChange={filters.setResult}
-          project={filters.project}
-          onProjectChange={filters.setProject}
-          projects={filters.projects}
           kpiStyle={ui.kpiStyle}
           onKpiStyleChange={ui.setKpiStyle}
           dataMin={display?.meta.dataMin}
           dataMax={display?.meta.dataMax}
-          onSearchApis={canSearchLive || canSearchCached ? () => activeSearch.mutate() : undefined}
-          searchApisLabel={activeTab === 'trace' ? 'Search Traceability' : activeTab === 'uat' ? 'Search UAT' : 'Search Test Cases'}
-          isSearchingApis={activeSearch.isPending}
+          onSearchApis={canFilterCached ? () => filterCachedDashboard.mutate(undefined) : undefined}
+          searchApisLabel="Filter Cached Data"
+          isSearchingApis={filterCachedDashboard.isPending}
         />
       )}
 
-      {(searchTestCases.isError || searchCachedDashboard.isError) && showFilters && (
+      {filterCachedDashboard.isError && showFilters && (
         <div className="max-w-qa mx-auto w-full px-8 pt-3 print:hidden">
           <div className="p-3 border border-[#ecccc2] bg-[#f8ece8] text-[#a13d2c] text-sm">
-            {((searchTestCases.error || searchCachedDashboard.error) as Error).message}
+            {(filterCachedDashboard.error as Error).message}
           </div>
         </div>
       )}

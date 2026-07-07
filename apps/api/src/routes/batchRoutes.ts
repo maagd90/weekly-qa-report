@@ -10,6 +10,7 @@ import {
   loadFingerprint,
   saveRawDataset,
   refilterDashboard,
+  mergeDatasets,
   integrationsSummary,
   loadIntegrations,
   testAnthropicConnection,
@@ -39,6 +40,8 @@ fs.mkdirSync(CONFIG_DIR, { recursive: true });
 
 const GENERATED_OUTPUT_FILES = ['raw-dataset.json', 'dataset-fingerprint.txt', 'dashboard-data.json', 'report.md', 'report-meta.json'];
 const REPORT_OUTPUT_FILES = ['report.md', 'report-meta.json'];
+const IMPORT_CACHE_FILE = 'raw-dataset.imported.json';
+const LIVE_CACHE_FILE = 'raw-dataset.live.json';
 
 type BuildMode = 'cached' | 'import-only' | 'live';
 type DashboardPayload = ReturnType<typeof refilterDashboard>;
@@ -54,7 +57,18 @@ function totalRows(dataset: Dataset): number { const counts = rowCounts(dataset)
 function validDate(value?: string): string | undefined { const v = (value || '').trim(); return /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : undefined; }
 function cleanApiScope(scope?: ApiFetchScope): ApiFetchScope | undefined { if (!scope) return undefined; const next: ApiFetchScope = {}; const startDate = validDate(scope.startDate); const endDate = validDate(scope.endDate); if (startDate) next.startDate = startDate; if (endDate) next.endDate = endDate; if (scope.project && scope.project !== 'all') next.project = scope.project; return next.startDate || next.endDate || next.project ? next : undefined; }
 function apiScopeFromFilter(filter: Partial<FilterParams>): ApiFetchScope | undefined { return cleanApiScope({ startDate: filter.startDate, endDate: filter.endDate, project: filter.project }); }
-function buildOptions(mode: BuildMode, apiScope?: ApiFetchScope) { return { apiScope: cleanApiScope(apiScope), liveSync: mode === 'live' }; }
+function projectOnlyScope(scope?: ApiFetchScope): ApiFetchScope | undefined {
+  const clean = cleanApiScope(scope);
+  return clean?.project ? { project: clean.project } : undefined;
+}
+
+function buildOptions(mode: BuildMode, apiScope?: ApiFetchScope) {
+  return {
+    apiScope: mode === 'live' ? projectOnlyScope(apiScope) : undefined,
+    liveSync: mode === 'live',
+    includeFiles: mode !== 'live',
+  };
+}
 
 function projectRows(dataset: Dataset): Array<{ project: string; rows: number }> {
   const counts = new Map<string, number>();
@@ -85,10 +99,40 @@ function hasMetrics(payload: DashboardPayload): boolean {
   return Boolean(payload.overview.totalCases || payload.storyBug.story || payload.storyBug.bug || payload.defectBacklog.openTotal || payload.cycles.length || payload.testers.length || payload.uat?.total);
 }
 
+function cacheFileForMode(mode: BuildMode): string | null {
+  if (mode === 'import-only') return IMPORT_CACHE_FILE;
+  if (mode === 'live') return LIVE_CACHE_FILE;
+  return null;
+}
+
+function loadDatasetFile(fileName: string): Dataset | null {
+  const filePath = outputPath(fileName);
+  if (!fs.existsSync(filePath)) return null;
+  return JSON.parse(fs.readFileSync(filePath, 'utf8')) as Dataset;
+}
+
+function saveDatasetFile(fileName: string, dataset: Dataset): void {
+  fs.mkdirSync(OUTPUT_DIR, { recursive: true });
+  fs.writeFileSync(outputPath(fileName), JSON.stringify(dataset, null, 2));
+}
+
+function mergedSourceDataset(updatedMode?: BuildMode, updatedDataset?: Dataset): Dataset {
+  const parts: Dataset[] = [];
+  const importDataset = updatedMode === 'import-only' ? updatedDataset : loadDatasetFile(IMPORT_CACHE_FILE);
+  const liveDataset = updatedMode === 'live' ? updatedDataset : loadDatasetFile(LIVE_CACHE_FILE);
+  if (importDataset) parts.push(importDataset);
+  if (liveDataset) parts.push(liveDataset);
+  return mergeDatasets(parts);
+}
+
 async function refreshGeneratedOutputs(req: Request, connections: UserConnections, apiScope?: ApiFetchScope, dashboardFilter: Partial<FilterParams> = {}, mode: BuildMode = 'live') {
   const options = buildOptions(mode, apiScope);
-  const fingerprint = computeFingerprint(INPUT_DIR, CONFIG_DIR, connections, options);
-  const dataset = await buildDataset(INPUT_DIR, CONFIG_DIR, connections, options);
+  const sourceConnections = mode === 'live' ? connections : emptyConnections();
+  const fingerprint = computeFingerprint(INPUT_DIR, CONFIG_DIR, sourceConnections, options);
+  const sourceDataset = await buildDataset(INPUT_DIR, CONFIG_DIR, sourceConnections, options);
+  const sourceCacheFile = cacheFileForMode(mode);
+  if (sourceCacheFile) saveDatasetFile(sourceCacheFile, sourceDataset);
+  const dataset = mergedSourceDataset(mode, sourceDataset);
   const counts = rowCounts(dataset);
   const removed = clearOutputFiles(REPORT_OUTPUT_FILES);
   if (totalRows(dataset) === 0) {
@@ -114,12 +158,16 @@ async function ensureDataset(req: Request, connections: UserConnections, apiScop
   let dataset = loadRawDataset(OUTPUT_DIR);
   log(req, 'ensureDataset:start', { inputDir: INPUT_DIR, configDir: CONFIG_DIR, outputDir: OUTPUT_DIR, fingerprint, cachedFingerprint: cached, apiScope: options.apiScope, mode });
   if (dataset && (cached === fingerprint || mode === 'cached')) { log(req, 'ensureDataset:using cached dataset', { executions: dataset.executions.length, issues: dataset.issues.length, uat: dataset.uat.length, mode }); return { dataset, fingerprint: cached || fingerprint }; }
+  if (mode === 'cached') return null;
   try {
     dataset = await buildDataset(INPUT_DIR, CONFIG_DIR, connections, options);
     log(req, 'ensureDataset:built dataset', { executions: dataset.executions.length, issues: dataset.issues.length, uat: dataset.uat.length, warnings: dataset.meta.warnings, mode });
-    if (totalRows(dataset) === 0) { const removed = clearOutputFiles(); log(req, 'ensureDataset:no data; cleared stale outputs', { removed, mode }); return null; }
-    saveRawDataset(OUTPUT_DIR, dataset, fingerprint);
-    return { dataset, fingerprint };
+    if (totalRows(dataset) === 0) return null;
+    const sourceCacheFile = cacheFileForMode(mode);
+    if (sourceCacheFile) saveDatasetFile(sourceCacheFile, dataset);
+    const merged = mergedSourceDataset(mode, dataset);
+    saveRawDataset(OUTPUT_DIR, merged, fingerprint);
+    return { dataset: merged, fingerprint };
   } catch (err) { logError(req, 'ensureDataset:build failed', err, { mode }); return dataset ? { dataset, fingerprint: cached || fingerprint } : null; }
 }
 
@@ -138,7 +186,7 @@ const upload = multer({ storage, limits: { fileSize: 20 * 1024 * 1024 }, fileFil
 router.post('/generate', async (req: Request, res: Response) => { const { startDate, endDate, reportType, search, result, project, llm } = req.body as { startDate?: string; endDate?: string; reportType?: string; search?: string; result?: string; project?: string; llm?: LlmSelectionInput }; const connections = resolveConnections(req); const key = resolveAnthropicKey(req); log(req, 'POST /generate:start', { startDate, endDate, reportType, search, result, project, keySource: key.source, connections: connectionSummary(connections) }); if (!startDate || !endDate) return res.status(400).json({ ok: false, error: 'startDate and endDate are required', requestId: requestId(req) }); const type = ['full', 'executive', 'testers', 'cycles'].includes(reportType || '') ? reportType! : 'full'; try { const resultPayload = await runGenerate({ startDate, endDate, reportType: type as 'full' | 'executive' | 'testers' | 'cycles', search, result: (result as 'all') || 'all', project, inputDir: INPUT_DIR, outputDir: OUTPUT_DIR, configDir: CONFIG_DIR, apiKey: key.key || undefined, llm, connections }); log(req, 'POST /generate:done', { ok: resultPayload.ok, rowCounts: resultPayload.rowCounts, warnings: resultPayload.warnings, error: resultPayload.error, paths: resultPayload.paths }); return res.status(200).json({ ...resultPayload, requestId: requestId(req) }); } catch (err) { logError(req, 'POST /generate:failed', err); return res.status(500).json({ ok: false, error: (err as Error).message, requestId: requestId(req) }); } });
 
 router.get('/dashboard', async (req: Request, res: Response) => { const filter = parseFilterParams(req); const connections = resolveConnections(req); log(req, 'GET /dashboard:start', { filter, mode: 'cached-refilter', connections: connectionSummary(connections) }); const cached = await ensureDataset(req, connections, undefined, 'cached'); if (cached) return res.json(refilterDashboard(cached.dataset, filter)); const imported = await ensureDataset(req, emptyConnections(), undefined, 'import-only'); if (imported) return res.json(refilterDashboard(imported.dataset, filter)); const file = path.join(OUTPUT_DIR, 'dashboard-data.json'); if (!fs.existsSync(file)) return res.status(404).json({ error: 'No dashboard generated yet. Import files, then Sync imported data, or use Settings → Sync JIRA/QMetry. Dataset contains: no projects / 0 rows.', requestId: requestId(req) }); res.json(JSON.parse(fs.readFileSync(file, 'utf8'))); });
-router.post('/dashboard/search', async (req: Request, res: Response) => { const { startDate, endDate, search, result, project } = req.body as { startDate?: string; endDate?: string; search?: string; result?: 'all' | 'PASS' | 'FAIL' | 'BLOCKED'; project?: string }; const connections = resolveConnections(req); const filter: FilterParams = { startDate, endDate, search, result: result || 'all', project }; const apiScope = apiScopeFromFilter(filter); log(req, 'POST /dashboard/search:start', { filter, apiScope, connections: connectionSummary(connections) }); if (!startDate || !endDate) return res.status(400).json({ ok: false, error: 'startDate and endDate are required', requestId: requestId(req) }); try { const sync = await refreshGeneratedOutputs(req, connections, apiScope, filter, 'live'); return res.json({ ok: true, dashboard: sync.dashboard, rowCounts: sync.rowCounts, warnings: sync.warnings, projects: sync.projects, requestId: requestId(req) }); } catch (err) { logError(req, 'POST /dashboard/search:failed', err); return res.status(500).json({ ok: false, error: (err as Error).message, requestId: requestId(req) }); } });
+router.post('/dashboard/search', async (req: Request, res: Response) => { const { startDate, endDate, search, result, project } = req.body as { startDate?: string; endDate?: string; search?: string; result?: 'all' | 'PASS' | 'FAIL' | 'BLOCKED'; project?: string }; const connections = resolveConnections(req); const filter: FilterParams = { startDate, endDate, search, result: result || 'all', project }; log(req, 'POST /dashboard/search:start', { filter, mode: 'cached-refilter', connections: connectionSummary(connections) }); if (!startDate || !endDate) return res.status(400).json({ ok: false, error: 'startDate and endDate are required', requestId: requestId(req) }); try { const cached = await ensureDataset(req, connections, undefined, 'cached'); if (!cached) return res.status(404).json({ ok: false, error: 'No cached dashboard data. Sync imported files or JIRA/QMetry first.', requestId: requestId(req) }); const dashboard = refilterDashboard(cached.dataset, filter); return res.json({ ok: true, dashboard, rowCounts: rowCounts(cached.dataset), warnings: cached.dataset.meta.warnings, projects: cached.dataset.projects, requestId: requestId(req) }); } catch (err) { logError(req, 'POST /dashboard/search:failed', err); return res.status(500).json({ ok: false, error: (err as Error).message, requestId: requestId(req) }); } });
 
 router.get('/cycles/folders', async (req: Request, res: Response) => { const connections = resolveConnections(req); log(req, 'GET /cycles/folders:start', { connections: connectionSummary(connections) }); const conn = selectQmetryConnection(connections, queryString(req.query.connectionId)); if (conn) { try { const cfg = qmetryConfigFromConnection(conn); const folders = await fetchProjectFolders(cfg); const cycles = await fetchProjectCycles(cfg); log(req, 'GET /cycles/folders:qmetry result', { connection: conn.name, folders: folders.length, cycles: cycles.length }); return res.json({ source: 'qmetry-live', connection: conn.name, connectionId: conn.id, folders, cycles }); } catch (err) { logError(req, `GET /cycles/folders:qmetry failed for ${conn.name}`, err); } } const cached = await ensureDataset(req, connections, undefined, 'cached'); if (!cached) return res.json({ source: 'imported', folders: [{ id: 'all', name: 'All imported cycles' }], cycles: [] }); const seen = new Map<string, string>(); for (const e of cached.dataset.executions) if (e.cycleKey && !seen.has(e.cycleKey)) seen.set(e.cycleKey, e.cycleName || e.cycleKey); res.json({ source: 'imported', folders: [{ id: 'all', name: 'All imported cycles' }], cycles: [...seen.entries()].map(([id, name]) => ({ id, name })) }); });
 router.get('/cycles/by-folder', async (req: Request, res: Response) => { const connections = resolveConnections(req); const folderId = queryString(req.query.folderId, 'all') || 'all'; const conn = selectQmetryConnection(connections, queryString(req.query.connectionId)); const filter = parseFilterParams(req); const scope = apiScopeFromFilter(filter); log(req, 'GET /cycles/by-folder:start', { folderId, connection: conn?.name || 'none', startDate: filter.startDate, endDate: filter.endDate, project: filter.project }); if (conn) { try { const result = await fetchFolderCycleHealth(qmetryConfigFromConnection(conn), folderId === 'all' ? undefined : folderId, scope); log(req, 'GET /cycles/by-folder:qmetry result', { connection: conn.name, folderId, cycles: result.cycles.length, error: result.error }); return res.json({ source: 'qmetry-live', connection: conn.name, connectionId: conn.id, folderId, cycles: result.cycles, warnings: result.error ? [result.error] : [] }); } catch (err) { logError(req, `GET /cycles/by-folder:qmetry failed for ${conn.name}`, err); } } const cached = await ensureDataset(req, connections, undefined, 'cached'); if (!cached) return res.json({ source: 'imported', folderId, cycles: [] }); const payload = refilterDashboard(cached.dataset, filter); res.json({ source: 'imported', folderId, cycles: payload.cycles }); });
@@ -148,7 +196,7 @@ router.get('/integrations', (req: Request, res: Response) => { const summary = i
 router.post('/integrations/test', async (req: Request, res: Response) => { const connections = resolveConnections(req); log(req, 'POST /integrations/test:start', { connections: connectionSummary(connections) }); try { const dataset = await buildDataset(INPUT_DIR, CONFIG_DIR, connections, { liveSync: true }); log(req, 'POST /integrations/test:done', { executions: dataset.executions.length, issues: dataset.issues.length, uat: dataset.uat.length, warnings: dataset.meta.warnings }); res.json({ ok: true, executions: dataset.executions.length, issues: dataset.issues.length, uat: dataset.uat.length, warnings: dataset.meta.warnings }); } catch (err) { logError(req, 'POST /integrations/test:failed', err); res.status(500).json({ ok: false, error: (err as Error).message, requestId: requestId(req) }); } });
 router.post('/integrations/sync', async (req: Request, res: Response) => { const connections = resolveConnections(req); const { startDate, endDate, search, result, project } = req.body as Partial<FilterParams>; const filter: FilterParams = { startDate, endDate, search, result: result || 'all', project }; const apiScope = apiScopeFromFilter(filter); log(req, 'POST /integrations/sync:start', { filter, apiScope, connections: connectionSummary(connections) }); try { const sync = await refreshGeneratedOutputs(req, connections, apiScope, filter, 'live'); return res.json({ ok: true, ...sync, requestId: requestId(req) }); } catch (err) { logError(req, 'POST /integrations/sync:failed', err); return res.status(500).json({ ok: false, error: (err as Error).message, requestId: requestId(req) }); } });
 router.post('/integrations/test-connection', async (req: Request, res: Response) => { const { type, connection } = req.body as { type?: 'jira' | 'qmetry'; connection?: JiraConnectionInput | QmetryConnectionInput }; if (!type || !connection) return res.status(400).json({ ok: false, error: 'type and connection are required', requestId: requestId(req) }); try { if (type === 'jira') { const { issues, error } = await fetchJiraIssues({ ...jiraConfigFromConnection(connection as JiraConnectionInput), pageSize: 5 }); if (error) return res.json({ ok: false, error }); return res.json({ ok: true, count: issues.length }); } const qmetryCfg = qmetryConfigFromConnection(connection as QmetryConnectionInput); const cycles = await searchQmetryTestCycles(qmetryCfg, { startAt: 0, maxResults: 5 }); if (cycles.error) return res.json({ ok: false, error: cycles.error }); return res.json({ ok: true, count: cycles.total, sampleCycles: cycles.cycles }); } catch (err) { return res.status(500).json({ ok: false, error: (err as Error).message, requestId: requestId(req) }); } });
-router.post('/input/sync', async (req: Request, res: Response) => { const { startDate, endDate, search, result, project } = req.body as Partial<FilterParams>; const filter: FilterParams = { startDate, endDate, search, result: result || 'all', project }; const apiScope = apiScopeFromFilter(filter); log(req, 'POST /input/sync:start', { filter, apiScope, mode: 'import-only' }); try { const sync = await refreshGeneratedOutputs(req, emptyConnections(), apiScope, filter, 'import-only'); return res.json({ ok: true, ...sync, requestId: requestId(req) }); } catch (err) { logError(req, 'POST /input/sync:failed', err); return res.status(500).json({ ok: false, error: (err as Error).message, requestId: requestId(req) }); } });
+router.post('/input/sync', async (req: Request, res: Response) => { const { startDate, endDate, search, result, project } = req.body as Partial<FilterParams>; const filter: FilterParams = { startDate, endDate, search, result: result || 'all', project }; log(req, 'POST /input/sync:start', { filter, mode: 'import-only' }); try { const sync = await refreshGeneratedOutputs(req, emptyConnections(), undefined, filter, 'import-only'); return res.json({ ok: true, ...sync, requestId: requestId(req) }); } catch (err) { logError(req, 'POST /input/sync:failed', err); return res.status(500).json({ ok: false, error: (err as Error).message, requestId: requestId(req) }); } });
 router.post('/upload', upload.single('file'), (req: Request, res: Response) => { if (!req.file) return res.status(400).json({ error: 'No file uploaded', requestId: requestId(req) }); log(req, 'POST /upload:done', { filename: req.file.filename, size: req.file.size }); res.json({ ok: true, filename: req.file.filename, path: req.file.path, message: 'File staged. Click Sync imported data to update dashboard data.' }); });
 router.get('/input/files', (_req: Request, res: Response) => { if (!fs.existsSync(INPUT_DIR)) return res.json([]); const files = fs.readdirSync(INPUT_DIR).filter((f) => !f.startsWith('.')).map((f) => { const stat = fs.statSync(path.join(INPUT_DIR, f)); return { name: f, size: stat.size, modifiedAt: stat.mtime.toISOString() }; }); res.json(files); });
 router.delete('/input/:filename', async (req: Request, res: Response) => { const filename = path.basename(req.params.filename); const filePath = path.join(INPUT_DIR, filename); if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'File not found', requestId: requestId(req) }); fs.unlinkSync(filePath); log(req, 'DELETE /input:file removed', { filename, mode: 'import-only' }); try { const refresh = await refreshGeneratedOutputs(req, emptyConnections(), undefined, {}, 'import-only'); return res.json({ ok: true, filename, ...refresh }); } catch (err) { const removed = clearOutputFiles(); logError(req, 'DELETE /input:refresh failed; cleared stale outputs', err, { filename, removed }); return res.json({ ok: true, filename, rebuilt: false, rowCounts: { executions: 0, issues: 0, uat: 0 }, removed, warnings: [`File removed, but imported data refresh failed: ${(err as Error).message}`] }); } });

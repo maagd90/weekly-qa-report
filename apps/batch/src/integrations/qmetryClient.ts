@@ -219,7 +219,7 @@ function executionInScope(row: ExecutionRow, scope?: ApiFetchScope, allowUndated
   if (scope?.project && scope.project !== 'all' && !sameProject(row.project, scope.project)) return false;
   if (!scope?.startDate && !scope?.endDate) return true;
   if (row.executedAt) return dateInScope(row.executedAt, scope);
-  return allowUndatedScopedCycleRows || row.result === 'NE';
+  return allowUndatedScopedCycleRows;
 }
 
 function compactWarnings(warnings: string[]): string {
@@ -386,7 +386,11 @@ export async function fetchQmetryExecutions(cfg: QmetryIntegrationConfig, scope?
     if (discovered.error) return { executions: [], cycleMeta: new Map(), error: `QMetry test cycle search failed: ${discovered.error}` };
     cycles = discovered.cycles;
   }
-  if (!cycles.length) return { executions: [], cycleMeta: new Map(), error: 'No QMetry test cycles found for the configured Project ID / Folder ID.' };
+  if (!cycles.length) {
+    const project = cfg.projectKey || cfg.projectId || 'unknown project';
+    const range = scope?.startDate || scope?.endDate ? ` in ${scope.startDate || 'any'}..${scope.endDate || 'any'}` : '';
+    return { executions: [], cycleMeta: new Map(), error: `No QMetry test cycles found for ${project}${range}. Check Project ID, Folder ID, and session/auth headers.` };
+  }
   const all: ExecutionRow[] = [];
   const cycleMeta = new Map<string, string>();
   const warnings: string[] = [];
@@ -395,6 +399,9 @@ export async function fetchQmetryExecutions(cfg: QmetryIntegrationConfig, scope?
     if (result.error) warnings.push(`${cycle.name || cycle.id}: ${result.error}`);
     all.push(...result.executions);
     cycleMeta.set(result.cycleKey || cycle.key || cycle.id, result.cycleName || cycle.name || cycle.id);
+  }
+  if (!all.length && !warnings.length) {
+    warnings.push(`QMetry cycles were found, but no executions were parsed for ${cfg.projectKey || cfg.projectId || 'the configured project'}. Check the testcase search path and session permissions.`);
   }
   const error = compactWarnings(warnings);
   return error ? { executions: all, cycleMeta, error } : { executions: all, cycleMeta };
