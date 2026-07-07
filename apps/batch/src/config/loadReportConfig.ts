@@ -21,7 +21,7 @@ export interface ReportConfig {
 const DEFAULTS: ReportConfig = {
   provider: DEFAULT_LLM_PROVIDER,
   model: defaultModelForProvider(DEFAULT_LLM_PROVIDER),
-  maxTokens: 768,
+  maxTokens: 4096,
 };
 
 function providerModelEnv(provider: LlmProvider): string | undefined {
