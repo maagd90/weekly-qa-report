@@ -54,6 +54,8 @@ export function QaFilterBar(props: QaFilterBarProps) {
     isSearchingApis = false,
   } = props;
 
+  const dataRangeLabel = dataMin || dataMax ? `Data range ${dataMin || 'any'} → ${dataMax || 'any'}` : 'No data range limit';
+
   return (
     <div className="max-w-qa mx-auto px-8 py-3.5 flex items-center gap-[18px] flex-wrap border-b border-[#e7e3d9] print:hidden">
       <div className="flex items-center gap-2.5">
@@ -68,15 +70,15 @@ export function QaFilterBar(props: QaFilterBarProps) {
 
       <div className="flex items-center gap-2">
         <span className="font-mono-qa text-[10px] tracking-wider uppercase text-qa-muted-light">Period</span>
-        <input type="date" value={startDate} min={dataMin || undefined} max={dataMax || undefined} onChange={(e) => onStartDateChange(e.target.value)} className={inputDateClass} />
+        <input type="date" value={startDate} onChange={(e) => onStartDateChange(e.target.value)} title={dataRangeLabel} className={inputDateClass} />
         <span className="text-qa-muted-light text-xs">→</span>
-        <input type="date" value={endDate} min={dataMin || undefined} max={dataMax || undefined} onChange={(e) => onEndDateChange(e.target.value)} className={inputDateClass} />
+        <input type="date" value={endDate} onChange={(e) => onEndDateChange(e.target.value)} title={dataRangeLabel} className={inputDateClass} />
         {onSearchApis && (
           <button
             type="button"
             onClick={onSearchApis}
             disabled={isSearchingApis || !startDate || !endDate}
-            title="Refresh live test data using the selected period"
+            title="Refresh test data using the selected period"
             className="font-mono-qa text-[10px] font-semibold tracking-wider uppercase px-3 py-[7px] border border-qa-ink bg-qa-ink text-[#F5F3ED] cursor-pointer disabled:opacity-50 disabled:cursor-wait"
           >
             {isSearchingApis ? 'Searching...' : searchApisLabel}
