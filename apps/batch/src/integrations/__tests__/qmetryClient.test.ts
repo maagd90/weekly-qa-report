@@ -2,16 +2,10 @@ import assert from 'assert';
 import { fetchQmetryExecutions } from '../qmetryClient';
 import type { QmetryIntegrationConfig } from '../../config/loadIntegrations';
 
-interface FetchCall {
-  url: string;
-  init: RequestInit;
-}
+interface FetchCall { url: string; init: RequestInit }
 
 function jsonResponse(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { 'content-type': 'application/json' },
-  });
+  return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 }
 
 function qmetryConfig(): QmetryIntegrationConfig {
@@ -28,7 +22,7 @@ function qmetryConfig(): QmetryIntegrationConfig {
     testCasesSearchPath: '/testcycles/{cycleId}/testcases/search',
     testCasesSearchBody: null,
     usePostSearch: true,
-    testCaseFields: 'seqNo,key,versionNo,summary,priority,status,environment,executionResult,executionAssignee,executedOn,executedBy,lastModified,build',
+    testCaseFields: 'seqNo,key,versionNo,summary,priority,status,environment,executionResult,executionAssignee,executedBy,build',
     cycleIds: [],
     pageSize: 50,
     maxPages: 5,
@@ -45,46 +39,14 @@ function installFetchMock(calls: FetchCall[]): void {
 
     if (url.includes('/testcases/search')) {
       return jsonResponse({
+        warningMessages: ['Provided fields executedOn,lastModified are invalid'],
         data: [
-          {
-            key: 'DLM-TC-1',
-            executionResult: { name: 'Pass' },
-            executedOn: '02/Jul/2026 10:00',
-            lastModified: '03/Jul/2026 11:30',
-            executedBy: { displayName: 'Tester One' },
-          },
-          {
-            key: 'DLM-TC-2',
-            executionResult: { name: 'Not Executed' },
-            executedOn: null,
-            lastModified: '10/Jan/2026 09:00',
-            executionAssignee: { displayName: 'Tester Two' },
-          },
-          {
-            key: 'DLM-TC-3',
-            executionResult: { name: 'Fail' },
-            executedOn: null,
-            lastModified: '04/Jul/2026 08:00',
-            executionAssignee: { displayName: 'Tester Three' },
-          },
-          {
-            key: 'DLM-TC-4',
-            executionResult: { name: 'Not Applicable' },
-            executedOn: 1782950400,
-            lastModified: '05/Jul/2026 08:00',
-          },
-          {
-            key: 'DLM-TC-5',
-            executionResult: { name: 'Blocked' },
-            executedOn: 1783036800000,
-            lastModified: '05/Jul/2026 08:00',
-          },
-          {
-            key: 'DLM-TC-6',
-            executionResult: { name: 'Pass' },
-            executedOn: '04/Jul/2026 12:15',
-            lastModified: '05/Jul/2026 08:00',
-          },
+          { key: 'DLM-TC-1', executionResult: { name: 'Pass' }, executedOn: '02/Jul/2026 10:00', lastModified: '03/Jul/2026 11:30', executedBy: { displayName: 'Tester One' } },
+          { key: 'DLM-TC-2', executionResult: { name: 'Not Executed' }, executedOn: null, lastModified: '10/Jan/2026 09:00', executionAssignee: { displayName: 'Tester Two' } },
+          { key: 'DLM-TC-3', executionResult: { name: 'Fail' }, executionAssignee: { displayName: 'Tester Three' } },
+          { key: 'DLM-TC-4', executionResult: { name: 'Not Applicable' }, executedOn: 1782950400, lastModified: '05/Jul/2026 08:00' },
+          { key: 'DLM-TC-5', executionResult: { name: 'Blocked' }, executedOn: 1783036800000, lastModified: '05/Jul/2026 08:00' },
+          { key: 'DLM-TC-6', executionResult: { name: 'Pass' }, executedOn: '04/Jul/2026 12:15', lastModified: '05/Jul/2026 08:00' },
         ],
         total: 6,
       });
@@ -92,18 +54,7 @@ function installFetchMock(calls: FetchCall[]): void {
 
     if (url.includes('/testcycles/search')) {
       return jsonResponse({
-        data: [
-          {
-            id: 'eOwYfJOGUl',
-            key: 'DLM-TR-59',
-            summary: 'July execution cycle',
-            updated: { updatedOn: '05/Jul/2026 14:18' },
-            plannedStartDate: '2026-07-01',
-            plannedEndDate: '2026-07-07',
-            testcaseExecutionProgress: [{ name: 'Not Executed', count: 1 }],
-            projectId: 19703,
-          },
-        ],
+        data: [{ id: 'eOwYfJOGUl', key: 'DLM-TR-59', summary: 'July execution cycle', updated: { updatedOn: '05/Jul/2026 14:18' }, plannedStartDate: '2026-07-01', plannedEndDate: '2026-07-07', testcaseExecutionProgress: [{ name: 'Not Executed', count: 1 }], projectId: 19703 }],
         total: 1,
       });
     }
@@ -121,12 +72,7 @@ async function main(): Promise<void> {
   const calls: FetchCall[] = [];
   installFetchMock(calls);
 
-  const result = await fetchQmetryExecutions(qmetryConfig(), {
-    startDate: '2026-07-01',
-    endDate: '2026-07-07',
-    project: 'DLM',
-  });
-
+  const result = await fetchQmetryExecutions(qmetryConfig(), { startDate: '2026-07-01', endDate: '2026-07-07', project: 'DLM' });
   assert.equal(result.error, undefined);
 
   const testCaseCall = calls.find((call) => call.url.includes('/testcases/search'));
@@ -134,6 +80,7 @@ async function main(): Promise<void> {
   assert.equal(testCaseCall.init.method, 'POST');
   assert.deepEqual(bodyJson(testCaseCall), { filter: { projectId: 19703 } });
   assert.match(testCaseCall.url, /fields=/, 'testcase request should include fields parameter');
+  assert.doesNotMatch(decodeURIComponent(testCaseCall.url), /executedOn|lastModified/, 'unsupported QMetry fields should not be requested');
 
   const cycleSearchCall = calls.find((call) => call.url.includes('/testcycles/search') && !call.url.includes('/testcases/search'));
   assert.ok(cycleSearchCall, 'expected testcycle search request');
@@ -141,7 +88,7 @@ async function main(): Promise<void> {
   assert.deepEqual(bodyJson(cycleSearchCall), { filter: { projectId: 19703, folderId: '96225' } });
 
   const byKey = new Map(result.executions.map((row) => [row.caseKey, row]));
-
+  assert.equal(byKey.size, 6, 'all rows from a date-scoped cycle should survive even if QMetry omits executedOn');
   assert.equal(byKey.get('DLM-TC-1')?.result, 'PASS', 'executionResult object should unwrap to PASS');
   assert.equal(byKey.get('DLM-TC-1')?.executedAt, '2026-07-02');
 
@@ -151,7 +98,11 @@ async function main(): Promise<void> {
   assert.equal(notExecuted.updatedAt, '2026-01-10');
   assert.equal(notExecuted.result, 'NE');
 
-  assert.equal(byKey.has('DLM-TC-3'), false, 'non-NE rows without executedOn should not survive date filters');
+  const failedWithoutDate = byKey.get('DLM-TC-3');
+  assert.ok(failedWithoutDate, 'non-NE rows should survive when their parent cycle is date-scoped');
+  assert.equal(failedWithoutDate.executedAt, null, 'executedAt must remain null when QMetry omits executedOn');
+  assert.equal(failedWithoutDate.result, 'FAIL');
+
   assert.equal(byKey.get('DLM-TC-4')?.executedAt, '2026-07-02', 'epoch seconds should parse');
   assert.equal(byKey.get('DLM-TC-5')?.executedAt, '2026-07-03', 'epoch milliseconds should parse');
   assert.equal(byKey.get('DLM-TC-6')?.executedAt, '2026-07-04', 'dd-MMM date should parse');
@@ -159,7 +110,4 @@ async function main(): Promise<void> {
   console.log('qmetryClient tests passed');
 }
 
-main().catch((err) => {
-  console.error(err);
-  process.exit(1);
-});
+main().catch((err) => { console.error(err); process.exit(1); });
