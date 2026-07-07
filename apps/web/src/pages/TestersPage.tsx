@@ -30,7 +30,12 @@ export function TestersPage({ dashboard, kpiStyle, filterParams }: TestersPagePr
       title="Tester Performance"
       subtitle={`by Executed By · ${testers.length} testers`}
       intro="Date edits do not call JIRA/QMetry. Click Apply period to refilter the cached dataset only."
-      actions={(
+    >
+      <div className="mb-4 flex items-center justify-between gap-3 flex-wrap">
+        <div className="font-mono-qa text-[10.5px] text-qa-muted-light">
+          Cached scope: {projectLabel} · {periodLabel}
+          {applyPeriod.isError && <span className="text-[#a13d2c]"> · {(applyPeriod.error as Error).message}</span>}
+        </div>
         <button
           type="button"
           onClick={() => applyPeriod.mutate()}
@@ -39,11 +44,6 @@ export function TestersPage({ dashboard, kpiStyle, filterParams }: TestersPagePr
         >
           {applyPeriod.isPending ? 'Applying...' : 'Apply period'}
         </button>
-      )}
-    >
-      <div className="mb-4 font-mono-qa text-[10.5px] text-qa-muted-light">
-        Cached scope: {projectLabel} · {periodLabel}
-        {applyPeriod.isError && <span className="text-[#a13d2c]"> · {(applyPeriod.error as Error).message}</span>}
       </div>
       <TestersPerformanceSection dashboard={activeDashboard} kpiStyle={kpiStyle} />
     </QaPageShell>
