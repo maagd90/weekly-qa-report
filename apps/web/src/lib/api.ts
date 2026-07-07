@@ -20,6 +20,8 @@ const JIRA_CONNECTIONS_STORAGE = 'qa_dashboard_jira_connections';
 const QMETRY_CONNECTIONS_STORAGE = 'qa_dashboard_qmetry_connections';
 const LLM_SELECTION_STORAGE = 'qa_dashboard_llm_selection';
 const ACTIVE_PROJECT_STORAGE = 'qa_dashboard_active_project';
+const ACTIVE_START_DATE_STORAGE = 'qa_dashboard_active_start_date';
+const ACTIVE_END_DATE_STORAGE = 'qa_dashboard_active_end_date';
 const REPORT_BRANDING_STORAGE = 'qa_dashboard_report_branding';
 
 type RequestMeta = { requestId: string; startedAt: number };
@@ -51,11 +53,14 @@ function readStoredObject<T>(key: string, fallback: T): T { try { const raw = wi
 function writeStoredObject<T>(key: string, value: T): void { try { window.localStorage.setItem(key, JSON.stringify(value)); } catch { /* storage unavailable */ } }
 function normalizeJiraConnection(c: JiraConnectionInput): JiraConnectionInput { return { ...c, deploymentType: c.deploymentType || 'on-prem', enabled: c.enabled !== false, syncIssues: c.syncIssues !== false }; }
 function normalizeQmetryConnection(c: QmetryConnectionInput): QmetryConnectionInput { return { ...c, enabled: c.enabled !== false, syncExecutions: c.syncExecutions !== false, cycleIds: [] }; }
+function validDate(value?: string): string { return /^\d{4}-\d{2}-\d{2}$/.test(value || '') ? value! : ''; }
 
 export function getReportBranding(): ReportBranding { return readStoredObject<ReportBranding>(REPORT_BRANDING_STORAGE, { logoUrl: '', logoAlt: 'Report logo', title: 'QA Sprint Report', subtitle: '' }); }
 export function setReportBranding(branding: ReportBranding): void { writeStoredObject(REPORT_BRANDING_STORAGE, { logoUrl: branding.logoUrl?.trim() || '', logoAlt: branding.logoAlt?.trim() || 'Report logo', title: branding.title?.trim() || 'QA Sprint Report', subtitle: branding.subtitle?.trim() || '' }); }
 export function getActiveProject(): string { try { return window.localStorage.getItem(ACTIVE_PROJECT_STORAGE) || 'all'; } catch { return 'all'; } }
 export function setActiveProject(project: string): void { try { window.localStorage.setItem(ACTIVE_PROJECT_STORAGE, project || 'all'); } catch { /* storage unavailable */ } }
+export function getActiveDateRange(): { startDate?: string; endDate?: string } { try { const startDate = validDate(window.localStorage.getItem(ACTIVE_START_DATE_STORAGE) || ''); const endDate = validDate(window.localStorage.getItem(ACTIVE_END_DATE_STORAGE) || ''); return { ...(startDate ? { startDate } : {}), ...(endDate ? { endDate } : {}) }; } catch { return {}; } }
+export function setActiveDateRange(startDate?: string, endDate?: string): void { try { if (validDate(startDate)) window.localStorage.setItem(ACTIVE_START_DATE_STORAGE, startDate!); if (validDate(endDate)) window.localStorage.setItem(ACTIVE_END_DATE_STORAGE, endDate!); } catch { /* storage unavailable */ } }
 export function getUserLlmKey(provider: LlmProvider): string { const keys = readStoredObject<Record<string, string>>(LLM_KEYS_STORAGE, {}); if (keys[provider]) return keys[provider]; if (provider === 'anthropic') { try { return window.localStorage.getItem(ANTHROPIC_KEY_STORAGE) || ''; } catch { return ''; } } return ''; }
 export function setUserLlmKey(provider: LlmProvider, value: string): void { const keys = readStoredObject<Record<string, string>>(LLM_KEYS_STORAGE, {}); const clean = value.trim(); if (clean) keys[provider] = clean; else delete keys[provider]; writeStoredObject(LLM_KEYS_STORAGE, keys); if (provider === 'anthropic') { try { if (clean) window.localStorage.setItem(ANTHROPIC_KEY_STORAGE, clean); else window.localStorage.removeItem(ANTHROPIC_KEY_STORAGE); } catch { /* storage unavailable */ } } }
 export function getUserLlmSelection(): LlmSelectionInput { const stored = readStoredObject<Partial<LlmSelectionInput>>(LLM_SELECTION_STORAGE, {}); const provider = normalizeProvider(stored.provider); const model = stored.model && LLM_MODELS[provider].includes(stored.model) ? stored.model : LLM_MODELS[provider][0]; const apiKey = getUserLlmKey(provider); return { provider, model, baseUrl: stored.baseUrl || undefined, apiKey: apiKey || undefined }; }
@@ -82,7 +87,7 @@ api.interceptors.request.use((config) => {
   const jira = getJiraConnections();
   const qmetry = getQmetryConnections();
   if (jira.length || qmetry.length) config.headers['x-user-connections'] = JSON.stringify({ jira, qmetry } satisfies UserConnections);
-  logApi('request', { requestId: meta.requestId, method: (config.method || 'GET').toUpperCase(), url: `${config.baseURL || ''}${config.url || ''}`, activeProject: getActiveProject(), llmProvider: selectedLlm.provider, hasSelectedLlmKey: Boolean(selectedLlm.apiKey), hasReportLogo: Boolean(getReportBranding().logoUrl), jiraConnections: jira.length, qmetryConnections: qmetry.length, params: safeJson(config.params), body: safeJson(config.data) });
+  logApi('request', { requestId: meta.requestId, method: (config.method || 'GET').toUpperCase(), url: `${config.baseURL || ''}${config.url || ''}`, activeProject: getActiveProject(), activeDateRange: getActiveDateRange(), llmProvider: selectedLlm.provider, hasSelectedLlmKey: Boolean(selectedLlm.apiKey), hasReportLogo: Boolean(getReportBranding().logoUrl), jiraConnections: jira.length, qmetryConnections: qmetry.length, params: safeJson(config.params), body: safeJson(config.data) });
   return config;
 });
 
@@ -109,7 +114,7 @@ export const batchApi = {
   searchDashboardByDates: (filter: Partial<FilterParams>) => api.post('/dashboard/search', filter, { timeout: 240_000 }).then((r) => (r.data as DashboardSearchResult).dashboard).catch((err) => { throw new Error(apiErrorMessage(err, 'Dashboard API search failed')); }),
   getReport: () => api.get('/report').then((r) => r.data).catch((err) => { if (axios.isAxiosError(err) && err.response?.status === 404) return null; throw err; }),
   upload: (file: File) => { const form = new FormData(); form.append('file', file); return api.post('/upload', form, { headers: { 'Content-Type': 'multipart/form-data' } }).then((r) => r.data); },
-  syncInputFiles: () => api.post('/input/sync', {}, { timeout: 180_000 }).then((r) => r.data as SyncInputResult).catch((err) => { throw new Error(apiErrorMessage(err, 'Import sync failed')); }),
+  syncInputFiles: (filter?: Partial<FilterParams>) => api.post('/input/sync', filter || {}, { timeout: 180_000 }).then((r) => r.data as SyncInputResult).catch((err) => { throw new Error(apiErrorMessage(err, 'Import sync failed')); }),
   syncLiveData: (filter?: Partial<FilterParams>) => api.post('/integrations/sync', filter || {}, { timeout: 240_000 }).then((r) => r.data as SyncInputResult).catch((err) => { throw new Error(apiErrorMessage(err, 'JIRA/QMetry sync failed')); }),
   listInputFiles: () => api.get('/input/files').then((r) => r.data as { name: string; size: number; modifiedAt: string }[]),
   deleteInputFile: (filename: string) => api.delete(`/input/${encodeURIComponent(filename)}`).then((r) => r.data),
