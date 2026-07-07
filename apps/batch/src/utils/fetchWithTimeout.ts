@@ -6,6 +6,9 @@ const DEFAULT_MS = 30_000;
 const DEBUG_LOG_FILE = 'integration-debug.jsonl';
 const MAX_PREVIEW = 2_000;
 
+type FetchHeaders = RequestInit['headers'];
+type FetchBody = RequestInit['body'];
+
 let cachedDispatcherKey = '';
 let cachedDispatcher: Dispatcher | undefined;
 
@@ -87,16 +90,16 @@ function redactUrl(rawUrl: string): string {
   } catch { return rawUrl; }
 }
 
-function headerObject(headers?: HeadersInit): Record<string, unknown> {
+function headerObject(headers?: FetchHeaders): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   if (!headers) return out;
   if (headers instanceof Headers) headers.forEach((v, k) => { out[k] = redactValue(v, k); });
   else if (Array.isArray(headers)) headers.forEach(([k, v]) => { out[k] = redactValue(v, k); });
-  else Object.entries(headers).forEach(([k, v]) => { out[k] = redactValue(v, k); });
+  else Object.entries(headers as Record<string, string>).forEach(([k, v]) => { out[k] = redactValue(v, k); });
   return out;
 }
 
-function previewBody(body: BodyInit | null | undefined): unknown {
+function previewBody(body: FetchBody | null | undefined): unknown {
   if (body === null || body === undefined) return undefined;
   if (typeof body !== 'string') return `[${body.constructor?.name || 'Body'}]`;
   const raw = body.length > MAX_PREVIEW ? `${body.slice(0, MAX_PREVIEW)}...<truncated>` : body;
@@ -130,13 +133,13 @@ function methodOf(init: RequestInit): string {
   return (init.method || 'GET').toUpperCase();
 }
 
-function removeHeader(headers: HeadersInit | undefined, name: string): HeadersInit | undefined {
+function removeHeader(headers: FetchHeaders | undefined, name: string): FetchHeaders | undefined {
   if (!headers) return headers;
   const lower = name.toLowerCase();
   if (headers instanceof Headers) { const h = new Headers(headers); h.delete(name); return h; }
   if (Array.isArray(headers)) return headers.filter(([k]) => k.toLowerCase() !== lower);
   const copy: Record<string, string> = {};
-  for (const [k, v] of Object.entries(headers)) if (k.toLowerCase() !== lower) copy[k] = String(v);
+  for (const [k, v] of Object.entries(headers as Record<string, string>)) if (k.toLowerCase() !== lower) copy[k] = String(v);
   return copy;
 }
 
