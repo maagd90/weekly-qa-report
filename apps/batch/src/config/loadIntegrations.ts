@@ -93,7 +93,7 @@ const DEFAULTS: IntegrationsConfig = {
     testCyclesSearchBody: null,
     testCasesSearchPath: '/testcycles/{cycleId}/testcases/search',
     testCasesSearchBody: null,
-    usePostSearch: false,
+    usePostSearch: true,
     testCaseFields: 'seqNo,key,versionNo,summary,priority,status,environment,executionResult,executionAssignee,executedOn,executedBy,lastModified,build',
     cycleIds: [],
     pageSize: 50,
@@ -113,6 +113,7 @@ function mergeQmetry(raw: Partial<QmetryIntegrationConfig> | undefined): QmetryI
     testCyclesSearchPath: cfg.testCyclesSearchPath || QMETRY_TEST_CYCLES_SEARCH_PATH,
     testCasesSearchPath: cfg.testCasesSearchPath || DEFAULTS.qmetry.testCasesSearchPath,
     cycleIds: Array.isArray(cfg.cycleIds) ? cfg.cycleIds : [],
+    usePostSearch: true,
   };
 }
 
@@ -214,7 +215,7 @@ export function qmetryConfigFromConnection(conn: QmetryConnectionInput): QmetryI
     testCyclesSearchBody: qmetryCycleSearchBody(projectId, conn.folderId),
     cycleIds: [],
     testCasesSearchBody: null,
-    usePostSearch: false,
+    usePostSearch: true,
   };
 }
 
