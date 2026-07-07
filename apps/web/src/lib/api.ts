@@ -11,6 +11,7 @@ import type {
   QmetryConnectionInput,
   UserConnections,
 } from 'qa-dashboard-batch';
+import { canonicalProjectOrAll, canonicalProjectOrUndefined, uniqueCanonicalProjects } from './projectKey';
 
 const api = axios.create({ baseURL: '/api' });
 
@@ -51,14 +52,18 @@ function logApi(event: string, data: Record<string, unknown>): void { console.lo
 function normalizeProvider(value: unknown): LlmProvider { return value === 'openai' || value === 'gemini' || value === 'openai-compatible' || value === 'anthropic' ? value : 'anthropic'; }
 function readStoredObject<T>(key: string, fallback: T): T { try { const raw = window.localStorage.getItem(key); return raw ? (JSON.parse(raw) as T) : fallback; } catch { return fallback; } }
 function writeStoredObject<T>(key: string, value: T): void { try { window.localStorage.setItem(key, JSON.stringify(value)); } catch { /* storage unavailable */ } }
-function normalizeJiraConnection(c: JiraConnectionInput): JiraConnectionInput { return { ...c, deploymentType: c.deploymentType || 'on-prem', enabled: c.enabled !== false, syncIssues: c.syncIssues !== false }; }
-function normalizeQmetryConnection(c: QmetryConnectionInput): QmetryConnectionInput { return { ...c, enabled: c.enabled !== false, syncExecutions: c.syncExecutions !== false, cycleIds: [] }; }
+function projectJql(keys: string[]): string { return keys.length ? `project in (${keys.join(',')}) AND issuetype in (Story, Bug) ORDER BY updated DESC` : ''; }
+function canonicalizeJql(jql?: string): string { return (jql || '').replace(/DN4_FT\s*-\s*Supply\s*&\s*DMC/gi, 'DLM').replace(/Supply\s*&\s*DMC/gi, 'DLM').trim(); }
+function normalizeJiraConnection(c: JiraConnectionInput): JiraConnectionInput { const projectKeys = uniqueCanonicalProjects(c.projectKeys || []); const jql = canonicalizeJql(c.jql) || projectJql(projectKeys); return { ...c, deploymentType: c.deploymentType || 'on-prem', enabled: c.enabled !== false, syncIssues: c.syncIssues !== false, projectKeys, jql }; }
+function normalizeQmetryConnection(c: QmetryConnectionInput): QmetryConnectionInput { return { ...c, enabled: c.enabled !== false, syncExecutions: c.syncExecutions !== false, projectKey: canonicalProjectOrUndefined(c.projectKey) || '', cycleIds: [] }; }
+function normalizeFilter(filter?: Partial<FilterParams>): Partial<FilterParams> | undefined { if (!filter) return undefined; return { ...filter, project: canonicalProjectOrUndefined(filter.project) }; }
+function normalizeGenerate(params: GenerateParams): GenerateParams { return { ...params, project: canonicalProjectOrUndefined(params.project) }; }
 function validDate(value?: string): string { return /^\d{4}-\d{2}-\d{2}$/.test(value || '') ? value! : ''; }
 
 export function getReportBranding(): ReportBranding { return readStoredObject<ReportBranding>(REPORT_BRANDING_STORAGE, { logoUrl: '', logoAlt: 'Report logo', title: 'QA Sprint Report', subtitle: '' }); }
 export function setReportBranding(branding: ReportBranding): void { writeStoredObject(REPORT_BRANDING_STORAGE, { logoUrl: branding.logoUrl?.trim() || '', logoAlt: branding.logoAlt?.trim() || 'Report logo', title: branding.title?.trim() || 'QA Sprint Report', subtitle: branding.subtitle?.trim() || '' }); }
-export function getActiveProject(): string { try { return window.localStorage.getItem(ACTIVE_PROJECT_STORAGE) || 'all'; } catch { return 'all'; } }
-export function setActiveProject(project: string): void { try { window.localStorage.setItem(ACTIVE_PROJECT_STORAGE, project || 'all'); } catch { /* storage unavailable */ } }
+export function getActiveProject(): string { try { return canonicalProjectOrAll(window.localStorage.getItem(ACTIVE_PROJECT_STORAGE) || 'all'); } catch { return 'all'; } }
+export function setActiveProject(project: string): void { try { window.localStorage.setItem(ACTIVE_PROJECT_STORAGE, canonicalProjectOrAll(project)); } catch { /* storage unavailable */ } }
 export function getActiveDateRange(): { startDate?: string; endDate?: string } { try { const startDate = validDate(window.localStorage.getItem(ACTIVE_START_DATE_STORAGE) || ''); const endDate = validDate(window.localStorage.getItem(ACTIVE_END_DATE_STORAGE) || ''); return { ...(startDate ? { startDate } : {}), ...(endDate ? { endDate } : {}) }; } catch { return {}; } }
 export function setActiveDateRange(startDate?: string, endDate?: string): void { try { if (validDate(startDate)) window.localStorage.setItem(ACTIVE_START_DATE_STORAGE, startDate!); if (validDate(endDate)) window.localStorage.setItem(ACTIVE_END_DATE_STORAGE, endDate!); } catch { /* storage unavailable */ } }
 export function getUserLlmKey(provider: LlmProvider): string { const keys = readStoredObject<Record<string, string>>(LLM_KEYS_STORAGE, {}); if (keys[provider]) return keys[provider]; if (provider === 'anthropic') { try { return window.localStorage.getItem(ANTHROPIC_KEY_STORAGE) || ''; } catch { return ''; } } return ''; }
@@ -109,28 +114,29 @@ export const batchApi = {
   getStatus: () => api.get('/status').then((r) => r.data as { apiKeyConfigured: boolean; jiraConfigured: boolean; llmProvidersConfigured?: Record<string, boolean> }),
   testLlm: (selection: LlmSelectionInput) => api.post('/llm/test', selection, { timeout: 35_000 }).then((r) => r.data as { ok: boolean; provider?: LlmProvider; providerLabel?: string; model?: string; route?: 'direct' | 'proxy'; elapsedMs?: number; error?: string; logs?: string[] }).catch((err) => { throw new Error(apiErrorMessage(err, 'LLM connectivity test failed')); }),
   testAnthropic: () => api.get('/anthropic/test', { timeout: 35_000 }).then((r) => r.data as { ok: boolean; model?: string; route?: 'direct' | 'proxy'; elapsedMs?: number; error?: string; logs?: string[] }).catch((err) => { throw new Error(apiErrorMessage(err, 'Anthropic connectivity test failed')); }),
-  generate: (params: GenerateParams) => api.post<GenerateResult>('/generate', params, { timeout: 300_000 }).then((r) => r.data).catch((err) => { throw new Error(apiErrorMessage(err, 'Report generation failed')); }),
-  getDashboard: (filter?: Partial<FilterParams>) => { const params = filter ? { startDate: filter.startDate, endDate: filter.endDate, search: filter.search, result: filter.result, project: filter.project } : undefined; return api.get('/dashboard', { params }).then((r) => r.data as DashboardPayload).catch((err) => { if (axios.isAxiosError(err) && err.response?.status === 404) return null; throw err; }); },
-  searchDashboardByDates: (filter: Partial<FilterParams>) => api.post('/dashboard/search', filter, { timeout: 240_000 }).then((r) => (r.data as DashboardSearchResult).dashboard).catch((err) => { throw new Error(apiErrorMessage(err, 'Dashboard API search failed')); }),
+  generate: (params: GenerateParams) => api.post<GenerateResult>('/generate', normalizeGenerate(params), { timeout: 300_000 }).then((r) => r.data).catch((err) => { throw new Error(apiErrorMessage(err, 'Report generation failed')); }),
+  getDashboard: (filter?: Partial<FilterParams>) => { const clean = normalizeFilter(filter); const params = clean ? { startDate: clean.startDate, endDate: clean.endDate, search: clean.search, result: clean.result, project: clean.project } : undefined; return api.get('/dashboard', { params }).then((r) => r.data as DashboardPayload).catch((err) => { if (axios.isAxiosError(err) && err.response?.status === 404) return null; throw err; }); },
+  searchDashboardByDates: (filter: Partial<FilterParams>) => api.post('/dashboard/search', normalizeFilter(filter), { timeout: 240_000 }).then((r) => (r.data as DashboardSearchResult).dashboard).catch((err) => { throw new Error(apiErrorMessage(err, 'Dashboard API search failed')); }),
   getReport: () => api.get('/report').then((r) => r.data).catch((err) => { if (axios.isAxiosError(err) && err.response?.status === 404) return null; throw err; }),
   upload: (file: File) => { const form = new FormData(); form.append('file', file); return api.post('/upload', form, { headers: { 'Content-Type': 'multipart/form-data' } }).then((r) => r.data); },
-  syncInputFiles: (filter?: Partial<FilterParams>) => api.post('/input/sync', filter || {}, { timeout: 180_000 }).then((r) => r.data as SyncInputResult).catch((err) => { throw new Error(apiErrorMessage(err, 'Import sync failed')); }),
-  syncLiveData: (filter?: Partial<FilterParams>) => api.post('/integrations/sync', filter || {}, { timeout: 240_000 }).then((r) => r.data as SyncInputResult).catch((err) => { throw new Error(apiErrorMessage(err, 'JIRA/QMetry sync failed')); }),
+  syncInputFiles: (filter?: Partial<FilterParams>) => api.post('/input/sync', normalizeFilter(filter) || {}, { timeout: 180_000 }).then((r) => r.data as SyncInputResult).catch((err) => { throw new Error(apiErrorMessage(err, 'Import sync failed')); }),
+  syncLiveData: (filter?: Partial<FilterParams>) => api.post('/integrations/sync', normalizeFilter(filter) || {}, { timeout: 240_000 }).then((r) => r.data as SyncInputResult).catch((err) => { throw new Error(apiErrorMessage(err, 'JIRA/QMetry sync failed')); }),
   listInputFiles: () => api.get('/input/files').then((r) => r.data as { name: string; size: number; modifiedAt: string }[]),
   deleteInputFile: (filename: string) => api.delete(`/input/${encodeURIComponent(filename)}`).then((r) => r.data),
   getIntegrations: () => api.get('/integrations').then((r) => r.data as IntegrationsStatus),
   testIntegrations: () => api.post('/integrations/test').then((r) => r.data),
-  testConnection: (type: 'jira' | 'qmetry', connection: JiraConnectionInput | QmetryConnectionInput) => api.post('/integrations/test-connection', { type, connection }, { timeout: 35_000 }).then((r) => r.data as { ok: boolean; count?: number; error?: string }).catch((err) => ({ ok: false, error: apiErrorMessage(err, 'Connection test failed') })),
+  testConnection: (type: 'jira' | 'qmetry', connection: JiraConnectionInput | QmetryConnectionInput) => api.post('/integrations/test-connection', { type, connection: type === 'jira' ? normalizeJiraConnection(connection as JiraConnectionInput) : normalizeQmetryConnection(connection as QmetryConnectionInput) }, { timeout: 35_000 }).then((r) => r.data as { ok: boolean; count?: number; error?: string }).catch((err) => ({ ok: false, error: apiErrorMessage(err, 'Connection test failed') })),
   getCycleFolders: () => api.get('/cycles/folders', { timeout: 45_000 }).then((r) => r.data as CycleFoldersResult),
-  getCyclesByFolder: (folderId: string, connectionId?: string, filter?: Partial<FilterParams>) => api.get('/cycles/by-folder', { params: { folderId, connectionId, startDate: filter?.startDate, endDate: filter?.endDate, project: filter?.project }, timeout: 180_000 }).then((r) => r.data as FolderCycleHealthResult),
+  getCyclesByFolder: (folderId: string, connectionId?: string, filter?: Partial<FilterParams>) => { const clean = normalizeFilter(filter); return api.get('/cycles/by-folder', { params: { folderId, connectionId, startDate: clean?.startDate, endDate: clean?.endDate, project: clean?.project }, timeout: 180_000 }).then((r) => r.data as FolderCycleHealthResult); },
   downloadReportPdf: async ({ startDate, endDate, reportType, kpiStyle, project, branding }: { startDate: string; endDate: string; reportType: ReportType; kpiStyle: string; project?: string; branding?: ReportBranding }) => {
+    const cleanProject = canonicalProjectOrUndefined(project);
     try {
       const selectedBranding = branding || getReportBranding();
-      const response = await api.post('/report/pdf', { startDate, endDate, reportType, kpiStyle, project, branding: selectedBranding }, { responseType: 'blob', timeout: 150_000 });
+      const response = await api.post('/report/pdf', { startDate, endDate, reportType, kpiStyle, project: cleanProject, branding: selectedBranding }, { responseType: 'blob', timeout: 150_000 });
       const blob = response.data as Blob;
       if (blob.type === 'application/json') throw new Error(await blobErrorMessage(blob, 'PDF export failed'));
       const url = URL.createObjectURL(blob);
-      const suffix = project && project !== 'all' ? `-${project}` : '';
+      const suffix = cleanProject ? `-${cleanProject}` : '';
       const link = document.createElement('a'); link.href = url; link.download = `qa-report${suffix}-${startDate}-to-${endDate}.pdf`; document.body.appendChild(link); link.click(); link.remove(); URL.revokeObjectURL(url);
     } catch (err) { if (axios.isAxiosError(err) && err.response?.data instanceof Blob) throw new Error(await blobErrorMessage(err.response.data, 'PDF export failed')); throw new Error(apiErrorMessage(err, 'PDF export failed')); }
   },
