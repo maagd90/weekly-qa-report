@@ -76,18 +76,21 @@ function stripQuotes(value: string): string {
   return v;
 }
 
-function normalizeEnvPath(value: string): string {
+function normalizeEnvPath(value: string, baseDir?: string): string {
   let p = stripQuotes(value);
   if (process.platform === 'win32') {
     p = p.replace(/%([^%]+)%/g, (_, name) => process.env[name] || `%${name}%`);
   }
-  return path.normalize(p);
+  const normalized = path.normalize(p);
+  return baseDir && !path.isAbsolute(normalized) ? path.resolve(baseDir, normalized) : normalized;
 }
 
-function applyPathNormalizations(): void {
+function applyPathNormalizations(baseDir?: string): void {
+  const root = baseDir || process.env.PROJECT_ROOT || repoRoot || process.cwd();
   for (const key of PATH_ENV_KEYS) {
     const raw = process.env[key];
-    if (raw?.trim()) process.env[key] = normalizeEnvPath(raw);
+    if (!raw?.trim()) continue;
+    process.env[key] = normalizeEnvPath(raw, key === 'PROJECT_ROOT' ? undefined : root);
   }
 }
 
@@ -99,7 +102,7 @@ function asEnvString(value: RuntimeConfigValue): string | undefined {
 
 function setEnv(key: string, value: RuntimeConfigValue): void {
   const rendered = asEnvString(value);
-  if (rendered !== undefined) process.env[key] = rendered;
+  if (rendered !== undefined && !process.env[key]?.trim()) process.env[key] = rendered;
 }
 
 function applyMap(values: Record<string, RuntimeConfigValue> | undefined): void {
@@ -168,12 +171,17 @@ function findRepoRoot(): string {
     || process.cwd();
 }
 
+function resolveRuntimeConfigPath(value: string, root: string): string {
+  const normalized = normalizeEnvPath(value);
+  return path.isAbsolute(normalized) ? normalized : path.resolve(root, normalized);
+}
+
 function candidateRuntimeConfigPaths(root: string): string[] {
   const configured = process.env.RUNTIME_CONFIG_PATH?.trim();
   const configDir = process.env.CONFIG_DIR?.trim() || path.join(root, 'config');
   return [...new Set([
-    ...(configured ? [configured] : []),
-    path.join(configDir, 'runtime.json'),
+    ...(configured ? [resolveRuntimeConfigPath(configured, root)] : []),
+    path.join(resolveRuntimeConfigPath(configDir, root), 'runtime.json'),
     path.join(root, 'config', 'runtime.json'),
   ].map((p) => path.resolve(p)))];
 }
@@ -231,7 +239,7 @@ function applyRuntimeConfig(config: RuntimeConfig): void {
     try {
       const config = JSON.parse(fs.readFileSync(candidate, 'utf8')) as RuntimeConfig;
       applyRuntimeConfig(config);
-      applyPathNormalizations();
+      applyPathNormalizations(root);
       repoRoot = process.env.PROJECT_ROOT || root;
       runtimeConfigPath = candidate;
       runtimeConfigLoaded = true;
@@ -243,7 +251,7 @@ function applyRuntimeConfig(config: RuntimeConfig): void {
     return;
   }
 
-  applyPathNormalizations();
+  applyPathNormalizations(root);
   repoRoot = process.env.PROJECT_ROOT || root;
   console.log(`[runtime-config] root=${repoRoot} no config/runtime.json found — using built-in defaults and browser Settings only`);
 })();
