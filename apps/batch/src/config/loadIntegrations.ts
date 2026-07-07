@@ -4,6 +4,7 @@ import type { JiraConnectionInput, QmetryConnectionInput } from '../types/connec
 
 const JIRA_SEARCH_PATH = '/rest/api/2/search';
 const QMETRY_TEST_CYCLES_SEARCH_PATH = '/testcycles/search';
+const QMETRY_TEST_CASE_FIELDS = 'seqNo,key,versionNo,summary,priority,status,environment,executionResult,executionAssignee,executedBy,build';
 
 const DEFAULT_JIRA_FIELDS = [
   'summary', 'description', 'assignee', 'status', 'priority', 'issuetype',
@@ -94,7 +95,7 @@ const DEFAULTS: IntegrationsConfig = {
     testCasesSearchPath: '/testcycles/{cycleId}/testcases/search',
     testCasesSearchBody: null,
     usePostSearch: true,
-    testCaseFields: 'seqNo,key,versionNo,summary,priority,status,environment,executionResult,executionAssignee,executedOn,executedBy,lastModified,build',
+    testCaseFields: QMETRY_TEST_CASE_FIELDS,
     cycleIds: [],
     pageSize: 50,
     maxPages: 200,
@@ -106,12 +107,19 @@ function mergeJira(raw: Partial<JiraIntegrationConfig> | undefined, idx = 0): Ji
   return { ...cfg, name: cfg.name || `JIRA ${idx + 1}`, searchPath: cfg.searchPath || JIRA_SEARCH_PATH, fields: cfg.fields?.length ? cfg.fields : DEFAULT_JIRA_FIELDS };
 }
 
+function cleanQmetryTestCaseFields(fields?: string): string {
+  const values = (fields || QMETRY_TEST_CASE_FIELDS).split(',').map((f) => f.trim()).filter(Boolean);
+  const supported = values.filter((f) => !/^(executedOn|lastModified)$/i.test(f));
+  return supported.length ? [...new Set(supported)].join(',') : QMETRY_TEST_CASE_FIELDS;
+}
+
 function mergeQmetry(raw: Partial<QmetryIntegrationConfig> | undefined): QmetryIntegrationConfig {
   const cfg = { ...DEFAULTS.qmetry, ...(raw || {}) };
   return {
     ...cfg,
     testCyclesSearchPath: cfg.testCyclesSearchPath || QMETRY_TEST_CYCLES_SEARCH_PATH,
     testCasesSearchPath: cfg.testCasesSearchPath || DEFAULTS.qmetry.testCasesSearchPath,
+    testCaseFields: cleanQmetryTestCaseFields(cfg.testCaseFields),
     cycleIds: Array.isArray(cfg.cycleIds) ? cfg.cycleIds : [],
     usePostSearch: true,
   };
@@ -167,9 +175,7 @@ export function getAuthHeader(cfg: BasicAuthConfig): string | null {
   return basic ? `Basic ${basic}` : null;
 }
 
-function connectionSecret(conn: { apiToken?: string; credential?: string }): string {
-  return conn.apiToken || conn.credential || '';
-}
+function connectionSecret(conn: { apiToken?: string; credential?: string }): string { return conn.apiToken || conn.credential || ''; }
 
 export function jiraConfigFromConnection(conn: JiraConnectionInput): JiraIntegrationConfig {
   const projectKeys = conn.projectKeys?.filter(Boolean) || [];
@@ -215,14 +221,12 @@ export function qmetryConfigFromConnection(conn: QmetryConnectionInput): QmetryI
     testCyclesSearchBody: qmetryCycleSearchBody(projectId, conn.folderId),
     cycleIds: [],
     testCasesSearchBody: null,
+    testCaseFields: cleanQmetryTestCaseFields((conn as unknown as Partial<QmetryIntegrationConfig>).testCaseFields || DEFAULTS.qmetry.testCaseFields),
     usePostSearch: true,
   };
 }
 
-export function getEncodedAuth(envKey: string): string | null {
-  const val = process.env[envKey];
-  return val ? val.trim() : null;
-}
+export function getEncodedAuth(envKey: string): string | null { const val = process.env[envKey]; return val ? val.trim() : null; }
 
 export function configuredJiraProfiles(cfg: IntegrationsConfig): JiraIntegrationConfig[] {
   return cfg.jiraProfiles.length ? cfg.jiraProfiles.filter((p) => p.enabled) : (cfg.jira.enabled ? [cfg.jira] : []);
