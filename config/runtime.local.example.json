@@ -1,0 +1,25 @@
+{
+  "notes": {
+    "purpose": "Use this for local dev if config/runtime.json contains Docker /data paths. Copy to config/runtime.local.json and run with RUNTIME_CONFIG_PATH=config/runtime.local.json."
+  },
+  "env": {
+    "CORS_ORIGINS": "http://localhost:3000,http://localhost:5173"
+  },
+  "paths": {
+    "inputDir": "./input",
+    "outputDir": "./output",
+    "configDir": "./config",
+    "pdfPrintUrl": "http://localhost:3000/print/report"
+  },
+  "network": {
+    "integrationAllowSelfSignedCerts": true,
+    "jiraAllowSelfSigned": true
+  },
+  "jira": {
+    "projectKeys": ["DLM"],
+    "jql": "project = DLM AND issuetype in (Story, Bug) ORDER BY updated DESC"
+  },
+  "qmetry": {
+    "projectKey": "DLM"
+  }
+}
