@@ -39,15 +39,25 @@ function AppContent() {
   const display = searchedDashboard ?? initialDashboard;
   const filters = useFilters(display ?? undefined);
 
+  const setDashboard = (freshDashboard: DashboardPayload | null) => {
+    if (!freshDashboard) return;
+    setSearchedDashboard(freshDashboard);
+    client.setQueryData(['dashboard-init'], freshDashboard);
+  };
+
   const searchTestCases = useMutation({
     mutationFn: () => batchApi.searchDashboardByDates(filters.filterParams),
     onSuccess: (freshDashboard) => {
-      setSearchedDashboard(freshDashboard);
-      client.setQueryData(['dashboard-init'], freshDashboard);
+      setDashboard(freshDashboard);
       client.invalidateQueries({ queryKey: ['settings-dashboard-projects'] });
       client.invalidateQueries({ queryKey: ['cycle-folders'] });
       client.invalidateQueries({ queryKey: ['cycles-by-folder-table'] });
     },
+  });
+
+  const searchCachedDashboard = useMutation({
+    mutationFn: () => batchApi.getDashboard(filters.filterParams),
+    onSuccess: (freshDashboard) => setDashboard(freshDashboard),
   });
 
   const showUat = !!display?.uat;
@@ -56,6 +66,8 @@ function AppContent() {
   const showFilters = !currentTab.hideFilters;
   const hasDashboard = !!display;
   const canSearchLive = activeTab === 'overview' || activeTab === 'cycles';
+  const canSearchCached = activeTab === 'testers' || activeTab === 'trace' || activeTab === 'uat';
+  const activeSearch = canSearchLive ? searchTestCases : searchCachedDashboard;
 
   const handleTabChange = (tab: QaTab) => {
     setActiveTab(tab);
@@ -91,16 +103,16 @@ function AppContent() {
           onKpiStyleChange={ui.setKpiStyle}
           dataMin={display?.meta.dataMin}
           dataMax={display?.meta.dataMax}
-          onSearchApis={canSearchLive ? () => searchTestCases.mutate() : undefined}
-          searchApisLabel={activeTab === 'cycles' ? 'Search Test Cycle' : 'Search Test Cases'}
-          isSearchingApis={searchTestCases.isPending}
+          onSearchApis={canSearchLive || canSearchCached ? () => activeSearch.mutate() : undefined}
+          searchApisLabel={activeTab === 'cycles' ? 'Search Test Cycle' : activeTab === 'testers' ? 'Search Testers' : activeTab === 'trace' ? 'Search Traceability' : 'Search Test Cases'}
+          isSearchingApis={activeSearch.isPending}
         />
       )}
 
-      {searchTestCases.isError && canSearchLive && (
+      {(searchTestCases.isError || searchCachedDashboard.isError) && showFilters && (
         <div className="max-w-qa mx-auto w-full px-8 pt-3 print:hidden">
           <div className="p-3 border border-[#ecccc2] bg-[#f8ece8] text-[#a13d2c] text-sm">
-            {(searchTestCases.error as Error).message}
+            {((searchTestCases.error || searchCachedDashboard.error) as Error).message}
           </div>
         </div>
       )}
