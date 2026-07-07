@@ -50,8 +50,7 @@ function AppContent() {
     onSuccess: (freshDashboard) => {
       setDashboard(freshDashboard);
       client.invalidateQueries({ queryKey: ['settings-dashboard-projects'] });
-      client.invalidateQueries({ queryKey: ['cycle-folders'] });
-      client.invalidateQueries({ queryKey: ['cycles-by-folder-table'] });
+      client.invalidateQueries({ queryKey: ['report'] });
     },
   });
 
@@ -65,8 +64,8 @@ function AppContent() {
   const currentTab = tabs.find((t) => t.id === activeTab) ?? tabs[0];
   const showFilters = !currentTab.hideFilters;
   const hasDashboard = !!display;
-  const canSearchLive = activeTab === 'overview' || activeTab === 'cycles';
-  const canSearchCached = activeTab === 'testers' || activeTab === 'trace' || activeTab === 'uat';
+  const canSearchLive = activeTab === 'overview';
+  const canSearchCached = activeTab === 'trace' || activeTab === 'uat';
   const activeSearch = canSearchLive ? searchTestCases : searchCachedDashboard;
 
   const handleTabChange = (tab: QaTab) => {
@@ -104,7 +103,7 @@ function AppContent() {
           dataMin={display?.meta.dataMin}
           dataMax={display?.meta.dataMax}
           onSearchApis={canSearchLive || canSearchCached ? () => activeSearch.mutate() : undefined}
-          searchApisLabel={activeTab === 'cycles' ? 'Search Test Cycle' : activeTab === 'testers' ? 'Search Testers' : activeTab === 'trace' ? 'Search Traceability' : 'Search Test Cases'}
+          searchApisLabel={activeTab === 'trace' ? 'Search Traceability' : activeTab === 'uat' ? 'Search UAT' : 'Search Test Cases'}
           isSearchingApis={activeSearch.isPending}
         />
       )}
@@ -129,7 +128,7 @@ function AppContent() {
         )}
 
         {display && activeTab === 'overview' && <OverviewPage dashboard={display} kpiStyle={ui.kpiStyle} />}
-        {display && activeTab === 'testers' && <TestersPage dashboard={display} kpiStyle={ui.kpiStyle} />}
+        {display && activeTab === 'testers' && <TestersPage dashboard={display} kpiStyle={ui.kpiStyle} filterParams={filters.filterParams} />}
         {display && activeTab === 'cycles' && <CyclesPage dashboard={display} kpiStyle={ui.kpiStyle} selectedCycle={ui.selectedCycle} onSelectCycle={ui.setSelectedCycle} filterParams={filters.filterParams} />}
         {display && activeTab === 'trace' && <TraceabilityPage dashboard={display} kpiStyle={ui.kpiStyle} />}
         {display && activeTab === 'uat' && showUat && <UatPage dashboard={display} kpiStyle={ui.kpiStyle} />}
