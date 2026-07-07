@@ -22,6 +22,7 @@ interface QaFilterBarProps {
   dataMin?: string | null;
   dataMax?: string | null;
   onSearchApis?: () => void;
+  searchApisLabel?: string;
   isSearchingApis?: boolean;
 }
 
@@ -49,6 +50,7 @@ export function QaFilterBar(props: QaFilterBarProps) {
     showResult = true,
     dataMin, dataMax,
     onSearchApis,
+    searchApisLabel = 'Search Test Cases',
     isSearchingApis = false,
   } = props;
 
@@ -74,17 +76,17 @@ export function QaFilterBar(props: QaFilterBarProps) {
             type="button"
             onClick={onSearchApis}
             disabled={isSearchingApis || !startDate || !endDate}
-            title="Refresh JIRA tickets and QMetry/JIRA test executions using the selected Overview dates"
+            title="Refresh live test data using the selected period"
             className="font-mono-qa text-[10px] font-semibold tracking-wider uppercase px-3 py-[7px] border border-qa-ink bg-qa-ink text-[#F5F3ED] cursor-pointer disabled:opacity-50 disabled:cursor-wait"
           >
-            {isSearchingApis ? 'Searching…' : 'Search APIs'}
+            {isSearchingApis ? 'Searching...' : searchApisLabel}
           </button>
         )}
       </div>
 
       <div className="flex items-center gap-2 border border-qa-border-mid bg-white px-2.5">
         <span className="text-[13px] text-qa-muted-pale">⚲</span>
-        <input type="text" value={search} onChange={(e) => onSearchChange(e.target.value)} placeholder="Search cycles, testers, keys…" className="border-none outline-none bg-transparent font-sans text-[13px] text-qa-ink py-2 px-1 w-[180px]" />
+        <input type="text" value={search} onChange={(e) => onSearchChange(e.target.value)} placeholder="Search cycles, testers, keys..." className="border-none outline-none bg-transparent font-sans text-[13px] text-qa-ink py-2 px-1 w-[180px]" />
         {search && <button type="button" onClick={() => onSearchChange('')} className="border-none bg-transparent cursor-pointer text-qa-muted-pale text-[15px] leading-none p-0.5">×</button>}
       </div>
 
