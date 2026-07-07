@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import type { JiraConnectionInput, QmetryConnectionInput } from '../types/connections';
+import { canonicalProjectKey, uniqueCanonicalProjects } from '../projects/projectKey';
 
 const JIRA_SEARCH_PATH = '/rest/api/2/search';
 const QMETRY_TEST_CYCLES_SEARCH_PATH = '/testcycles/search';
@@ -131,9 +132,20 @@ const DEFAULTS: IntegrationsConfig = {
   },
 };
 
+function canonicalProjectKeys(values?: string[]): string[] {
+  const keys = uniqueCanonicalProjects(values || []);
+  return keys.length ? keys : [];
+}
+
+function jiraJqlForProjects(projectKeys: string[]): string {
+  return projectKeys.length ? `project in (${projectKeys.join(',')}) AND issuetype in (Story, Bug) ORDER BY updated DESC` : 'issuetype in (Story, Bug) ORDER BY updated DESC';
+}
+
 function mergeJira(raw: Partial<JiraIntegrationConfig> | undefined, idx = 0): JiraIntegrationConfig {
   const cfg = { ...DEFAULT_JIRA, ...(raw || {}) };
-  return { ...cfg, name: cfg.name || `JIRA ${idx + 1}`, searchPath: cfg.searchPath || JIRA_SEARCH_PATH, fields: cfg.fields?.length ? cfg.fields : DEFAULT_JIRA_FIELDS };
+  const projectKeys = canonicalProjectKeys(cfg.projectKeys);
+  const jql = cfg.jql || jiraJqlForProjects(projectKeys);
+  return { ...cfg, name: cfg.name || `JIRA ${idx + 1}`, searchPath: cfg.searchPath || JIRA_SEARCH_PATH, fields: cfg.fields?.length ? cfg.fields : DEFAULT_JIRA_FIELDS, projectKeys, jql };
 }
 
 function cleanQmetryTestCaseFields(fields?: string): string {
@@ -146,6 +158,7 @@ function mergeQmetry(raw: Partial<QmetryIntegrationConfig> | undefined): QmetryI
   const cfg = { ...DEFAULTS.qmetry, ...(raw || {}) };
   return {
     ...cfg,
+    projectKey: canonicalProjectKey(cfg.projectKey) || 'DLM',
     testCyclesSearchPath: cfg.testCyclesSearchPath || QMETRY_TEST_CYCLES_SEARCH_PATH,
     testCasesSearchPath: cfg.testCasesSearchPath || DEFAULTS.qmetry.testCasesSearchPath,
     testCaseFields: cleanQmetryTestCaseFields(cfg.testCaseFields),
@@ -175,12 +188,13 @@ function qmetryRuntimeSearchBody(projectId: string | null, folderId?: string): R
 function runtimeJiraOverride(runtime: RuntimeConfig): Partial<JiraIntegrationConfig> {
   const jira = runtime.jira || {};
   const secret = jira.onPremSecret || jira.apiToken;
+  const projectKeys = canonicalProjectKeys(jira.projectKeys);
   return {
     ...(jira.enabled !== undefined ? { enabled: jira.enabled } : {}),
     ...(jira.deploymentType ? { deploymentType: jira.deploymentType } : {}),
     ...(jira.baseUrl ? { baseUrl: jira.baseUrl } : {}),
     ...(jira.searchPath ? { searchPath: jira.searchPath } : {}),
-    ...(jira.projectKeys?.length ? { projectKeys: jira.projectKeys } : {}),
+    ...(projectKeys.length ? { projectKeys } : {}),
     ...(jira.jql ? { jql: jira.jql } : {}),
     ...(jira.sessionHeader ? { cookie: jira.sessionHeader } : {}),
     ...(jira.sessionId ? { jiraSessionId: jira.sessionId } : {}),
@@ -197,7 +211,7 @@ function runtimeQmetryOverride(runtime: RuntimeConfig): Partial<QmetryIntegratio
     ...(qmetry.enabled !== undefined ? { enabled: qmetry.enabled } : {}),
     ...(qmetry.baseUrl ? { baseUrl: qmetry.baseUrl } : {}),
     ...(qmetry.apiPrefix ? { apiPrefix: qmetry.apiPrefix } : {}),
-    ...(qmetry.projectKey ? { projectKey: qmetry.projectKey } : {}),
+    ...(qmetry.projectKey ? { projectKey: canonicalProjectKey(qmetry.projectKey) } : {}),
     ...(projectId ? { projectId } : {}),
     ...(qmetry.basicAuth || qmetry.email || qmetry.apiToken ? { auth: { type: 'basic' as const, email: qmetry.email, token: qmetry.basicAuth || qmetry.apiToken }, authEncodedEnv: '' } : {}),
     ...(projectId || qmetry.folderId ? { testCyclesSearchBody: qmetryRuntimeSearchBody(projectId, qmetry.folderId) } : {}),
@@ -264,8 +278,8 @@ export function getAuthHeader(cfg: BasicAuthConfig): string | null {
 function connectionSecret(conn: { apiToken?: string; credential?: string }): string { return conn.apiToken || conn.credential || ''; }
 
 export function jiraConfigFromConnection(conn: JiraConnectionInput): JiraIntegrationConfig {
-  const projectKeys = conn.projectKeys?.filter(Boolean) || [];
-  const jql = conn.jql?.trim() || (projectKeys.length ? `project in (${projectKeys.join(',')}) AND issuetype in (Story, Bug) ORDER BY updated DESC` : 'issuetype in (Story, Bug) ORDER BY updated DESC');
+  const projectKeys = canonicalProjectKeys(conn.projectKeys);
+  const jql = conn.jql?.trim() || jiraJqlForProjects(projectKeys);
   const deploymentType = conn.deploymentType || 'on-prem';
   return {
     ...DEFAULT_JIRA,
@@ -301,7 +315,7 @@ export function qmetryConfigFromConnection(conn: QmetryConnectionInput): QmetryI
     baseUrl: conn.baseUrl.replace(/\/+$/, ''),
     auth: { type: 'basic', email: conn.email, token: connectionSecret(conn) },
     authEncodedEnv: '',
-    projectKey: conn.projectKey,
+    projectKey: canonicalProjectKey(conn.projectKey) || 'DLM',
     projectId,
     testCyclesSearchPath: QMETRY_TEST_CYCLES_SEARCH_PATH,
     testCyclesSearchBody: qmetryCycleSearchBody(projectId, conn.folderId),
@@ -316,14 +330,4 @@ export function getEncodedAuth(envKey: string): string | null { const val = proc
 
 export function configuredJiraProfiles(cfg: IntegrationsConfig): JiraIntegrationConfig[] {
   return cfg.jiraProfiles.length ? cfg.jiraProfiles.filter((p) => p.enabled) : (cfg.jira.enabled ? [cfg.jira] : []);
-}
-
-export function integrationsSummary(configDir: string) {
-  const cfg = loadIntegrations(configDir);
-  const profiles = configuredJiraProfiles(cfg);
-  const hasAuth = !!getBasicAuth(cfg.qmetry.auth) || !!getEncodedAuth(cfg.qmetry.authEncodedEnv);
-  return {
-    jira: { enabled: profiles.length > 0, baseUrl: profiles.map((p) => p.baseUrl).filter(Boolean).join(', '), configured: profiles.some((p) => !!getAuthHeader(p.auth)), profiles: profiles.map((p) => ({ name: p.name, deploymentType: p.deploymentType, baseUrl: p.baseUrl, projectKeys: p.projectKeys })) },
-    qmetry: { enabled: cfg.qmetry.enabled, baseUrl: cfg.qmetry.baseUrl, configured: hasAuth, cycleIds: cfg.qmetry.cycleIds.length, projectId: cfg.qmetry.projectId },
-  };
 }
