@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import type { DashboardPayload } from 'qa-dashboard-batch';
+import type { DashboardPayload, FilterParams } from 'qa-dashboard-batch';
 import type { CycleHealth } from '../lib/api';
 import type { KpiStyle } from '../theme/qaTheme';
 import { QA, fmt, passRateColor, coverageColor } from '../theme/qaTheme';
@@ -16,12 +16,13 @@ interface CyclesPageProps {
   kpiStyle: KpiStyle;
   selectedCycle: string | null;
   onSelectCycle: (key: string | null) => void;
+  filterParams: FilterParams;
 }
 
 type CycleRow = DashboardPayload['cycles'][number] | CycleHealth;
 
 function FolderPicker({ selectedFolder, onSelectFolder }: { selectedFolder: string; onSelectFolder: (id: string) => void }) {
-  const { data, isLoading } = useQuery({ queryKey: ['cycle-folders'], queryFn: batchApi.getCycleFolders, staleTime: 60_000 });
+  const { data, isLoading, error, refetch, isFetching } = useQuery({ queryKey: ['cycle-folders'], queryFn: batchApi.getCycleFolders, staleTime: 60_000, retry: false });
   const folders = useMemo(() => data?.folders ?? [], [data]);
 
   return (
@@ -37,39 +38,25 @@ function FolderPicker({ selectedFolder, onSelectFolder }: { selectedFolder: stri
         <option value="">{isLoading ? 'Loading folders...' : folders.length ? 'Select folder to load cycles...' : 'No folders found'}</option>
         {folders.map((f) => <option key={f.id} value={f.id}>{f.path || f.name}</option>)}
       </select>
+      <button type="button" onClick={() => refetch()} disabled={isFetching} className="font-mono-qa text-[10px] px-3 py-1.5 border border-qa-border bg-white cursor-pointer disabled:opacity-50">{isFetching ? 'Refreshing...' : 'Refresh folders'}</button>
       {data && <span className="font-mono-qa text-[10px] text-qa-muted-light">{data.source === 'qmetry-live' ? `live folders from QMetry${data.connection ? ` (${data.connection})` : ''}` : 'from imported data'}</span>}
+      {error && <span className="font-mono-qa text-[10px] text-[#a13d2c]">Could not load folders: {(error as Error).message}</span>}
     </div>
   );
 }
 
-function LiveFolderCycles({ folderId, dashboard, onSelectCycle }: { folderId: string; dashboard: DashboardPayload; onSelectCycle: (key: string | null) => void }) {
-  const { data, isLoading, error } = useQuery({
-    queryKey: ['cycles-by-folder', folderId],
-    queryFn: () => batchApi.getCyclesByFolder(folderId),
-    enabled: Boolean(folderId),
-    staleTime: 30_000,
-  });
-
-  if (!folderId) return null;
-  if (isLoading) return <div className="mb-4 text-[12px] text-qa-muted-light">Loading cycles and execution results for selected folder...</div>;
-  if (error) return <div className="mb-4 text-[12px] text-[#a13d2c]">Could not load folder cycles: {(error as Error).message}</div>;
-  if (!data || data.source !== 'qmetry-live') return null;
-
-  return (
-    <div className="mb-4 text-[12px] text-qa-muted-light">
-      Showing live QMetry cycle execution results for folder <span className="font-mono-qa text-qa-ink">{folderId}</span>.
-      {data.warnings?.length ? <span className="text-[#a13d2c]"> {data.warnings.join('; ')}</span> : null}
-    </div>
-  );
+function cycleKey(c: CycleRow): string {
+  return 'key' in c ? c.key : c.name;
 }
 
-export function CyclesPage({ dashboard, kpiStyle, selectedCycle, onSelectCycle }: CyclesPageProps) {
+export function CyclesPage({ dashboard, kpiStyle, selectedCycle, onSelectCycle, filterParams }: CyclesPageProps) {
   const [selectedFolder, setSelectedFolder] = useState('');
   const liveCyclesQuery = useQuery({
-    queryKey: ['cycles-by-folder-table', selectedFolder],
-    queryFn: () => batchApi.getCyclesByFolder(selectedFolder),
+    queryKey: ['cycles-by-folder-table', selectedFolder, filterParams.startDate, filterParams.endDate, filterParams.project],
+    queryFn: () => batchApi.getCyclesByFolder(selectedFolder, undefined, filterParams),
     enabled: Boolean(selectedFolder),
     staleTime: 30_000,
+    retry: false,
   });
 
   const cycles: CycleRow[] = liveCyclesQuery.data?.source === 'qmetry-live' ? liveCyclesQuery.data.cycles : dashboard.cycles;
@@ -84,6 +71,7 @@ export function CyclesPage({ dashboard, kpiStyle, selectedCycle, onSelectCycle }
   const coveragePct = totalCases ? Math.round((executed / totalCases) * 100) : (overview.totalCases ? Math.round((overview.executed / overview.totalCases) * 100) : 0);
   const shown = cycles.slice(0, selectedFolder ? 50 : 16);
   const selected = dashboard.cycles.find((c) => c.key === selectedCycle) ?? null;
+  const liveWarnings = liveCyclesQuery.data?.warnings || [];
 
   function pickCycle(key: string): void {
     const imported = dashboard.cycles.find((c) => c.key === key);
@@ -92,12 +80,19 @@ export function CyclesPage({ dashboard, kpiStyle, selectedCycle, onSelectCycle }
 
   return (
     <>
-      <QaPageShell title="Test Cycle Health" subtitle="select a QMetry folder to view its live test cycles and execution result split">
+      <QaPageShell title="Test Cycle Health" subtitle="select a QMetry folder to view live test cycles and execution result split for the selected period">
         <FolderPicker selectedFolder={selectedFolder} onSelectFolder={setSelectedFolder} />
-        <LiveFolderCycles folderId={selectedFolder} dashboard={dashboard} onSelectCycle={onSelectCycle} />
+        {selectedFolder && liveCyclesQuery.isLoading && <div className="mb-4 text-[12px] text-qa-muted-light">Loading cycles and execution results for selected folder...</div>}
+        {selectedFolder && liveCyclesQuery.error && <div className="mb-4 text-[12px] text-[#a13d2c]">Could not load folder cycles: {(liveCyclesQuery.error as Error).message}</div>}
+        {selectedFolder && liveCyclesQuery.data?.source === 'qmetry-live' && (
+          <div className="mb-4 text-[12px] text-qa-muted-light">
+            Showing live QMetry execution results for folder <span className="font-mono-qa text-qa-ink">{selectedFolder}</span> and selected period.
+            {liveWarnings.length ? <span className="text-[#a13d2c]"> {liveWarnings.join('; ')}</span> : null}
+          </div>
+        )}
         <QaKpiGrid cols={4}>
           <QaKpiCard kpiStyle={kpiStyle} label="Test Cycles" value={cycles.length} sub={selectedFolder ? 'from selected folder' : 'in current scope'} color={QA.accent} />
-          <QaKpiCard kpiStyle={kpiStyle} label="Clean Cycles" value={fullPass} sub="0 fail - 0 blocked" color="#2F7D5A" />
+          <QaKpiCard kpiStyle={kpiStyle} label="Executed Cases" value={executed} sub="PASS + FAIL + BLOCKED + NA" color={QA.PASS} />
           <QaKpiCard kpiStyle={kpiStyle} label="Not Started" value={notStarted} sub="0% executed" color={QA.NE} />
           <QaKpiCard kpiStyle={kpiStyle} label="Coverage" value={`${coveragePct}%`} sub={`${fmt(Math.max(totalCases - executed, 0))} cases pending`} color={QA.BLOCKED} />
         </QaKpiGrid>
@@ -114,9 +109,10 @@ export function CyclesPage({ dashboard, kpiStyle, selectedCycle, onSelectCycle }
             <tbody>
               {shown.map((c) => {
                 const exec = c.pass + c.fail + c.blocked + c.na;
+                const key = cycleKey(c);
                 return (
-                  <tr key={c.key} className="border-t border-[#f0ede5] cursor-pointer hover:bg-[#faf8f2]" onClick={() => pickCycle(c.key)}>
-                    <td className="py-3 pl-[22px]"><div className="font-semibold max-w-[340px] truncate">{c.name}</div><div className="font-mono-qa text-[10px] text-qa-muted-light">{c.key}</div></td>
+                  <tr key={key} className="border-t border-[#f0ede5] cursor-pointer hover:bg-[#faf8f2]" onClick={() => pickCycle(key)}>
+                    <td className="py-3 pl-[22px]"><div className="font-semibold max-w-[340px] truncate">{c.name}</div><div className="font-mono-qa text-[10px] text-qa-muted-light">{key}</div></td>
                     <td className="py-3 px-3"><CycleBadge status={c.status} /></td>
                     <td className="py-3 px-3"><SegBar segments={cycleSegSegments(c.pass, c.fail, c.blocked, c.ne, c.na, c.total)} height={11} /></td>
                     <td className="py-3 px-3 text-right font-mono-qa" style={{ color: exec ? passRateColor(c.passPct) : '#b3aea3' }}>{exec ? `${c.passPct}%` : '-'}</td>
