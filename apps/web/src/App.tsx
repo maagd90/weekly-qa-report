@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { QueryClient, QueryClientProvider, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import clsx from 'clsx';
 import { QaMasthead } from './components/layout/QaMasthead';
@@ -35,6 +35,10 @@ function AppContent() {
     queryFn: () => batchApi.getDashboard(),
     retry: false,
   });
+
+  useEffect(() => {
+    if (initialDashboard) setSearchedDashboard(initialDashboard);
+  }, [initialDashboard]);
 
   const display = searchedDashboard ?? initialDashboard;
   const filters = useFilters(display ?? undefined);
@@ -117,16 +121,8 @@ function AppContent() {
       )}
 
       <div className={clsx('flex-1', activeTab === 'ai' ? 'flex flex-col overflow-hidden min-h-0' : 'overflow-auto')}>
-        {isLoading && showFilters && (
-          <div className="flex items-center justify-center h-64 font-mono-qa text-sm text-qa-muted-light">
-            Loading dashboard…
-          </div>
-        )}
-
-        {!isLoading && !hasDashboard && showFilters && (
-          <EmptyDashboard onGenerate={goGenerate} />
-        )}
-
+        {isLoading && showFilters && <div className="flex items-center justify-center h-64 font-mono-qa text-sm text-qa-muted-light">Loading dashboard…</div>}
+        {!isLoading && !hasDashboard && showFilters && <EmptyDashboard onGenerate={goGenerate} />}
         {display && activeTab === 'overview' && <OverviewPage dashboard={display} kpiStyle={ui.kpiStyle} />}
         {display && activeTab === 'testers' && <TestersPage dashboard={display} kpiStyle={ui.kpiStyle} filterParams={filters.filterParams} />}
         {display && activeTab === 'cycles' && <CyclesPage dashboard={display} kpiStyle={ui.kpiStyle} selectedCycle={ui.selectedCycle} onSelectCycle={ui.setSelectedCycle} filterParams={filters.filterParams} />}
