@@ -9,6 +9,7 @@ import { fetchJiraDataset, fetchJiraIssues } from '../integrations/jiraClient';
 import { fetchQmetryDataset, fetchQmetryExecutions } from '../integrations/qmetryClient';
 import { parseAllFiles, discoverInputFiles } from '../parse/dispatcher';
 import { mergeDatasets } from '../merge/mergeDataset';
+import { canonicalProjectKey, canonicalProjectOrUndefined } from '../projects/projectKey';
 
 export interface BuildDatasetOptions {
   apiScope?: ApiFetchScope;
@@ -16,17 +17,13 @@ export interface BuildDatasetOptions {
   includeFiles?: boolean;
 }
 
-function projectKey(value?: string | null): string {
-  return (value || '').trim().toUpperCase();
-}
-
 function cleanApiScope(scope?: ApiFetchScope): ApiFetchScope | undefined {
   if (!scope) return undefined;
   const next: ApiFetchScope = {};
   if (/^\d{4}-\d{2}-\d{2}$/.test(scope.startDate || '')) next.startDate = scope.startDate;
   if (/^\d{4}-\d{2}-\d{2}$/.test(scope.endDate || '')) next.endDate = scope.endDate;
-  const project = projectKey(scope.project);
-  if (project && project !== 'ALL') next.project = project;
+  const project = canonicalProjectOrUndefined(scope.project);
+  if (project) next.project = project;
   return next.startDate || next.endDate || next.project ? next : undefined;
 }
 
@@ -35,15 +32,15 @@ function liveSyncEnabled(options?: BuildDatasetOptions): boolean {
 }
 
 function jiraProjectMatches(keys: string[] | undefined, scope?: ApiFetchScope): boolean {
-  const selected = projectKey(scope?.project);
-  if (!selected || selected === 'ALL') return true;
-  return (keys || []).some((key) => projectKey(key) === selected);
+  const selected = canonicalProjectOrUndefined(scope?.project);
+  if (!selected) return true;
+  return (keys || []).some((key) => canonicalProjectKey(key) === selected);
 }
 
 function qmetryProjectMatches(key: string | undefined, scope?: ApiFetchScope): boolean {
-  const selected = projectKey(scope?.project);
-  if (!selected || selected === 'ALL') return true;
-  return projectKey(key) === selected;
+  const selected = canonicalProjectOrUndefined(scope?.project);
+  if (!selected) return true;
+  return canonicalProjectKey(key) === selected;
 }
 
 async function buildJiraConnectionDataset(configDir: string, connections?: UserConnections, options?: BuildDatasetOptions): Promise<Dataset[]> {
@@ -65,7 +62,7 @@ async function buildJiraConnectionDataset(configDir: string, connections?: UserC
       if (jql && (apiScope?.startDate || apiScope?.endDate)) ds.meta.warnings.push(`[${conn.name}] JIRA API date search applied from selected dates.`);
       if (issues.length) {
         ds.files.push({ name: `jira-api:${conn.name}`, ext: 'API', project: issues[0]?.project || conn.projectKeys?.[0] || 'UNKNOWN', rows: issues.length, status: 'parsed', detectedType: 'jira', source: 'jira-api' });
-        ds.projects = [...new Set(issues.map((i) => i.project))];
+        ds.projects = [...new Set(issues.map((i) => canonicalProjectKey(i.project)))];
       }
       parts.push(ds);
     }
@@ -98,7 +95,7 @@ async function buildQmetryConnectionDataset(configDir: string, connections?: Use
       if (apiScope?.startDate || apiScope?.endDate) ds.meta.sourceFiles.push(`qmetry-api:${conn.name}:overview-date-search:${apiScope.startDate || 'any'}:${apiScope.endDate || 'any'}`);
       if (executions.length) {
         ds.files.push({ name: `qmetry-api:${conn.name}`, ext: 'API', project: executions[0]?.project || conn.projectKey, rows: executions.length, status: 'parsed', detectedType: 'test-execution', source: 'qmetry-api' });
-        ds.projects = [...new Set(executions.map((e) => e.project))];
+        ds.projects = [...new Set(executions.map((e) => canonicalProjectKey(e.project)))];
       }
       parts.push(ds);
     }
