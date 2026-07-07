@@ -51,8 +51,9 @@ async function qmetryFetch(cfg: QmetryIntegrationConfig, method: 'GET' | 'POST',
   if (body !== undefined) { headers['Content-Type'] = 'application/json'; init.body = JSON.stringify(body); }
   try {
     const res = await fetchWithTimeout(url, init);
-    if (!res.ok) return { ok: false, error: safeApiError('QMetry API', res.status, await res.text()) };
-    return { ok: true, data: await res.json() };
+    const text = await res.text();
+    if (!res.ok) return { ok: false, error: safeApiError('QMetry API', res.status, text) };
+    try { return { ok: true, data: text ? JSON.parse(text) : null }; } catch (err) { return { ok: false, error: `QMetry API returned invalid JSON: ${(err as Error).message}` }; }
   } catch (err) {
     return { ok: false, error: `QMetry API request failed: ${describeFetchError(err)}` };
   }
@@ -82,15 +83,18 @@ function unwrapName(value: unknown): string {
 
 function qmetryDate(raw: unknown): string | null {
   if (raw === null || raw === undefined || raw === '') return null;
-  if (typeof raw === 'number' || /^\d{12,}$/.test(String(raw))) {
-    const d = new Date(Number(raw));
-    return Number.isNaN(d.getTime()) ? null : d.toISOString().slice(0, 10);
-  }
   if (raw && typeof raw === 'object') {
     const o = raw as Record<string, unknown>;
     return qmetryDate(o.updatedOn ?? o.executedOn ?? o.lastModified ?? o.value ?? o.date);
   }
   const s = sanitizeText(raw);
+  if (!s) return null;
+  if (/^\d+$/.test(s)) {
+    const n = Number(s);
+    const ms = s.length === 10 ? n * 1000 : n;
+    const d = new Date(ms);
+    return Number.isNaN(d.getTime()) ? null : d.toISOString().slice(0, 10);
+  }
   if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
   const m = s.match(/^(\d{1,2})\/([A-Za-z]{3})\/(\d{2,4})/);
   if (m) {
@@ -190,9 +194,32 @@ function dateInScope(value: string | null | undefined, scope?: ApiFetchScope): b
   return true;
 }
 
+function dateRangeOverlapsScope(startDate: string | null | undefined, endDate: string | null | undefined, scope?: ApiFetchScope): boolean {
+  if (!scope?.startDate && !scope?.endDate) return true;
+  const start = (startDate || endDate || '').slice(0, 10);
+  const end = (endDate || startDate || '').slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(start) || !/^\d{4}-\d{2}-\d{2}$/.test(end)) return false;
+  if (scope.startDate && end < scope.startDate) return false;
+  if (scope.endDate && start > scope.endDate) return false;
+  return true;
+}
+
+function cycleInScope(cycle: QmetryCycleSummary, scope?: ApiFetchScope): boolean {
+  if (!scope?.startDate && !scope?.endDate) return true;
+  if (cycle.plannedStartDate || cycle.plannedEndDate) return dateRangeOverlapsScope(cycle.plannedStartDate, cycle.plannedEndDate, scope);
+  if (cycle.updated) return dateInScope(cycle.updated, scope);
+  return true;
+}
+
+function sameProject(left: string | null | undefined, right: string | null | undefined): boolean {
+  return sanitizeText(left).toUpperCase() === sanitizeText(right).toUpperCase();
+}
+
 function executionInScope(row: ExecutionRow, scope?: ApiFetchScope): boolean {
-  if (scope?.project && scope.project !== 'all' && row.project !== scope.project) return false;
-  return dateInScope(row.executedAt || row.updatedAt, scope);
+  if (scope?.project && scope.project !== 'all' && !sameProject(row.project, scope.project)) return false;
+  if (!scope?.startDate && !scope?.endDate) return true;
+  if (row.executedAt) return dateInScope(row.executedAt, scope);
+  return row.result === 'NE';
 }
 
 function compactWarnings(warnings: string[]): string {
@@ -265,21 +292,23 @@ export async function fetchProjectCycles(cfg: QmetryIntegrationConfig, folderId?
 }
 
 function normalizeTestCase(tc: Record<string, unknown>, cycleKey: string, cycleName: string): ExecutionRow | null {
-  const caseKey = sanitizeText(tc.key);
+  const nestedTestCase = tc.testCase && typeof tc.testCase === 'object' ? (tc.testCase as Record<string, unknown>) : {};
+  const caseKey = sanitizeText(tc.key || tc.testCaseKey || tc.issueKey || nestedTestCase.key || nestedTestCase.testCaseKey || nestedTestCase.issueKey);
   if (!caseKey) return null;
-  const executedAt = qmetryDate(tc.executedOn) || qmetryDate(tc.lastModified);
+  const executedAt = qmetryDate(tc.executedOn);
+  const updatedAt = qmetryDate(tc.lastModified) || executedAt;
   const resultText = unwrapName(tc.executionResult) || unwrapName(tc.status);
   const tester = unwrapName(tc.executedBy) || unwrapName(tc.executionAssignee);
-  return { project: projectFromKey(caseKey), cycleKey, cycleName, caseKey, result: mapExecutionResult(resultText), tester: tester || null, executedAt, updatedAt: qmetryDate(tc.lastModified) || executedAt, source: 'qmetry' };
+  return { project: projectFromKey(caseKey), cycleKey, cycleName, caseKey, result: mapExecutionResult(resultText), tester: tester || null, executedAt, updatedAt, source: 'qmetry' };
 }
 
 function testCaseSearchBody(cfg: QmetryIntegrationConfig): Record<string, unknown> {
   return cfg.testCasesSearchBody || projectBody(cfg);
 }
 
-async function fetchCycleExecutions(cfg: QmetryIntegrationConfig, cycleId: string, cycleNameHint?: string, scope?: ApiFetchScope): Promise<{ executions: ExecutionRow[]; cycleKey: string; cycleName: string; error?: string }> {
+async function fetchCycleExecutions(cfg: QmetryIntegrationConfig, cycleId: string, cycleNameHint?: string, scope?: ApiFetchScope, cycleKeyHint?: string): Promise<{ executions: ExecutionRow[]; cycleKey: string; cycleName: string; error?: string }> {
   const executions: ExecutionRow[] = [];
-  let cycleKey = cycleId;
+  let cycleKey = cycleKeyHint || cycleId;
   let cycleName = cycleNameHint || cycleId;
   let startAt = 0;
   let includeFields = true;
@@ -328,45 +357,46 @@ export async function fetchFolderCycleHealth(cfg: QmetryIntegrationConfig, folde
   if (found.error) return { cycles: [], error: found.error };
   const cycles: QmetryCycleHealthSummary[] = [];
   const warnings: string[] = [];
-  for (const cycle of found.cycles) {
-    const result = await fetchCycleExecutions(cfg, cycle.id, cycle.name, scope);
+  const scopedCycles = found.cycles.filter((cycle) => cycleInScope(cycle, scope));
+  for (const cycle of scopedCycles) {
+    const result = await fetchCycleExecutions(cfg, cycle.id, cycle.name, scope, cycle.key || cycle.id);
     if (result.error) warnings.push(`${cycle.name}: ${result.error}`);
-    cycles.push(summarizeCycle(result.cycleKey, result.cycleName || cycle.name, result.executions));
+    cycles.push(summarizeCycle(result.cycleKey || cycle.key || cycle.id, result.cycleName || cycle.name, result.executions));
   }
   const error = compactWarnings(warnings);
   return error ? { cycles, error } : { cycles };
 }
 
-async function fetchProjectCycleIds(cfg: QmetryIntegrationConfig): Promise<{ ids: string[]; error?: string }> {
-  const ids: string[] = [];
+async function discoverProjectCyclesForExecution(cfg: QmetryIntegrationConfig, scope?: ApiFetchScope): Promise<{ cycles: QmetryCycleSummary[]; error?: string }> {
+  const cycles: QmetryCycleSummary[] = [];
   let startAt = 0;
   for (let page = 0; page < cfg.maxPages; page++) {
     const result = await searchQmetryTestCycles(cfg, { startAt, maxResults: cfg.pageSize });
-    if (result.error) return { ids, error: result.error };
-    ids.push(...result.cycles.map((c) => c.id));
+    if (result.error) return { cycles, error: result.error };
+    cycles.push(...result.cycles.filter((cycle) => cycleInScope(cycle, scope)));
     startAt += result.cycles.length;
     if (!result.cycles.length || startAt >= result.total) break;
   }
-  return { ids };
+  return { cycles };
 }
 
 export async function fetchQmetryExecutions(cfg: QmetryIntegrationConfig, scope?: ApiFetchScope): Promise<{ executions: ExecutionRow[]; cycleMeta: Map<string, string>; error?: string }> {
   if (!cfg.enabled) return { executions: [], cycleMeta: new Map() };
-  let cycleIds = [...cfg.cycleIds];
-  if (!cycleIds.length && cfg.projectId) {
-    const discovered = await fetchProjectCycleIds(cfg);
+  let cycles: QmetryCycleSummary[] = cfg.cycleIds.map((id) => ({ id, key: id, name: id }));
+  if (!cycles.length && cfg.projectId) {
+    const discovered = await discoverProjectCyclesForExecution(cfg, scope);
     if (discovered.error) return { executions: [], cycleMeta: new Map(), error: `QMetry test cycle search failed: ${discovered.error}` };
-    cycleIds = discovered.ids;
+    cycles = discovered.cycles;
   }
-  if (!cycleIds.length) return { executions: [], cycleMeta: new Map(), error: 'No QMetry test cycles found for the configured Project ID / Folder ID.' };
+  if (!cycles.length) return { executions: [], cycleMeta: new Map(), error: 'No QMetry test cycles found for the configured Project ID / Folder ID.' };
   const all: ExecutionRow[] = [];
   const cycleMeta = new Map<string, string>();
   const warnings: string[] = [];
-  for (const cycleId of cycleIds) {
-    const result = await fetchCycleExecutions(cfg, cycleId, undefined, scope);
-    if (result.error) warnings.push(`${cycleId}: ${result.error}`);
+  for (const cycle of cycles) {
+    const result = await fetchCycleExecutions(cfg, cycle.id, cycle.name, scope, cycle.key || cycle.id);
+    if (result.error) warnings.push(`${cycle.name || cycle.id}: ${result.error}`);
     all.push(...result.executions);
-    cycleMeta.set(result.cycleKey, result.cycleName);
+    cycleMeta.set(result.cycleKey || cycle.key || cycle.id, result.cycleName || cycle.name || cycle.id);
   }
   const error = compactWarnings(warnings);
   return error ? { executions: all, cycleMeta, error } : { executions: all, cycleMeta };
