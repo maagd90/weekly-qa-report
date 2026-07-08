@@ -6,7 +6,7 @@
 
 </div>
 
-QA teams often collect weekly quality data from several sources: test execution exports, Jira issues, QMetry/QTM4J cycles, vendor/UAT bug logs, and manual spreadsheets. This project consolidates those sources into one dashboard, computes metrics on the backend, generates a management-ready narrative summary from verified metrics, and exports a print-ready PDF.
+QA teams often collect weekly quality data from several sources: test execution exports, Jira issue exports, QMetry/QTM4J cycle exports, vendor/UAT bug logs, and manual spreadsheets. This project consolidates those sources into one dashboard, computes metrics on the backend, generates a management-ready narrative summary from verified metrics, and exports a print-ready PDF.
 
 The application is intentionally **stateless and file-based**. It does not require a database. Runtime state is stored in local folders such as `input/`, `output/`, and `config/`.
 
@@ -21,26 +21,27 @@ The application is intentionally **stateless and file-based**. It does not requi
 3. [Project structure](#project-structure)
 4. [Prerequisites](#prerequisites)
 5. [Step-by-step local setup](#step-by-step-local-setup)
-6. [Step-by-step Docker setup](#step-by-step-docker-setup)
-7. [Configuration model](#configuration-model)
-8. [Jira integration setup](#jira-integration-setup)
-9. [QMetry/QTM4J integration setup](#qmetryqtm4j-integration-setup)
-10. [AI provider setup for narrative summary](#ai-provider-setup-for-narrative-summary)
-11. [Using the application](#using-the-application)
-12. [Report types and expected behavior](#report-types-and-expected-behavior)
-13. [PDF export](#pdf-export)
-14. [Live integration probe](#live-integration-probe)
-15. [Useful commands](#useful-commands)
-16. [Troubleshooting](#troubleshooting)
-17. [Security checklist](#security-checklist)
+6. [Excel-only demo mode without Jira/QMetry](#excel-only-demo-mode-without-jiraqmetry)
+7. [Step-by-step Docker setup](#step-by-step-docker-setup)
+8. [Configuration model](#configuration-model)
+9. [Jira integration setup](#jira-integration-setup)
+10. [QMetry/QTM4J integration setup](#qmetryqtm4j-integration-setup)
+11. [AI provider setup for Narrative Summary](#ai-provider-setup-for-narrative-summary)
+12. [Using the application](#using-the-application)
+13. [Report types and expected behavior](#report-types-and-expected-behavior)
+14. [PDF export](#pdf-export)
+15. [Live integration probe](#live-integration-probe)
+16. [Useful commands](#useful-commands)
+17. [Troubleshooting](#troubleshooting)
+18. [Security checklist](#security-checklist)
 
 ---
 
 ## What this project does
 
 - Imports Excel files for test execution, Jira issue exports, and vendor/UAT bug logs.
-- Fetches live Jira issues using `/rest/api/2/search`.
-- Fetches live QMetry/QTM4J test cycles and test-case execution data.
+- Optionally fetches live Jira issues using `/rest/api/2/search`.
+- Optionally fetches live QMetry/QTM4J test cycles and test-case execution data.
 - Aggregates result mix, pass rate, tester productivity, cycle health, story/bug split, defect backlog, traceability, and vendor/UAT bug status.
 - Generates a QA-manager-style **Narrative Summary** using a configured AI provider, grounded only on verified dashboard metrics.
 - Exports PDF reports through a print-optimized React route and headless Chromium.
@@ -52,7 +53,7 @@ The application is intentionally **stateless and file-based**. It does not requi
 
 | App | Location | Responsibility |
 |---|---|---|
-| Batch/core | `apps/batch` | Parse files, call integrations, merge/dedupe data, aggregate metrics, generate report narrative |
+| Batch/core | `apps/batch` | Parse files, call optional integrations, merge/dedupe data, aggregate metrics, generate report narrative |
 | API | `apps/api` | Express API for dashboard data, generation, uploads, integrations, status, and PDF export |
 | Web | `apps/web` | React/Vite dashboard UI, import screen, settings, report screen, and print route |
 
@@ -67,7 +68,7 @@ Dashboard areas:
 | Vendor Portal Bugs | UAT/vendor-portal issue view when matching data is loaded |
 | Import Data | Upload and manage Excel files staged in `input/` |
 | QA Report | Generate a business-ready QA report and export it to PDF |
-| Settings | Configure Jira, QMetry/QTM4J, AI provider/model, and connection checks |
+| Settings | Configure optional Jira, optional QMetry/QTM4J, AI provider/model, and connection checks |
 
 ---
 
@@ -143,7 +144,7 @@ These folders are used at runtime and should remain local.
 
 ### 4. Create local config files only if needed
 
-For UI-only configuration, you can skip this and use the **Settings** screen.
+For Excel-only usage, Jira and QMetry config is **not required**.
 
 For server-side defaults, copy the examples:
 
@@ -193,6 +194,275 @@ Expected result:
   "ok": true
 }
 ```
+
+---
+
+## Excel-only demo mode without Jira/QMetry
+
+This is the safest mode for a demo when live Jira/QMetry connectivity is not ready or when corporate network/session issues are still being fixed.
+
+In Excel-only mode:
+
+- You do **not** need to connect Jira.
+- You do **not** need to connect QMetry/QTM4J.
+- You do **not** need live API access.
+- You upload properly formatted Excel exports through **Import Data**.
+- The dashboard, charts, report, and PDF are generated from uploaded files.
+- The Narrative Summary still needs an AI provider key if you want AI-written management narration.
+
+### What works in Excel-only mode
+
+| Uploaded file type | Enables |
+|---|---|
+| Test execution Excel | Overview KPIs, result mix, pass rate, testers, cycle health, Cycles report |
+| Jira issue Excel | Story/bug split, defect counts, defect backlog, traceability, Defects report |
+| ODL/UAT Excel | Vendor Portal Bugs / UAT section, UAT counts, UAT status/priority breakdown |
+
+### Minimum recommended demo file set
+
+For a strong manager demo, upload at least:
+
+```text
+1. Test execution Excel export
+2. Jira issue Excel export
+3. ODL/UAT Excel export, optional
+```
+
+If you upload only a test execution file, execution charts and cycle/tester widgets can work, but defect and traceability widgets may show zero.
+
+If you upload only a Jira issue file, defect and traceability widgets can work, but execution/cycle/tester widgets may show zero.
+
+If you do not upload an ODL/UAT file, the UAT section will show no UAT issues for the selected range. That is expected.
+
+### Step-by-step Excel-only demo setup
+
+#### 1. Start the app
+
+```bash
+./run.sh dev
+```
+
+Open:
+
+```text
+http://localhost:3000
+```
+
+#### 2. Keep Jira/QMetry disconnected
+
+Go to:
+
+```text
+Settings
+```
+
+For the demo, either leave Jira/QMetry empty or disabled. Do not add real live connection details unless you want to test API mode.
+
+#### 3. Clear stale generated output before the demo
+
+Stop the app, then clear old generated files:
+
+```bash
+rm -rf output/*
+```
+
+On Windows PowerShell:
+
+```powershell
+Remove-Item -Recurse -Force output\*
+```
+
+Then restart:
+
+```bash
+./run.sh dev
+```
+
+This prevents old cached API/live data from appearing in a file-only demo.
+
+#### 4. Upload Excel files
+
+Go to:
+
+```text
+Import Data
+```
+
+Upload your Excel files one by one, or copy them directly into:
+
+```text
+input/
+```
+
+Supported file extensions:
+
+```text
+.xlsx
+.xls
+```
+
+#### 5. Confirm file detection
+
+After upload, the app should detect each file as one of:
+
+```text
+test-execution
+jira
+odl
+unknown
+```
+
+If a file is detected as `unknown`, its headers do not match the supported format. Fix the Excel headers and upload again.
+
+#### 6. Select correct date range
+
+Use a date range that overlaps the uploaded Excel data.
+
+Examples:
+
+```text
+If your execution file has dates from 2026-07-01 to 2026-07-08, use that same range.
+If your Jira file has bugs updated in June, use a June date range.
+```
+
+#### 7. Generate dashboard/report
+
+Go to:
+
+```text
+QA Report
+```
+
+Select:
+
+```text
+Report type: Full, Executive, Defects, or Cycles
+Project: matching project key from the Excel files, or All projects
+Date range: matching Excel data dates
+```
+
+Click:
+
+```text
+Generate Report
+```
+
+#### 8. Download PDF
+
+After metrics and narrative are generated, click:
+
+```text
+Download PDF
+```
+
+### Required Excel headers
+
+#### Test execution Excel
+
+Required headers:
+
+```text
+Test Cycle Key
+Testcase/Teststep Execution Result
+```
+
+Recommended headers:
+
+```text
+Test Case Key
+Test Cycle Summary
+Executed On
+Executed By
+```
+
+These fields drive execution metrics, tester charts, cycle health, result mix, and pass rate.
+
+#### Jira issue Excel
+
+Required headers:
+
+```text
+Key
+Summary
+```
+
+or:
+
+```text
+Issue key
+Summary
+```
+
+Recommended headers:
+
+```text
+Issue Type
+Status
+Priority
+Assignee
+Created
+Updated
+Resolved
+Sprint
+```
+
+These fields drive story/bug split, open/closed defects, defect backlog, traceability, sprint mapping, and Defects report.
+
+#### ODL/UAT Excel
+
+Required headers:
+
+```text
+TicketID
+odlPriorityDescription
+Status
+```
+
+Recommended headers:
+
+```text
+Subject
+ProductArea
+Change Request
+Client_Priority
+Submittedby
+Submittedon
+LastUpdate
+```
+
+These fields drive Vendor Portal Bugs / UAT reporting.
+
+### Excel-only demo checklist
+
+Use this checklist before showing the demo:
+
+```text
+[ ] App starts successfully at http://localhost:3000
+[ ] Jira and QMetry are not connected for the demo
+[ ] output/ folder is cleared before upload
+[ ] Test execution Excel is uploaded and detected correctly
+[ ] Jira issue Excel is uploaded and detected correctly
+[ ] ODL/UAT Excel is uploaded if UAT section is required
+[ ] Date range matches uploaded data dates
+[ ] Overview widgets show non-zero values
+[ ] Testers tab shows execution by tester
+[ ] Test Cycles tab shows cycle health
+[ ] Defects report shows bug/story and backlog data
+[ ] QA Report generates Narrative Summary if AI provider key is configured
+[ ] PDF downloads successfully
+```
+
+### Honest limitations of Excel-only mode
+
+Excel-only mode is reliable for demo if the files match the expected format, but it depends on the uploaded file content.
+
+Limitations:
+
+- It cannot fetch new data from Jira/QMetry automatically.
+- It only reports what exists in the uploaded files.
+- Missing file types lead to zero or unavailable sections for those areas.
+- Different column names may cause the file to be detected as `unknown`.
+- Narrative Summary requires an AI provider key; without it, metrics and charts can still work, but narrative may be skipped.
 
 ---
 
@@ -249,7 +519,9 @@ Configuration is split into three places:
 |---|---|---|
 | User connections and API keys | **Settings** screen | Normal local usage |
 | Server runtime defaults | `config/runtime.json` | Docker/server paths, proxy, TLS flags, fallback credentials |
-| Jira/QMetry profile defaults | `config/integrations.json` | Preconfigured non-UI integration profiles |
+| Jira/QMetry profile defaults | `config/integrations.json` | Optional live integration profiles |
+
+For Excel-only mode, Jira/QMetry entries can stay disabled or empty.
 
 Example `config/runtime.json` using generic values only:
 
@@ -291,7 +563,7 @@ Example `config/integrations.json` using generic values only:
 ```json
 {
   "jira": {
-    "enabled": true,
+    "enabled": false,
     "name": "QA Jira",
     "deploymentType": "on-prem",
     "baseUrl": "https://jira.example.com",
@@ -299,31 +571,12 @@ Example `config/integrations.json` using generic values only:
     "projectKeys": ["QA"],
     "jql": "project = QA AND issuetype in (Story, Bug) ORDER BY updated DESC",
     "pageSize": 100,
-    "fields": [
-      "summary",
-      "description",
-      "assignee",
-      "status",
-      "priority",
-      "issuetype",
-      "created",
-      "updated",
-      "resolution",
-      "resolutiondate",
-      "resolved",
-      "reporter",
-      "labels",
-      "components",
-      "fixVersions",
-      "customfield_10020",
-      "customfield_10016",
-      "customfield_10028"
-    ],
+    "fields": ["summary", "description", "assignee", "status", "priority", "issuetype", "created", "updated", "resolution", "resolutiondate", "resolved", "reporter", "labels", "components", "fixVersions"],
     "statusDone": ["Done", "Closed", "Resolved"],
     "applicationCiFieldId": null
   },
   "qmetry": {
-    "enabled": true,
+    "enabled": false,
     "baseUrl": "https://jira.example.com",
     "apiPrefix": "/rest/qtm4j/ui/latest",
     "projectKey": "QA",
@@ -391,23 +644,7 @@ Example request body:
   "jql": "project = QA AND issuetype in (Story, Bug) ORDER BY updated DESC",
   "startAt": 0,
   "maxResults": 100,
-  "fields": [
-    "summary",
-    "description",
-    "assignee",
-    "status",
-    "priority",
-    "issuetype",
-    "created",
-    "updated",
-    "resolution",
-    "resolutiondate",
-    "resolved",
-    "reporter",
-    "labels",
-    "components",
-    "fixVersions"
-  ]
+  "fields": ["summary", "description", "assignee", "status", "priority", "issuetype", "created", "updated", "resolution", "resolutiondate", "resolved", "reporter", "labels", "components", "fixVersions"]
 }
 ```
 
@@ -431,7 +668,7 @@ If your Jira is behind SSO, use a valid session cookie from an active browser se
 
 ## QMetry/QTM4J integration setup
 
-Live QMetry/QTM4J integration is optional. It is used for test cycle and test execution metrics.
+Live QMetry/QTM4J integration is optional. Excel-only usage works without QMetry.
 
 ### 1. Open Settings
 
@@ -473,17 +710,6 @@ Example body:
 }
 ```
 
-If a folder is selected:
-
-```json
-{
-  "filter": {
-    "projectId": 12345,
-    "folderId": "67890"
-  }
-}
-```
-
 ### 4. QMetry testcase search endpoint
 
 The app calls:
@@ -519,24 +745,9 @@ lastModified
 
 If testcase-level rows are unavailable but the cycle response contains `testcaseExecutionProgress`, the app uses cycle-level progress counts as fallback for cycle charts.
 
-### 6. Cycle report behavior
-
-When the user selects **Cycles** and clicks **Generate Report**, the report shows cycle health for the selected project/date range:
-
-- cycles in scope
-- total test cases in those cycles
-- executed count
-- pass/fail/blocked/not executed split
-- pass rate
-- coverage
-- at-risk cycles
-- narrative focused on cycle results
-
-If a future UI adds a specific cycle selector, the request should also pass `cycleId`/`cycleKey` so the report filters to that one cycle only.
-
 ---
 
-## AI provider setup for narrative summary
+## AI provider setup for Narrative Summary
 
 The project uses an AI provider only for the **Narrative Summary** section. All counts, charts, KPIs, cycle metrics, defect totals, and PDF sections are deterministic and generated from verified data.
 
@@ -574,9 +785,7 @@ Set:
 | API key | your provider API key |
 | Base URL | only needed for compatible providers |
 
-### Server fallback configuration
-
-You can also set fallback values in `config/runtime.json` or `config/report.json`. Do not commit real API keys.
+Do not commit real API keys.
 
 ---
 
@@ -594,9 +803,7 @@ Open:
 http://localhost:3000
 ```
 
-### Step 2. Configure integrations or import files
-
-Choose one mode:
+### Step 2. Choose data mode
 
 | Mode | Setup |
 |---|---|
@@ -604,13 +811,15 @@ Choose one mode:
 | API only | Configure Jira/QMetry from Settings or local config files |
 | Mixed | Keep files in `input/` and enable integrations; the dataset is merged and deduped |
 
-### Step 3. Test connections
+### Step 3. Import files or test connections
 
-In Settings, test Jira and QMetry connections before generating a report.
+For Excel-only demo, upload files from Import Data.
 
-### Step 4. Generate dashboard data
+For live API mode, test Jira and QMetry connections from Settings.
 
-Use the dashboard filters:
+### Step 4. Select project/date filters
+
+Use:
 
 - project
 - start date
@@ -618,9 +827,7 @@ Use the dashboard filters:
 - result filter
 - search text
 
-The dashboard updates from the filtered dataset.
-
-### Step 5. Generate a report
+### Step 5. Generate report
 
 Go to:
 
@@ -657,7 +864,7 @@ Download PDF
 | Full | Complete QA reporting pack | Overview, execution, defects, cycles, UAT, risks, plan, narrative, summary |
 | Executive | Senior-management summary | Key KPIs, defects, execution status, risks, narrative, summary |
 | Defects | Defect-focused view | Story/bug split, open backlog, priority/owner risk, UAT where available, defect narrative |
-| Cycles | QMetry cycle health view | Cycle execution progress, pass/fail/blocked/NE split, coverage, pass rate, at-risk cycles, cycle narrative |
+| Cycles | QMetry/file cycle health view | Cycle execution progress, pass/fail/blocked/NE split, coverage, pass rate, at-risk cycles, cycle narrative |
 
 ### UAT message explanation
 
@@ -667,7 +874,7 @@ If you see:
 No UAT issues in the selected date range. Widen the date range or check that an ODL UAT export is staged under Import Data.
 ```
 
-It means the selected range has no vendor/UAT rows from imported UAT data. It does **not** mean QMetry cycles are missing. UAT data is separate from QMetry execution data.
+It means the selected range has no vendor/UAT rows from imported UAT data. It does **not** mean QMetry cycles are missing. UAT data is separate from test execution data.
 
 ---
 
@@ -692,7 +899,7 @@ Docker default:
 }
 ```
 
-The PDF should not show internal wording such as “AI Narrative”. It should show business-facing wording such as:
+The PDF should show business-facing wording such as:
 
 ```text
 Narrative Summary
@@ -702,7 +909,7 @@ Narrative Summary
 
 ## Live integration probe
 
-Use the live probe to verify Jira/QMetry connectivity and supported QMetry fields before debugging the app.
+Use the live probe only when testing Jira/QMetry connectivity. It is not needed for Excel-only mode.
 
 ### 1. Configure using env vars
 
@@ -730,17 +937,6 @@ node scripts/live-check-v2.mjs
 export QA_PROXY_URL="http://proxy.example.com:8080"
 node scripts/live-check-v2.mjs
 ```
-
-### 4. What the probe checks
-
-The script verifies:
-
-- folder-tree API
-- test-cycle search API
-- testcase field-by-field validity
-- combined supported testcase fields
-- no-fields default response
-- execution-date field discovery
 
 Expected QMetry field conclusion:
 
@@ -799,7 +995,7 @@ npm run build --workspace=apps/batch && npm run build --workspace=apps/web && np
 | `GET` | `/health` | API health check |
 | `GET` | `/api/status` | Runtime status and credential availability summary |
 | `GET` | `/api/dashboard` | Filtered dashboard payload |
-| `POST` | `/api/generate` | Parse/fetch data, aggregate metrics, write output artifacts, optionally generate narrative summary |
+| `POST` | `/api/generate` | Parse/fetch data, aggregate metrics, write output artifacts, optionally generate Narrative Summary |
 | `GET` | `/api/report` | Last generated markdown report |
 | `POST` | `/api/report/pdf` | Generate PDF using the print route |
 | `GET` | `/api/integrations` | Integration configuration summary |
@@ -813,38 +1009,24 @@ npm run build --workspace=apps/batch && npm run build --workspace=apps/web && np
 
 ## Troubleshooting
 
-### Dashboard/report shows zero values
+### Dashboard/report shows zero values in Excel-only mode
 
 Check:
 
-1. The selected date range overlaps real data.
-2. The selected project key matches the data source project.
-3. Jira/QMetry connections pass the Settings connection test.
-4. `output/raw-dataset.json` is refreshed after changing connection settings.
-5. You are not filtering by a result/status that excludes all rows.
+1. The uploaded file is `.xlsx` or `.xls`.
+2. The file is detected as `test-execution`, `jira`, or `odl`, not `unknown`.
+3. The selected date range overlaps the uploaded data.
+4. The selected project key matches the file data.
+5. Old `output/` files were cleared before the demo.
+6. You uploaded the required file type for the widget you expect to show.
+
+### File detected as unknown
+
+Check the header names. The parser requires exact key headers for each supported file type.
 
 ### QMetry cycles found, but no testcase rows parsed
 
-This usually means testcase detail rows were unavailable, filtered out, or the session lacks permission. The app can fall back to `testcaseExecutionProgress` from cycle search for chart generation when available.
-
-Check the live probe:
-
-```bash
-node scripts/live-check-v2.mjs
-```
-
-Confirm supported testcase fields include:
-
-```text
-updated
-```
-
-and do not include:
-
-```text
-executedOn
-lastModified
-```
+This is only relevant in live QMetry mode. The app can fall back to `testcaseExecutionProgress` from cycle search when available.
 
 ### “No UAT issues in selected date range”
 
@@ -905,17 +1087,13 @@ Use this checklist when setting up the project from scratch:
 2. Run `npm install`.
 3. Start app using `./run.sh dev` or `npm run dev`.
 4. Open `http://localhost:3000`.
-5. Go to Settings.
-6. Add Jira connection using `https://jira.example.com` style base URL.
-7. Add QMetry connection with generic project key/project ID.
-8. Add AI provider/model/API key for Narrative Summary.
-9. Test Jira connection.
-10. Test QMetry connection.
-11. Upload Excel files if using file mode.
-12. Select project and date range in dashboard.
-13. Generate report from QA Report tab.
-14. Review metrics and Narrative Summary.
-15. Download PDF.
-16. Run `npm run build --workspace=apps/batch && npm run build --workspace=apps/web && npm run build --workspace=apps/api` before pushing changes.
-17. Run `npm test` before pushing changes.
-18. Verify no secrets or company-specific URLs are included in committed files.
+5. For Excel-only mode, skip Jira/QMetry setup.
+6. Upload properly formatted Excel files in Import Data.
+7. Configure an AI provider/key only if Narrative Summary is required.
+8. Select project and date range in dashboard.
+9. Generate report from QA Report tab.
+10. Review metrics and Narrative Summary.
+11. Download PDF.
+12. Run `npm run build --workspace=apps/batch && npm run build --workspace=apps/web && npm run build --workspace=apps/api` before pushing changes.
+13. Run `npm test` before pushing changes.
+14. Verify no secrets or company-specific URLs are included in committed files.
