@@ -93,6 +93,39 @@ function installUndatedCycleFetchMock(calls: FetchCall[]): void {
   }) as typeof fetch;
 }
 
+function installProgressFallbackFetchMock(calls: FetchCall[]): void {
+  process.env.INTEGRATION_DEBUG = 'false';
+  process.env.INTEGRATION_DEBUG_FILE = 'false';
+
+  globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+    const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+    calls.push({ url, init: init || {} });
+
+    if (url.includes('/testcases/search')) {
+      return jsonResponse({ data: [], total: 0 });
+    }
+
+    if (url.includes('/testcycles/search')) {
+      return jsonResponse({
+        data: [{
+          id: 'progress-cycle',
+          key: 'DLM-TR-61',
+          summary: 'Cycle progress only',
+          updated: { updatedOn: '05/Jul/2026 14:18' },
+          testcaseExecutionProgress: [
+            { name: 'Pass', count: 2 },
+            { name: 'Fail', count: 1 },
+            { name: 'Not Executed', count: 3 },
+          ],
+        }],
+        total: 1,
+      });
+    }
+
+    return jsonResponse({ errorMessage: `Unexpected URL ${url}` }, 404);
+  }) as typeof fetch;
+}
+
 function bodyJson(call: FetchCall): unknown {
   assert.equal(typeof call.init.body, 'string');
   return JSON.parse(call.init.body as string);
@@ -149,6 +182,15 @@ async function main(): Promise<void> {
   const undated = await fetchQmetryExecutions(qmetryConfig(), { startDate: '2026-07-01', endDate: '2026-07-07', project: 'DLM' });
   const undatedKeys = new Set(undated.executions.map((row) => row.caseKey));
   assert.deepEqual([...undatedKeys].sort(), ['DLM-TC-12'], 'undated rows should not survive period filters unless the row or parent cycle has an in-scope date');
+
+  const fallbackCalls: FetchCall[] = [];
+  installProgressFallbackFetchMock(fallbackCalls);
+  const fallback = await fetchQmetryExecutions(qmetryConfig(), { startDate: '2026-07-01', endDate: '2026-07-07', project: 'DLM' });
+  assert.match(fallback.error || '', /cycle-level execution progress/, 'fallback should be noted when testcase rows are unavailable');
+  assert.equal(fallback.executions.length, 6, 'cycle-level testcaseExecutionProgress should populate report chart rows when testcase rows are unavailable');
+  assert.equal(fallback.executions.filter((row) => row.result === 'PASS').length, 2);
+  assert.equal(fallback.executions.filter((row) => row.result === 'FAIL').length, 1);
+  assert.equal(fallback.executions.filter((row) => row.result === 'NE').length, 3);
 
   console.log('qmetryClient tests passed');
 }
