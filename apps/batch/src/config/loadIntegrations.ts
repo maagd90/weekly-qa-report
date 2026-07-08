@@ -241,6 +241,31 @@ export function loadIntegrations(configDir: string): IntegrationsConfig {
   }
 }
 
+export function integrationsSummary(configDir: string) {
+  const cfg = loadIntegrations(configDir);
+  const enabledProfiles = configuredJiraProfiles(cfg);
+  const jiraBaseUrl = enabledProfiles[0]?.baseUrl || cfg.jira.baseUrl || '';
+  return {
+    jira: {
+      enabled: enabledProfiles.length > 0,
+      baseUrl: jiraBaseUrl,
+      configured: Boolean(enabledProfiles.length && jiraBaseUrl),
+      profiles: enabledProfiles.map((profile) => ({
+        name: profile.name || 'JIRA',
+        enabled: profile.enabled,
+        baseUrl: profile.baseUrl,
+        projectKeys: profile.projectKeys,
+      })),
+    },
+    qmetry: {
+      enabled: cfg.qmetry.enabled,
+      baseUrl: cfg.qmetry.baseUrl,
+      configured: Boolean(cfg.qmetry.enabled && cfg.qmetry.baseUrl),
+      cycleIds: cfg.qmetry.cycleIds.length,
+    },
+  };
+}
+
 function configuredUser(cfg: BasicAuthConfig): string | undefined {
   return cfg.email || cfg.username || (cfg.emailEnv ? process.env[cfg.emailEnv] : undefined);
 }
