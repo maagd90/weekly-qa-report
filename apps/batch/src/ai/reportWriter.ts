@@ -4,10 +4,11 @@ import { loadReportConfig } from '../config/loadReportConfig';
 import { generateLlmText, resolveProviderApiKey, type LlmResolvedConfig } from './llmProviders';
 
 const SYSTEM = [
-  'You are a senior QA lead writing a business-ready QA sprint report.',
+  'You are a senior QA manager writing a business-ready QA sprint report narrative.',
   'Use only the verified JSON metrics supplied by the application. Never invent defect counts, ticket ids, people, dates, statuses, vendor names, or project names.',
-  'Match the formal QA Sprint Report style: red-banner business report, numbered sections, validation focus, defect verification, integration validation, risks, upcoming plan, and final summary.',
-  'Use clean markdown with short paragraphs, compact tables, and concise bullets.',
+  'The PDF/print template already renders the numbered QA report sections, KPI tables, charts, and final summary. Your output is embedded only inside the Narrative Summary section.',
+  'Write analytical prose only. Do not recreate a full report structure, do not add a QA SPRINT REPORT title, and do not use numbered section headings like Objective, UAT, Test Execution, Defects, Risks, Sprint Plan, or Final Summary.',
+  'Use clean markdown with short paragraphs, concise bullets, and compact tables only when they add clarity.',
   'When a metric is missing, say Not available instead of guessing.',
 ].join(' ');
 
@@ -23,31 +24,27 @@ function reportPrompt(reportType: ReportType, filter: FilterParams, metricsJson:
   const scope = `${filter.startDate || 'all'} to ${filter.endDate || 'all'}`;
   const project = projectDisplayName(filter.project);
   return [
-    `Generate a ${reportType} QA Sprint Report for ${scope}. Project scope: ${project}.`,
+    `Write the Narrative Summary for a ${reportType} QA Sprint Report covering ${scope}. Project scope: ${project}.`,
     '',
-    'Required report structure. Use these exact section headings:',
-    '1. Objective',
-    '2. Change Requests Validated',
-    '3. UAT Defect Verification Summary',
-    '4. Integration Validation',
-    '5. Payment Flow Validation',
-    '6. Endpoint Product Validation',
-    '7. Source Market Validation',
-    '8. Reports Validation',
-    '9. Booking / Status Change Validation',
-    '10. Defects Still Open / Under Fix',
-    '11. Overall Sprint Status',
-    '12. Risks / Attention Required',
-    '13. Upcoming Sprint Plan',
-    '14. Final Summary',
+    'Important context:',
+    '- The dashboard/PDF template already renders the numbered report sections and tables separately.',
+    '- This text will be inserted inside the existing "AI Narrative Summary" / "Narrative Summary" section.',
+    '- Do not repeat the report skeleton and do not start a new report.',
+    '',
+    'Narrative content to cover:',
+    '- What the execution, cycle, defect, and UAT metrics indicate about sprint health.',
+    '- Notable risks, bottlenecks, or areas needing attention.',
+    '- A brief forward-looking recommendation for the next review period.',
     '',
     'Formatting requirements:',
-    '- Use markdown tables for defect counts, bugs/open items, and area/status summaries.',
-    '- Use concise bullets for validation focus, risks, and upcoming sprint plan.',
+    '- Use 2 to 4 short paragraphs plus concise bullets if needed.',
+    '- Do not use numbered headings such as "1. Objective" or "2. Change Requests Validated".',
+    '- Do not include a title such as "QA Sprint Report".',
+    '- Do not repeat every table already present in the PDF; summarize the meaning of the metrics.',
     '- Use a business tone suitable for senior management.',
     '- Do not include raw JSON.',
     '- Do not mention AI, model names, or tool names.',
-    '- If a section cannot be supported by the verified metrics, write Not available and explain what data is missing.',
+    '- If a point cannot be supported by the verified metrics, write Not available and explain what data is missing.',
     '',
     'Verified metrics JSON:',
     metricsJson,
@@ -89,7 +86,7 @@ export async function generateReportFromDataset(
     prompt: reportPrompt(params.reportType, filter, JSON.stringify({ scope: { ...filter, projectLabel: projectDisplayName(filter.project) }, metrics }, null, 2)),
   });
   return {
-    markdown: markdown || '# QA Sprint Report\n\nNo content generated.',
+    markdown: markdown || 'No narrative content generated.',
     toolCalls,
     llm: { provider: llm.provider, model: llm.model, baseUrl: llm.baseUrl, maxTokens: llm.maxTokens },
   };
