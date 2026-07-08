@@ -90,6 +90,14 @@ function unwrapName(value: unknown): string {
   return sanitizeText(value);
 }
 
+function unwrapUser(value: unknown): string {
+  if (value && typeof value === 'object') {
+    const o = value as Record<string, unknown>;
+    return sanitizeText(o.displayName ?? o.fullName ?? o.emailAddress ?? o.name ?? o.value ?? o.key);
+  }
+  return sanitizeText(value);
+}
+
 function qmetryDate(raw: unknown): string | null {
   if (raw === null || raw === undefined || raw === '') return null;
   if (raw && typeof raw === 'object') {
@@ -316,7 +324,7 @@ function normalizeTestCase(tc: Record<string, unknown>, cycleKey: string, cycleN
   const executedAt = qmetryDate(tc.executedOn);
   const updatedAt = qmetryDate(tc.updated) || qmetryDate(tc.lastModified) || executedAt || fallbackUpdatedAt;
   const resultText = unwrapName(tc.executionResult) || unwrapName(tc.status);
-  const tester = unwrapName(tc.executedBy) || unwrapName(tc.executionAssignee);
+  const tester = unwrapUser(tc.executedBy) || unwrapUser(tc.executionAssignee);
   return { project: projectFromKey(caseKey), cycleKey, cycleName, caseKey, result: mapExecutionResult(resultText), tester: tester || null, executedAt, updatedAt, source: 'qmetry' };
 }
 
