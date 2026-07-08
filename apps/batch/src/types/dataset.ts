@@ -94,7 +94,7 @@ export function emptyDataset(): Dataset {
   };
 }
 
-export type ReportType = 'full' | 'executive' | 'testers' | 'cycles';
+export type ReportType = 'full' | 'executive' | 'defects' | 'cycles' | 'testers';
 
 export interface FilterParams {
   startDate?: string;
