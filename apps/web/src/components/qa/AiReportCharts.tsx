@@ -15,15 +15,20 @@ interface AiReportChartsProps {
   reportType: ReportType;
 }
 
+function isDefectReport(reportType: ReportType): boolean {
+  return reportType === 'defects' || reportType === 'testers';
+}
+
 export function AiReportCharts({ dashboard, kpiStyle, reportType }: AiReportChartsProps) {
   const { overview, testers, cycles, storyBug, defectBacklog, uat } = dashboard;
   const sbTot = storyBug.story + storyBug.bug || 1;
+  const defectReport = isDefectReport(reportType);
   const showOverview = reportType === 'full' || reportType === 'executive';
   const showTestersCompact = reportType === 'full';
-  const showTestersFull = reportType === 'testers';
+  const showTestersFull = false;
   const showCycles = reportType === 'full' || reportType === 'cycles';
-  const showTrace = reportType === 'full';
-  const showUat = reportType === 'full' || reportType === 'executive';
+  const showDefects = reportType === 'full' || defectReport;
+  const showUat = reportType === 'full' || reportType === 'executive' || defectReport;
   const topTesters = [...testers].sort((a, b) => b.executed - a.executed).slice(0, 6);
   const atRiskCycles = dashboard.cyclesByPassPctAsc.slice(0, 5);
 
@@ -113,7 +118,7 @@ export function AiReportCharts({ dashboard, kpiStyle, reportType }: AiReportChar
         </div>
       )}
 
-      {showTrace && storyBug.story + storyBug.bug > 0 && (
+      {showDefects && storyBug.story + storyBug.bug > 0 && (
         <div className="pdf-section grid grid-cols-1 md:grid-cols-2 gap-5">
           <div className="border border-qa-border p-5 bg-white">
             <div className="font-mono-qa text-[10px] tracking-wider uppercase text-qa-muted-light mb-3">Story vs Bug Split</div>
