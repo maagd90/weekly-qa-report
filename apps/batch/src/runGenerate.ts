@@ -4,8 +4,7 @@ import type { ApiFetchScope, DashboardPayload, GenerateParams, GenerateResult } 
 import { buildDataset, computeFingerprint, loadFingerprint, loadRawDataset, saveRawDataset } from './cache/datasetCache';
 import { buildDashboardPayload } from './export/buildDashboardPayload';
 import { hasDashboardMetrics, noMetricsForScopeMessage } from './export/reportMetrics';
-import { generateReportFromDataset, resolveReportLlmConfig } from './ai/reportWriter';
-import { LLM_PROVIDER_LABELS, envKeyForProvider } from './ai/llmProviders';
+import { generateReportFromDataset } from './ai/reportWriter';
 import { discoverInputFiles } from './parse/dispatcher';
 import { canonicalProjectOrUndefined } from './projects/projectKey';
 
@@ -31,7 +30,7 @@ function clearStaleReportFiles(reportPath: string, metaPath: string): void {
 function sanitizeParamsForMeta(params: GenerateParams): GenerateParams {
   const safe: GenerateParams = { ...params };
   delete safe.apiKey;
-  if (safe.llm) safe.llm = { provider: safe.llm.provider, model: safe.llm.model, baseUrl: safe.llm.baseUrl };
+  delete safe.llm;
   if (safe.connections) {
     safe.connections = {
       jira: safe.connections.jira.map((c) => ({ ...c, apiToken: c.apiToken ? '***redacted***' : '', credential: c.credential ? '***redacted***' : '' })),
@@ -110,24 +109,16 @@ export async function runGenerate(params: GenerateParams): Promise<GenerateResul
     };
   }
 
-  const llmConfig = resolveReportLlmConfig(params, configDir, params.apiKey);
-  if (!llmConfig.apiKey) {
-    clearStaleReportFiles(reportPath, metaPath);
-    return { ok: true, filesParsed: fileCount, rowCounts: { executions: dataset.executions.length, issues: dataset.issues.length, uat: dataset.uat.length }, warnings: [...dataset.meta.warnings, `${envKeyForProvider(llmConfig.provider)} not set — AI narrative skipped for ${LLM_PROVIDER_LABELS[llmConfig.provider]}`], paths: { dashboard: dashboardPath, report: '', meta: '', raw: rawPath }, payload };
-  }
-
   try {
-    const report = await generateReportFromDataset(dataset, { ...params, project }, llmConfig.apiKey, filterParams);
-    const reportMeta = { generatedAt: new Date().toISOString(), params: sanitizeParamsForMeta({ ...params, project }), toolCalls: report.toolCalls, llm: report.llm };
+    const report = await generateReportFromDataset(dataset, { ...params, project }, '', filterParams);
+    const reportMeta = { generatedAt: new Date().toISOString(), params: sanitizeParamsForMeta({ ...params, project }), toolCalls: report.toolCalls, writer: 'deterministic-metrics-template' };
     fs.writeFileSync(reportPath, report.markdown);
     fs.writeFileSync(metaPath, JSON.stringify(reportMeta, null, 2));
     return { ok: true, filesParsed: fileCount, rowCounts: { executions: dataset.executions.length, issues: dataset.issues.length, uat: dataset.uat.length }, warnings: dataset.meta.warnings, paths: { dashboard: dashboardPath, report: reportPath, meta: metaPath, raw: rawPath }, payload, report: { markdown: report.markdown, meta: reportMeta } };
   } catch (err) {
     clearStaleReportFiles(reportPath, metaPath);
     const msg = (err as Error).message;
-    const isConn = /connection error|fetch failed|ECONNREFUSED|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|network|socket/i.test(msg);
-    const hint = isConn ? ` — could not reach ${LLM_PROVIDER_LABELS[llmConfig.provider]}; verify network access and ${envKeyForProvider(llmConfig.provider)} in Settings or config/runtime.json.` : '';
-    return { ok: true, filesParsed: fileCount, rowCounts: { executions: dataset.executions.length, issues: dataset.issues.length, uat: dataset.uat.length }, warnings: [...dataset.meta.warnings, `AI narrative failed: ${msg}${hint}`], paths: { dashboard: dashboardPath, report: '', meta: '', raw: rawPath }, payload, error: (err as Error).message };
+    return { ok: true, filesParsed: fileCount, rowCounts: { executions: dataset.executions.length, issues: dataset.issues.length, uat: dataset.uat.length }, warnings: [...dataset.meta.warnings, `Narrative generation failed: ${msg}`], paths: { dashboard: dashboardPath, report: '', meta: '', raw: rawPath }, payload, error: msg };
   }
 }
 
