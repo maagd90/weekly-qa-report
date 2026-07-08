@@ -114,25 +114,43 @@ export function AiReportPage({ dashboard, kpiStyle, project, onGenerated }: AiRe
 
   const generateMutation = useMutation({
     mutationFn: () => batchApi.generate({ startDate, endDate, reportType, project: selectedProject, llm: getUserLlmSelection() }),
+    onMutate: () => {
+      setError(null);
+      setWarning(null);
+    },
     onSuccess: (result) => {
-      setError(result.error || (!result.ok ? 'Generation failed' : null));
-      const skipped = result.warnings?.find((w: string) => w.includes('API key') || w.includes('narrative skipped'));
-      const emptyScope = result.payload && !hasMetrics(result.payload) && hasMetrics(dashboard);
-      setWarning(emptyScope
-        ? 'No metrics in the selected report range. Use full data range or widen the dates.'
-        : skipped || null);
       if (result.payload) setReportDashboard(result.payload);
+      const emptyResult = result.payload && !hasMetrics(result.payload);
+      if (!result.ok || emptyResult) {
+        setReportMarkdown('');
+        setToolCalls([]);
+        setError(result.error || 'No metrics found for the selected report scope. AI narrative was skipped.');
+        setWarning(null);
+        queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+        queryClient.invalidateQueries({ queryKey: ['dashboard-init'] });
+        return;
+      }
+      setError(null);
+      const skipped = result.warnings?.find((w: string) => w.includes('API key') || w.includes('narrative skipped'));
+      setWarning(skipped || null);
       if (result.report?.markdown) {
         const meta = result.report.meta as ReportMeta | undefined;
         setReportMarkdown(result.report.markdown);
         setToolCalls(meta?.toolCalls ?? []);
+      } else {
+        setReportMarkdown('');
+        setToolCalls([]);
       }
       queryClient.invalidateQueries({ queryKey: ['dashboard'] });
       queryClient.invalidateQueries({ queryKey: ['dashboard-init'] });
       queryClient.invalidateQueries({ queryKey: ['report'] });
       onGenerated?.();
     },
-    onError: (err: unknown) => setError(apiErrorMessage(err, 'Report generation failed')),
+    onError: (err: unknown) => {
+      setReportMarkdown('');
+      setToolCalls([]);
+      setError(apiErrorMessage(err, 'Report generation failed'));
+    },
   });
 
   const chartData = reportDashboard ?? dashboard ?? null;
