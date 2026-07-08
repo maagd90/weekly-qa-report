@@ -3,6 +3,7 @@ import path from 'path';
 import type { ApiFetchScope, DashboardPayload, GenerateParams, GenerateResult } from './types/dataset';
 import { buildDataset, computeFingerprint, loadRawDataset, saveRawDataset } from './cache/datasetCache';
 import { buildDashboardPayload } from './export/buildDashboardPayload';
+import { hasDashboardMetrics, noMetricsForScopeMessage } from './export/reportMetrics';
 import { generateReportFromDataset, resolveReportLlmConfig } from './ai/reportWriter';
 import { LLM_PROVIDER_LABELS, envKeyForProvider } from './ai/llmProviders';
 import { discoverInputFiles } from './parse/dispatcher';
@@ -63,6 +64,19 @@ export async function runGenerate(params: GenerateParams): Promise<GenerateResul
   const metaPath = path.join(outputDir, 'report-meta.json');
   const payload = buildDashboardPayload(dataset, filterParams);
   fs.writeFileSync(dashboardPath, JSON.stringify(payload, null, 2));
+
+  if (!hasDashboardMetrics(payload)) {
+    const message = noMetricsForScopeMessage({ project, startDate: params.startDate, endDate: params.endDate, dataset });
+    return {
+      ok: false,
+      filesParsed: fileCount,
+      rowCounts: { executions: dataset.executions.length, issues: dataset.issues.length, uat: dataset.uat.length },
+      warnings: [...dataset.meta.warnings, message],
+      paths: { dashboard: dashboardPath, report: '', meta: '', raw: rawPath },
+      payload,
+      error: message,
+    };
+  }
 
   const llmConfig = resolveReportLlmConfig(params, configDir, params.apiKey);
   if (!llmConfig.apiKey) {
