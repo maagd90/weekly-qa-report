@@ -5,7 +5,7 @@ import { canonicalProjectKey, uniqueCanonicalProjects } from '../projects/projec
 
 const JIRA_SEARCH_PATH = '/rest/api/2/search';
 const QMETRY_TEST_CYCLES_SEARCH_PATH = '/testcycles/search';
-const QMETRY_TEST_CASE_FIELDS = 'seqNo,key,versionNo,summary,priority,status,environment,executionResult,executionAssignee,executedBy,build';
+const QMETRY_TEST_CASE_FIELDS = 'seqNo,key,versionNo,summary,priority,status,environment,executionResult,executionAssignee,build,updated';
 
 const DEFAULT_JIRA_FIELDS = [
   'summary', 'description', 'assignee', 'status', 'priority', 'issuetype',
