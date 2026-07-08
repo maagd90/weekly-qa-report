@@ -314,7 +314,7 @@ function normalizeTestCase(tc: Record<string, unknown>, cycleKey: string, cycleN
   const caseKey = sanitizeText(tc.key || tc.testCaseKey || tc.issueKey || nestedTestCase.key || nestedTestCase.testCaseKey || nestedTestCase.issueKey);
   if (!caseKey) return null;
   const executedAt = qmetryDate(tc.executedOn);
-  const updatedAt = qmetryDate(tc.lastModified) || executedAt || fallbackUpdatedAt;
+  const updatedAt = qmetryDate(tc.updated) || qmetryDate(tc.lastModified) || executedAt || fallbackUpdatedAt;
   const resultText = unwrapName(tc.executionResult) || unwrapName(tc.status);
   const tester = unwrapName(tc.executedBy) || unwrapName(tc.executionAssignee);
   return { project: projectFromKey(caseKey), cycleKey, cycleName, caseKey, result: mapExecutionResult(resultText), tester: tester || null, executedAt, updatedAt, source: 'qmetry' };
