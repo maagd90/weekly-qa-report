@@ -22,7 +22,7 @@ function qmetryConfig(): QmetryIntegrationConfig {
     testCasesSearchPath: '/testcycles/{cycleId}/testcases/search',
     testCasesSearchBody: null,
     usePostSearch: true,
-    testCaseFields: 'seqNo,key,versionNo,summary,priority,status,environment,executionResult,executionAssignee,executedBy,build',
+    testCaseFields: 'seqNo,key,versionNo,summary,priority,status,environment,executionResult,executionAssignee,build,updated',
     cycleIds: [],
     pageSize: 50,
     maxPages: 5,
@@ -41,12 +41,12 @@ function installFetchMock(calls: FetchCall[]): void {
       return jsonResponse({
         warningMessages: [],
         data: [
-          { key: 'DLM-TC-1', executionResult: { name: 'Pass' }, executedOn: '02/Jul/2026 10:00', executedBy: { displayName: 'Tester One' } },
-          { key: 'DLM-TC-2', executionResult: { name: 'Not Executed' }, executionAssignee: { displayName: 'Tester Two' } },
-          { key: 'DLM-TC-3', executionResult: { name: 'Fail' }, executionAssignee: { displayName: 'Tester Three' } },
-          { key: 'DLM-TC-4', executionResult: { name: 'Not Applicable' }, executedOn: 1782950400 },
-          { key: 'DLM-TC-5', executionResult: { name: 'Blocked' }, executedOn: 1783036800000 },
-          { key: 'DLM-TC-6', executionResult: { name: 'Pass' }, executedOn: '04/Jul/2026 12:15' },
+          { key: 'DLM-TC-1', executionResult: { name: 'Pass' }, updated: { updatedOn: '02/Jul/2026 10:00' }, executedBy: { displayName: 'Tester One' } },
+          { key: 'DLM-TC-2', executionResult: { name: 'Not Executed' }, executionAssignee: { displayName: 'Tester Two' }, updated: { updatedOn: '05/Jul/2026 09:00' } },
+          { key: 'DLM-TC-3', executionResult: { name: 'Fail' }, executionAssignee: { displayName: 'Tester Three' }, updated: { updatedOn: '06/Jul/2026 09:00' } },
+          { key: 'DLM-TC-4', executionResult: { name: 'Not Applicable' }, updated: 1782950400 },
+          { key: 'DLM-TC-5', executionResult: { name: 'Blocked' }, updated: 1783036800000 },
+          { key: 'DLM-TC-6', executionResult: { name: 'Pass' }, updated: '04/Jul/2026 12:15' },
         ],
         total: 6,
       });
@@ -76,7 +76,7 @@ function installUndatedCycleFetchMock(calls: FetchCall[]): void {
         data: [
           { key: 'DLM-TC-10', executionResult: { name: 'Not Executed' }, executionAssignee: { displayName: 'Tester Two' } },
           { key: 'DLM-TC-11', executionResult: { name: 'Fail' }, executionAssignee: { displayName: 'Tester Three' } },
-          { key: 'DLM-TC-12', executionResult: { name: 'Pass' }, executedOn: '04/Jul/2026 12:15' },
+          { key: 'DLM-TC-12', executionResult: { name: 'Pass' }, updated: '04/Jul/2026 12:15' },
         ],
         total: 3,
       });
@@ -114,6 +114,7 @@ async function main(): Promise<void> {
   assert.deepEqual(bodyJson(testCaseCall), { filter: { projectId: 19703 } });
   assert.match(testCaseCall.url, /fields=/, 'testcase request should include fields parameter');
   const decodedFieldsUrl = decodeURIComponent(testCaseCall.url);
+  assert.match(decodedFieldsUrl, /updated/, 'testcase request must include QMetry-supported updated field');
   assert.doesNotMatch(decodedFieldsUrl, /executedOn|lastModified/, 'known-invalid QMetry UI fields must not be requested');
 
   const cycleSearchCall = calls.find((call) => call.url.includes('/testcycles/search') && !call.url.includes('/testcases/search'));
@@ -122,31 +123,31 @@ async function main(): Promise<void> {
   assert.deepEqual(bodyJson(cycleSearchCall), { filter: { projectId: 19703, folderId: '96225' } });
 
   const byKey = new Map(result.executions.map((row) => [row.caseKey, row]));
-  assert.equal(byKey.size, 6, 'all rows from a date-scoped cycle should survive even when QMetry omits per-row execution dates');
+  assert.equal(byKey.size, 6, 'all rows from a date-scoped cycle should survive with row or cycle updated dates');
   assert.equal(byKey.get('DLM-TC-1')?.result, 'PASS', 'executionResult object should unwrap to PASS');
-  assert.equal(byKey.get('DLM-TC-1')?.executedAt, '2026-07-02');
+  assert.equal(byKey.get('DLM-TC-1')?.updatedAt, '2026-07-02');
 
   const notExecuted = byKey.get('DLM-TC-2');
-  assert.ok(notExecuted, 'NE row should survive a period filter when its parent cycle is date-scoped');
-  assert.equal(notExecuted.executedAt, null, 'executedAt must remain null when QMetry omits a row execution date');
-  assert.equal(notExecuted.updatedAt, '2026-07-05', 'row should inherit the parent cycle date so dashboard date filters keep it');
+  assert.ok(notExecuted, 'NE row should survive a period filter when row updated is in scope');
+  assert.equal(notExecuted.executedAt, null, 'executedAt remains null because QMetry UI exposes updated, not executedOn');
+  assert.equal(notExecuted.updatedAt, '2026-07-05');
   assert.equal(notExecuted.result, 'NE');
 
   const failedWithoutDate = byKey.get('DLM-TC-3');
-  assert.ok(failedWithoutDate, 'non-NE rows should survive when their parent cycle is date-scoped');
-  assert.equal(failedWithoutDate.executedAt, null, 'executedAt must remain null when QMetry omits a row execution date');
-  assert.equal(failedWithoutDate.updatedAt, '2026-07-05', 'row should inherit the parent cycle date so dashboard date filters keep it');
+  assert.ok(failedWithoutDate, 'non-NE row should survive when row updated is in scope');
+  assert.equal(failedWithoutDate.executedAt, null, 'executedAt remains null because QMetry UI exposes updated, not executedOn');
+  assert.equal(failedWithoutDate.updatedAt, '2026-07-06');
   assert.equal(failedWithoutDate.result, 'FAIL');
 
-  assert.equal(byKey.get('DLM-TC-4')?.executedAt, '2026-07-02', 'epoch seconds should parse');
-  assert.equal(byKey.get('DLM-TC-5')?.executedAt, '2026-07-03', 'epoch milliseconds should parse');
-  assert.equal(byKey.get('DLM-TC-6')?.executedAt, '2026-07-04', 'dd-MMM date should parse');
+  assert.equal(byKey.get('DLM-TC-4')?.updatedAt, '2026-07-02', 'epoch seconds should parse');
+  assert.equal(byKey.get('DLM-TC-5')?.updatedAt, '2026-07-03', 'epoch milliseconds should parse');
+  assert.equal(byKey.get('DLM-TC-6')?.updatedAt, '2026-07-04', 'dd-MMM date should parse');
 
   const undatedCalls: FetchCall[] = [];
   installUndatedCycleFetchMock(undatedCalls);
   const undated = await fetchQmetryExecutions(qmetryConfig(), { startDate: '2026-07-01', endDate: '2026-07-07', project: 'DLM' });
   const undatedKeys = new Set(undated.executions.map((row) => row.caseKey));
-  assert.deepEqual([...undatedKeys].sort(), ['DLM-TC-12'], 'undated rows should not survive period filters unless the parent cycle has an in-scope date');
+  assert.deepEqual([...undatedKeys].sort(), ['DLM-TC-12'], 'undated rows should not survive period filters unless the row or parent cycle has an in-scope date');
 
   console.log('qmetryClient tests passed');
 }
