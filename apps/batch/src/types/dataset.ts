@@ -56,12 +56,15 @@ export interface FileMeta {
   source: 'file' | 'jira-api' | 'qmetry-api';
 }
 
+export interface DedupeStats { executions: number; issues: number; uat: number }
+
 export interface DatasetMeta {
   parsedAt: string;
   fetchedAt: string | null;
   sourceFiles: string[];
   warnings: string[];
   integrations: { jira: boolean; qmetry: boolean };
+  deduped?: DedupeStats;
 }
 
 export interface Dataset {
@@ -86,6 +89,7 @@ export function emptyDataset(): Dataset {
       sourceFiles: [],
       warnings: [],
       integrations: { jira: false, qmetry: false },
+      deduped: { executions: 0, issues: 0, uat: 0 },
     },
   };
 }
@@ -180,7 +184,7 @@ export interface DashboardPayload {
   uat: DashboardUatPayload | null;
   byProject?: DashboardByProject[];
   files: FileMeta[];
-  meta: { generatedAt: string; parsedAt: string; fetchedAt: string | null; warnings: string[]; dataMin?: string | null; dataMax?: string | null };
+  meta: { generatedAt: string; parsedAt: string; fetchedAt: string | null; warnings: string[]; dataMin?: string | null; dataMax?: string | null; deduped?: DedupeStats };
 }
 
 export interface GenerateResult {
