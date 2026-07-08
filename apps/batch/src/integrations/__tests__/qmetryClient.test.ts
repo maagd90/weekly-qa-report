@@ -22,7 +22,7 @@ function qmetryConfig(): QmetryIntegrationConfig {
     testCasesSearchPath: '/testcycles/{cycleId}/testcases/search',
     testCasesSearchBody: null,
     usePostSearch: true,
-    testCaseFields: 'seqNo,key,versionNo,summary,priority,status,environment,executionResult,executionAssignee,executedBy,build',
+    testCaseFields: 'seqNo,key,versionNo,summary,priority,status,environment,executionResult,executionAssignee,executedOn,executedBy,lastModified,build',
     cycleIds: [],
     pageSize: 50,
     maxPages: 5,
@@ -39,7 +39,6 @@ function installFetchMock(calls: FetchCall[]): void {
 
     if (url.includes('/testcases/search')) {
       return jsonResponse({
-        warningMessages: ['Provided fields executedOn,lastModified are invalid'],
         data: [
           { key: 'DLM-TC-1', executionResult: { name: 'Pass' }, executedOn: '02/Jul/2026 10:00', lastModified: '03/Jul/2026 11:30', executedBy: { displayName: 'Tester One' } },
           { key: 'DLM-TC-2', executionResult: { name: 'Not Executed' }, executedOn: null, lastModified: '10/Jan/2026 09:00', executionAssignee: { displayName: 'Tester Two' } },
@@ -113,7 +112,9 @@ async function main(): Promise<void> {
   assert.equal((testCaseCall.init.headers as Record<string, string>).Cookie, 'JSESSIONID=abc; atlassian.xsrf.token=def', 'session header should be sent as Cookie without the Cookie: prefix');
   assert.deepEqual(bodyJson(testCaseCall), { filter: { projectId: 19703 } });
   assert.match(testCaseCall.url, /fields=/, 'testcase request should include fields parameter');
-  assert.doesNotMatch(decodeURIComponent(testCaseCall.url), /executedOn|lastModified/, 'unsupported QMetry fields should not be requested');
+  const decodedFieldsUrl = decodeURIComponent(testCaseCall.url);
+  assert.match(decodedFieldsUrl, /executedOn/, 'testcase request must include executedOn because date filtering depends on executedAt');
+  assert.match(decodedFieldsUrl, /lastModified/, 'testcase request must include lastModified for updatedAt metadata');
 
   const cycleSearchCall = calls.find((call) => call.url.includes('/testcycles/search') && !call.url.includes('/testcases/search'));
   assert.ok(cycleSearchCall, 'expected testcycle search request');
