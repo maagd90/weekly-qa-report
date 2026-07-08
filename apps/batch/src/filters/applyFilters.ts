@@ -64,8 +64,11 @@ function filterIssues(rows: IssueRow[], filter: FilterParams, allDates: boolean)
     out = out.filter((r) =>
       inRange(r.updatedAt, startDate, endDate) ||
       (r.resolvedAt ? inRange(r.resolvedAt, startDate, endDate) : false) ||
-      (r.createdAt ? inRange(r.createdAt, startDate, endDate) : false) ||
-      (r.status === 'open' && r.createdAt !== null && r.createdAt <= endDate)
+      (r.createdAt ? inRange(r.createdAt, startDate, endDate) : false)
+      // A2 (strictly in-period): an issue counts only if it was created, updated, or
+      // resolved within [startDate, endDate]. The previous "open && createdAt <= endDate"
+      // clause is removed — it ignored startDate and made open-defect counts grow with the
+      // end date regardless of the period, which read as "the date filter is broken".
     );
   }
   const q = (filter.search || '').trim().toLowerCase();
