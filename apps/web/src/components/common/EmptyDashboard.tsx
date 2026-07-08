@@ -19,7 +19,7 @@ export function EmptyDashboard({ onGenerate }: EmptyDashboardProps) {
         className="font-mono-qa text-xs font-semibold tracking-wider uppercase px-6 py-3 border-none cursor-pointer text-white"
         style={{ background: QA.accent }}
       >
-        Go to AI Report →
+        Go to QA Report →
       </button>
     </div>
   );
