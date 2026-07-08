@@ -248,6 +248,36 @@ function executionInScope(row: ExecutionRow, scope?: ApiFetchScope, allowUndated
   return allowUndatedScopedCycleRows;
 }
 
+function progressRowsFromCycle(cycle: QmetryCycleSummary, projectKey?: string): ExecutionRow[] {
+  const progress = cycle.progress || [];
+  if (!progress.length) return [];
+  const cycleKey = cycle.key || cycle.id;
+  const cycleName = cycle.name || cycleKey;
+  const fallbackDate = cycleDateFallback(cycle);
+  const projectFromCycle = projectFromKey(cycleKey);
+  const project = projectFromCycle === 'UNKNOWN' ? (projectKey || 'UNKNOWN') : projectFromCycle;
+  const rows: ExecutionRow[] = [];
+  for (const entry of progress) {
+    const count = Math.max(0, Math.floor(Number(entry.count) || 0));
+    if (!count) continue;
+    const result = mapExecutionResult(entry.name);
+    for (let i = 0; i < count; i++) {
+      rows.push({
+        project,
+        cycleKey,
+        cycleName,
+        caseKey: `${cycleKey}-PROGRESS-${result}-${i + 1}`,
+        result,
+        tester: null,
+        executedAt: null,
+        updatedAt: fallbackDate,
+        source: 'qmetry',
+      });
+    }
+  }
+  return rows;
+}
+
 function compactWarnings(warnings: string[]): string {
   const max = 8;
   if (!warnings.length) return '';
@@ -385,7 +415,8 @@ export async function fetchFolderCycleHealth(cfg: QmetryIntegrationConfig, folde
   for (const cycle of scopedCycles) {
     const result = await fetchCycleExecutions(cfg, cycle.id, cycle.name, scope, cycle.key || cycle.id, cycleHasUsableScopeDate(cycle), cycleDateFallback(cycle));
     if (result.error) warnings.push(`${cycle.name}: ${result.error}`);
-    cycles.push(summarizeCycle(result.cycleKey || cycle.key || cycle.id, result.cycleName || cycle.name, result.executions));
+    const rows = result.executions.length ? result.executions : progressRowsFromCycle(cycle, cfg.projectKey);
+    cycles.push(summarizeCycle(result.cycleKey || cycle.key || cycle.id, result.cycleName || cycle.name, rows));
   }
   const error = compactWarnings(warnings);
   return error ? { cycles, error } : { cycles };
@@ -420,14 +451,19 @@ export async function fetchQmetryExecutions(cfg: QmetryIntegrationConfig, scope?
   const all: ExecutionRow[] = [];
   const cycleMeta = new Map<string, string>();
   const warnings: string[] = [];
+  let usedProgressFallback = false;
   for (const cycle of cycles) {
     const result = await fetchCycleExecutions(cfg, cycle.id, cycle.name, scope, cycle.key || cycle.id, cycleHasUsableScopeDate(cycle), cycleDateFallback(cycle));
     if (result.error) warnings.push(`${cycle.name || cycle.id}: ${result.error}`);
-    all.push(...result.executions);
+    const fallbackRows = !result.executions.length ? progressRowsFromCycle(cycle, cfg.projectKey) : [];
+    if (fallbackRows.length) usedProgressFallback = true;
+    all.push(...(result.executions.length ? result.executions : fallbackRows));
     cycleMeta.set(result.cycleKey || cycle.key || cycle.id, result.cycleName || cycle.name || cycle.id);
   }
   if (!all.length && !warnings.length) {
-    warnings.push(`QMetry cycles were found, but no executions were parsed for ${cfg.projectKey || cfg.projectId || 'the configured project'}. Check the testcase search path and session permissions.`);
+    warnings.push(`QMetry cycles were found, but no testcase execution rows or cycle-level progress counts were available for ${cfg.projectKey || cfg.projectId || 'the configured project'}. Check the testcase search path, selected date range, and session permissions.`);
+  } else if (usedProgressFallback) {
+    warnings.push('QMetry testcase execution rows were unavailable for one or more cycles, so cycle-level execution progress was used for report charts.');
   }
   const error = compactWarnings(warnings);
   return error ? { executions: all, cycleMeta, error } : { executions: all, cycleMeta };
