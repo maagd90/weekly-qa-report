@@ -3,6 +3,7 @@ import path from 'path';
 import { parseAllFiles } from '../../parse/dispatcher';
 import { mergeDatasets } from '../../merge/mergeDataset';
 import { buildDashboardPayload } from '../buildDashboardPayload';
+import { hasDashboardMetrics, noMetricsForScopeMessage } from '../reportMetrics';
 import { emptyDataset, type Dataset } from '../../types/dataset';
 
 const FIXTURES = path.resolve(__dirname, '../../../../../fixtures/synthetic');
@@ -134,6 +135,18 @@ function duplicateDataset(): Dataset {
   assert.strictEqual(p.testers.length, 0);
   assert.strictEqual(p.cycles.length, 0);
   console.log('✓ empty search match');
+}
+
+// Empty report metrics guard must block AI narrative generation
+{
+  const emptyPayload = buildDashboardPayload(ds, { search: 'zzz_no_match_xyz_12345', project: 'DLM' });
+  assert.strictEqual(hasDashboardMetrics(emptyPayload), false, 'empty payload has no report metrics');
+  const populatedPayload = buildDashboardPayload(focusedDataset(), { project: 'DLM', startDate: '2026-07-01', endDate: '2026-07-31' });
+  assert.strictEqual(hasDashboardMetrics(populatedPayload), true, 'populated payload has report metrics');
+  const msg = noMetricsForScopeMessage({ project: 'DLM', startDate: '2030-01-01', endDate: '2030-01-31', dataset: ds });
+  assert.ok(msg.includes('AI narrative was skipped'));
+  assert.ok(msg.includes('Dataset contains:'));
+  console.log('✓ empty metrics report guard');
 }
 
 // Monthly chart uses updatedAt when QMetry omits executedAt
