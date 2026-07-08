@@ -171,6 +171,6 @@ export function buildDashboardPayload(
     uat: uatPayload,
     byProject,
     files: dataset.files,
-    meta: { generatedAt: new Date().toISOString(), parsedAt: dataset.meta.parsedAt, fetchedAt: dataset.meta.fetchedAt, warnings: dataset.meta.warnings, dataMin: filtered.dataMin, dataMax: filtered.dataMax },
+    meta: { generatedAt: new Date().toISOString(), parsedAt: dataset.meta.parsedAt, fetchedAt: dataset.meta.fetchedAt, warnings: dataset.meta.warnings, dataMin: filtered.dataMin, dataMax: filtered.dataMax, deduped: dataset.meta.deduped },
   } as DashboardPayload & { workItems: typeof workItems };
 }
