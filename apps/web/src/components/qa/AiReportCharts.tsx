@@ -129,20 +129,20 @@ export function AiReportCharts({ dashboard, kpiStyle, reportType }: AiReportChar
               <div key={r.label} className="mb-3 last:mb-0">
                 <div className="flex justify-between text-[12.5px] mb-1">
                   <span className="font-semibold">{r.label}</span>
-                  <span className="font-mono-qa text-qa-muted">{fmt(r.count)} · {r.open} open</span>
+                  <span className="font-mono-qa text-qa-muted">{fmt(r.count)} · {r.open} open in period</span>
                 </div>
                 <HorizBar pct={(r.count / sbTot) * 100} color={r.color} />
               </div>
             ))}
           </div>
           <div className="border border-qa-border p-5 bg-[#faf8f2]">
-            <div className="font-mono-qa text-[10px] tracking-wider uppercase text-qa-muted-light mb-3">Defect Backlog</div>
+            <div className="font-mono-qa text-[10px] tracking-wider uppercase text-qa-muted-light mb-3">Defects Active in Period</div>
             <div className="font-spectral text-[28px] font-bold mb-2">{defectBacklog.openTotal}</div>
-            <div className="text-[12px] text-qa-muted mb-3">open bugs in scope</div>
+            <div className="text-[12px] text-qa-muted mb-3">open bugs active in period</div>
             {defectBacklog.byPriority.slice(0, 4).map((p) => (
               <div key={p.priority} className="flex justify-between py-1 text-[12px] border-t border-[#efece4] first:border-t-0">
                 <span>{p.priority}</span>
-                <span className="font-mono-qa">{p.open} open</span>
+                <span className="font-mono-qa">{p.open} open in period</span>
               </div>
             ))}
           </div>
