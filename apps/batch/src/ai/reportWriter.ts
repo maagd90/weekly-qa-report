@@ -53,6 +53,8 @@ function reportPrompt(reportType: ReportType, filter: FilterParams, metricsJson:
     '- For missing areas, write Not available and state which data is missing.',
     '- Do not create ticket IDs, defect names, owners, dates, vendor names, or project names that are not in the JSON.',
     '',
+    'IMPORTANT: all counts (including open defects) reflect only items with activity within the selected date range — describe them as period activity, not an all-time open backlog.',
+    '',
     'Verified metrics JSON:',
     metricsJson,
   ].join('\n');
