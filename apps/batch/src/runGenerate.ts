@@ -19,6 +19,15 @@ function hasBrowserConnections(params: GenerateParams): boolean {
   return Boolean(params.connections?.jira?.length || params.connections?.qmetry?.length);
 }
 
+function removeIfExists(filePath: string): void {
+  if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+}
+
+function clearStaleReportFiles(reportPath: string, metaPath: string): void {
+  removeIfExists(reportPath);
+  removeIfExists(metaPath);
+}
+
 function sanitizeParamsForMeta(params: GenerateParams): GenerateParams {
   const safe: GenerateParams = { ...params };
   delete safe.apiKey;
@@ -52,6 +61,11 @@ export async function runGenerate(params: GenerateParams): Promise<GenerateResul
   fs.mkdirSync(inputDir, { recursive: true });
   fs.mkdirSync(outputDir, { recursive: true });
 
+  const dashboardPath = path.join(outputDir, 'dashboard-data.json');
+  const reportPath = path.join(outputDir, 'report.md');
+  const metaPath = path.join(outputDir, 'report-meta.json');
+  const rawPath = path.join(outputDir, 'raw-dataset.json');
+
   const project = canonicalProjectOrUndefined(params.project);
   const filterParams = { startDate: params.startDate, endDate: params.endDate, search: params.search, result: params.result, project };
   const apiScope = apiScopeFromParams(params);
@@ -66,25 +80,24 @@ export async function runGenerate(params: GenerateParams): Promise<GenerateResul
     const forceLiveBuild = hasBrowserConnections(params) || cachedFingerprint !== fingerprint;
     dataset = forceLiveBuild ? await buildDataset(inputDir, configDir, params.connections, buildOptions) : (cached || await buildDataset(inputDir, configDir, params.connections, buildOptions));
   } catch (err) {
+    clearStaleReportFiles(reportPath, metaPath);
     return { ok: false, filesParsed: 0, rowCounts: {}, warnings: [], paths: { dashboard: '', report: '', meta: '', raw: '' }, error: (err as Error).message };
   }
 
   const fileCount = discoverInputFiles(inputDir).length;
   const totalRows = dataset.executions.length + dataset.issues.length + dataset.uat.length;
   if (totalRows === 0) {
+    clearStaleReportFiles(reportPath, metaPath);
     return { ok: false, filesParsed: fileCount, rowCounts: {}, warnings: dataset.meta.warnings, paths: { dashboard: '', report: '', meta: '', raw: '' }, error: 'No data from APIs or input files. Configure Settings/API connections or stage Excel files.' };
   }
 
-  const rawPath = path.join(outputDir, 'raw-dataset.json');
   saveRawDataset(outputDir, dataset, fingerprint);
 
-  const dashboardPath = path.join(outputDir, 'dashboard-data.json');
-  const reportPath = path.join(outputDir, 'report.md');
-  const metaPath = path.join(outputDir, 'report-meta.json');
   const payload = buildDashboardPayload(dataset, filterParams);
   fs.writeFileSync(dashboardPath, JSON.stringify(payload, null, 2));
 
   if (!hasDashboardMetrics(payload)) {
+    clearStaleReportFiles(reportPath, metaPath);
     const message = noMetricsForScopeMessage({ project, startDate: params.startDate, endDate: params.endDate, dataset });
     return {
       ok: false,
@@ -99,6 +112,7 @@ export async function runGenerate(params: GenerateParams): Promise<GenerateResul
 
   const llmConfig = resolveReportLlmConfig(params, configDir, params.apiKey);
   if (!llmConfig.apiKey) {
+    clearStaleReportFiles(reportPath, metaPath);
     return { ok: true, filesParsed: fileCount, rowCounts: { executions: dataset.executions.length, issues: dataset.issues.length, uat: dataset.uat.length }, warnings: [...dataset.meta.warnings, `${envKeyForProvider(llmConfig.provider)} not set — AI narrative skipped for ${LLM_PROVIDER_LABELS[llmConfig.provider]}`], paths: { dashboard: dashboardPath, report: '', meta: '', raw: rawPath }, payload };
   }
 
@@ -109,6 +123,7 @@ export async function runGenerate(params: GenerateParams): Promise<GenerateResul
     fs.writeFileSync(metaPath, JSON.stringify(reportMeta, null, 2));
     return { ok: true, filesParsed: fileCount, rowCounts: { executions: dataset.executions.length, issues: dataset.issues.length, uat: dataset.uat.length }, warnings: dataset.meta.warnings, paths: { dashboard: dashboardPath, report: reportPath, meta: metaPath, raw: rawPath }, payload, report: { markdown: report.markdown, meta: reportMeta } };
   } catch (err) {
+    clearStaleReportFiles(reportPath, metaPath);
     const msg = (err as Error).message;
     const isConn = /connection error|fetch failed|ECONNREFUSED|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|network|socket/i.test(msg);
     const hint = isConn ? ` — could not reach ${LLM_PROVIDER_LABELS[llmConfig.provider]}; verify network access and ${envKeyForProvider(llmConfig.provider)} in Settings or config/runtime.json.` : '';
