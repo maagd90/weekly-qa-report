@@ -1,93 +1,101 @@
-import type { Dataset, FilterParams, GenerateParams, ReportType } from '../types/dataset';
+import type { Dataset, FilterParams, GenerateParams, ReportType, DashboardPayload } from '../types/dataset';
 import { AI_TOOLS, executeTool } from './datasetTools';
-import { loadReportConfig } from '../config/loadReportConfig';
-import { generateLlmText, resolveProviderApiKey, type LlmResolvedConfig } from './llmProviders';
-
-const SYSTEM = [
-  'You are a senior QA manager writing a business-ready QA sprint report narrative.',
-  'Use only the verified JSON metrics supplied by the application. Never invent defect counts, ticket ids, people, dates, statuses, vendor names, or project names.',
-  'The PDF/print template already renders the numbered QA report sections, KPI tables, charts, and final summary. Your output is embedded only inside the Narrative Summary section.',
-  'Write analytical prose only. Do not recreate a full report structure, do not add a QA SPRINT REPORT title, and do not use numbered section headings like Objective, UAT, Test Execution, Defects, Risks, Sprint Plan, or Final Summary.',
-  'Use clean markdown with short paragraphs, concise bullets, and compact tables only when they add clarity.',
-  'When a metric is missing, say Not available instead of guessing.',
-].join(' ');
+import { buildDashboardPayload } from '../export/buildDashboardPayload';
 
 function projectDisplayName(project?: string): string {
   const key = (project || '').trim().toUpperCase();
   if (!key || key === 'ALL') return 'All Projects';
   if (key === 'DP') return 'WonderMiles';
+  if (key === 'DLM') return 'DN4_FT - Supply & DMC';
   if (key === 'DN4_FT') return 'DN4 Flight';
   return project || key;
 }
 
-function reportPrompt(reportType: ReportType, filter: FilterParams, metricsJson: string): string {
-  const scope = `${filter.startDate || 'all'} to ${filter.endDate || 'all'}`;
-  const project = projectDisplayName(filter.project);
-  return [
-    `Write the Narrative Summary for a ${reportType} QA Sprint Report covering ${scope}. Project scope: ${project}.`,
-    '',
-    'Important context:',
-    '- The dashboard/PDF template already renders the numbered report sections and tables separately.',
-    '- This text will be inserted inside the existing "AI Narrative Summary" / "Narrative Summary" section.',
-    '- Do not repeat the report skeleton and do not start a new report.',
-    '',
-    'Narrative content to cover:',
-    '- What the execution, cycle, defect, and UAT metrics indicate about sprint health.',
-    '- Notable risks, bottlenecks, or areas needing attention.',
-    '- A brief forward-looking recommendation for the next review period.',
-    '',
-    'Formatting requirements:',
-    '- Use 2 to 4 short paragraphs plus concise bullets if needed.',
-    '- Do not use numbered headings such as "1. Objective" or "2. Change Requests Validated".',
-    '- Do not include a title such as "QA Sprint Report".',
-    '- Do not repeat every table already present in the PDF; summarize the meaning of the metrics.',
-    '- Use a business tone suitable for senior management.',
-    '- Do not include raw JSON.',
-    '- Do not mention AI, model names, or tool names.',
-    '- If a point cannot be supported by the verified metrics, write Not available and explain what data is missing.',
-    '',
-    'Verified metrics JSON:',
-    metricsJson,
-  ].join('\n');
+function reportTypeLabel(reportType: ReportType): string {
+  if (reportType === 'executive') return 'Executive';
+  if (reportType === 'cycles') return 'Cycle Health';
+  if (reportType === 'defects' || reportType === 'testers') return 'Defects';
+  return 'Full';
+}
+
+function pct(numerator: number, denominator: number): number {
+  return denominator ? Math.round((numerator / denominator) * 100) : 0;
+}
+
+function riskLevel(payload: DashboardPayload): string {
+  if (payload.overview.failed || payload.overview.blocked || payload.defectBacklog.openTotal) return 'Attention required';
+  if (payload.overview.executed && payload.overview.passRate >= 95) return 'Healthy';
+  if (payload.overview.totalCases && !payload.overview.executed) return 'Not started';
+  return 'In progress';
+}
+
+function topCycleRisk(payload: DashboardPayload): string {
+  const cycle = payload.cyclesByPassPctAsc[0];
+  if (!cycle) return 'No cycle health data is available for the selected scope.';
+  return `${cycle.name} has the lowest pass rate in scope (${cycle.passPct}% pass, ${cycle.coverage}% coverage, ${cycle.total} cases).`;
+}
+
+function topDefectRisk(payload: DashboardPayload): string {
+  const priority = payload.defectBacklog.topPriorities[0];
+  const owner = payload.defectBacklog.byOwner[0];
+  if (!payload.defectBacklog.openTotal) return 'No open defect backlog is visible in the selected scope.';
+  const priorityText = priority ? `${priority.open} open ${priority.priority} defect(s)` : `${payload.defectBacklog.openTotal} open defect(s)`;
+  const ownerText = owner ? `; highest owner backlog: ${owner.name} (${owner.open})` : '';
+  return `${priorityText}${ownerText}.`;
+}
+
+function buildNarrative(payload: DashboardPayload, reportType: ReportType, filter: FilterParams): string {
+  const project = projectDisplayName(filter.project || payload.scope.project);
+  const scope = `${filter.startDate || payload.scope.startDate || 'all'} to ${filter.endDate || payload.scope.endDate || 'all'}`;
+  const executedPct = pct(payload.overview.executed, payload.overview.totalCases);
+  const failedBlocked = payload.overview.failed + payload.overview.blocked;
+  const reportLabel = reportTypeLabel(reportType).toLowerCase();
+  const lines: string[] = [];
+
+  lines.push(`For ${project}, the ${reportLabel} report covers ${scope}. The selected scope contains ${payload.overview.totalCases} test case(s), ${payload.overview.executed} executed case(s), and an execution coverage of ${executedPct}%. The current pass rate is ${payload.overview.passRate}% with ${payload.overview.failed} failed and ${payload.overview.blocked} blocked case(s).`);
+
+  if (reportType === 'defects' || reportType === 'testers') {
+    lines.push(`The defect position shows ${payload.storyBug.bug} bug(s), including ${payload.storyBug.bugDone} closed/done and ${payload.storyBug.bugOpen} still open. ${topDefectRisk(payload)} This report should be used to drive fix ownership, retest priority, and closure follow-up.`);
+  } else if (reportType === 'cycles') {
+    lines.push(`Cycle health remains the main focus for this report. ${topCycleRisk(payload)} Failed or blocked cases should be reviewed against cycle ownership before sign-off.`);
+  } else {
+    lines.push(`Overall sprint status is: ${riskLevel(payload)}. ${topDefectRisk(payload)} ${topCycleRisk(payload)}`);
+  }
+
+  if (payload.uat?.total) {
+    lines.push(`UAT evidence includes ${payload.uat.total} item(s), with ${payload.uat.closed} closed and ${payload.uat.open} open. The UAT closure rate is ${payload.uat.closureRate}%, and ${payload.uat.urgentOpen} urgent open item(s) require continued attention.`);
+  } else {
+    lines.push('UAT data is not available in the selected scope. If UAT evidence is expected, confirm that the relevant export or live source has been synced for the same date range.');
+  }
+
+  const recommendations = [
+    failedBlocked > 0 ? `Prioritize retest and closure for ${failedBlocked} failed/blocked execution item(s).` : 'Maintain regression coverage and keep evidence ready for sign-off.',
+    payload.defectBacklog.openTotal > 0 ? `Track ${payload.defectBacklog.openTotal} open defect(s) by owner and priority until closure.` : 'Continue monitoring new defects and reopen trends during the next validation window.',
+    payload.cycles.some((c) => c.status === 'AT RISK' || c.status === 'At Risk') ? 'Review at-risk cycles with delivery owners before release readiness discussions.' : 'Keep cycle health under review and refresh the report after the next execution run.',
+  ];
+
+  return `${lines.join('\n\n')}\n\n**Recommended follow-up**\n\n${recommendations.map((r) => `- ${r}`).join('\n')}`;
 }
 
 function collectToolMetrics(dataset: Dataset, filter: FilterParams) {
   const toolCalls: { toolName: string; rowCount: number }[] = [];
-  const metrics: Record<string, unknown> = {};
   for (const tool of AI_TOOLS) {
     const result = executeTool(tool.name, dataset, filter);
-    metrics[tool.name] = result;
     toolCalls.push({ toolName: tool.name, rowCount: Array.isArray(result) ? result.length : 1 });
   }
-  return { metrics, toolCalls };
-}
-
-export function resolveReportLlmConfig(params: GenerateParams, configDir: string, legacyApiKey?: string): LlmResolvedConfig {
-  const reportCfg = loadReportConfig(configDir);
-  const provider = params.llm?.provider || reportCfg.provider;
-  const model = (params.llm?.model || reportCfg.model).trim();
-  const userOrLegacyKey = provider === 'anthropic' ? (params.llm?.apiKey || legacyApiKey) : params.llm?.apiKey;
-  const apiKey = resolveProviderApiKey(provider, userOrLegacyKey, process.env.ANTHROPIC_API_KEY);
-  return { provider, model, apiKey, baseUrl: params.llm?.baseUrl || reportCfg.baseUrl, maxTokens: reportCfg.maxTokens };
+  return { toolCalls };
 }
 
 export async function generateReportFromDataset(
   dataset: Dataset,
   params: GenerateParams,
-  apiKey: string,
+  _apiKey: string,
   filter: FilterParams,
-): Promise<{ markdown: string; toolCalls: { toolName: string; rowCount: number }[]; llm: Omit<LlmResolvedConfig, 'apiKey'> }> {
-  const configDir = params.configDir || process.env.CONFIG_DIR || 'config';
-  const llm = resolveReportLlmConfig(params, configDir, apiKey);
-  const { metrics, toolCalls } = collectToolMetrics(dataset, filter);
-  const markdown = await generateLlmText({
-    ...llm,
-    system: SYSTEM,
-    prompt: reportPrompt(params.reportType, filter, JSON.stringify({ scope: { ...filter, projectLabel: projectDisplayName(filter.project) }, metrics }, null, 2)),
-  });
+): Promise<{ markdown: string; toolCalls: { toolName: string; rowCount: number }[]; llm?: never }> {
+  const payload = buildDashboardPayload(dataset, filter);
+  const { toolCalls } = collectToolMetrics(dataset, filter);
   return {
-    markdown: markdown || 'No narrative content generated.',
+    markdown: buildNarrative(payload, params.reportType, filter),
     toolCalls,
-    llm: { provider: llm.provider, model: llm.model, baseUrl: llm.baseUrl, maxTokens: llm.maxTokens },
   };
 }
