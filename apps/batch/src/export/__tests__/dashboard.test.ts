@@ -33,6 +33,29 @@ function focusedDataset(): Dataset {
   return dataset;
 }
 
+function duplicateDataset(): Dataset {
+  const file = emptyDataset();
+  file.executions = [
+    { project: 'DN4_FT - Supply & DMC', cycleKey: 'DLM-CY-1', cycleName: 'Cycle 1', caseKey: 'DLM-TC-1', result: 'FAIL', tester: 's716363', executedAt: '2026-07-01', updatedAt: '2026-07-01', source: 'test-execution-file' },
+    { project: 'DLM', cycleKey: 'DLM-CY-2', cycleName: 'Cycle 2', caseKey: 'DLM-TC-1', result: 'PASS', tester: 'Tester Two', executedAt: '2026-07-02', updatedAt: '2026-07-02', source: 'test-execution-file' },
+  ];
+  file.issues = [
+    { project: 'DLM', key: 'DLM-500', area: 'Payments', issueType: 'Bug', status: 'open', priority: 'High', assignee: 'File Owner', createdAt: '2026-07-01', resolvedAt: null, updatedAt: '2026-07-01', source: 'jira-file' },
+  ];
+  file.projects = ['DN4_FT - Supply & DMC'];
+
+  const live = emptyDataset();
+  live.executions = [
+    { project: 'DLM', cycleKey: 'DLM-CY-1', cycleName: 'Cycle 1', caseKey: 'DLM-TC-1', result: 'PASS', tester: 'Real Tester', executedAt: '2026-07-01', updatedAt: '2026-07-03', source: 'qmetry' },
+  ];
+  live.issues = [
+    { project: 'DLM', key: 'DLM-500', area: 'Payments', issueType: 'Bug', status: 'done', priority: 'High', assignee: 'Api Owner', createdAt: '2026-07-01', resolvedAt: '2026-07-04', updatedAt: '2026-07-04', source: 'jira-api' },
+  ];
+  live.projects = ['DLM'];
+
+  return mergeDatasets([file, live]);
+}
+
 // Full dataset — no filter
 {
   const p = buildDashboardPayload(ds, {});
@@ -87,6 +110,21 @@ function focusedDataset(): Dataset {
   assert.strictEqual(displayLabel.storyBug.bug, canonical.storyBug.bug);
   assert.strictEqual(displayLabel.traceability.length, canonical.traceability.length);
   console.log('✓ DLM display label canonical filter');
+}
+
+// Dedupe keeps API rows over duplicate file rows and preserves same case in two cycles
+{
+  const merged = duplicateDataset();
+  const p = buildDashboardPayload(merged, { project: 'DLM', startDate: '2026-07-01', endDate: '2026-07-31' });
+  assert.strictEqual(merged.executions.length, 2, 'same case in two cycles is not a duplicate');
+  assert.strictEqual(merged.issues.length, 1, 'same issue key from file and API is deduped');
+  assert.strictEqual(merged.issues[0].status, 'done', 'API issue wins over file issue');
+  assert.strictEqual(merged.executions.find((e) => e.cycleKey === 'DLM-CY-1')?.tester, 'Real Tester', 'API execution wins over raw file tester');
+  assert.strictEqual(p.overview.totalCases, 2);
+  assert.strictEqual(p.storyBug.bug, 1);
+  assert.strictEqual(p.meta.deduped?.executions, 1);
+  assert.strictEqual(p.meta.deduped?.issues, 1);
+  console.log('✓ dataset dedupe rules');
 }
 
 // Empty search with impossible term
