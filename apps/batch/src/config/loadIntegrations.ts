@@ -5,7 +5,7 @@ import { canonicalProjectKey, uniqueCanonicalProjects } from '../projects/projec
 
 const JIRA_SEARCH_PATH = '/rest/api/2/search';
 const QMETRY_TEST_CYCLES_SEARCH_PATH = '/testcycles/search';
-const QMETRY_TEST_CASE_FIELDS = 'seqNo,key,versionNo,summary,priority,status,environment,executionResult,executionAssignee,executedOn,executedBy,lastModified,build';
+const QMETRY_TEST_CASE_FIELDS = 'seqNo,key,versionNo,summary,priority,status,environment,executionResult,executionAssignee,executedBy,build';
 
 const DEFAULT_JIRA_FIELDS = [
   'summary', 'description', 'assignee', 'status', 'priority', 'issuetype',
@@ -150,7 +150,8 @@ function mergeJira(raw: Partial<JiraIntegrationConfig> | undefined, idx = 0): Ji
 
 function cleanQmetryTestCaseFields(fields?: string): string {
   const values = (fields || QMETRY_TEST_CASE_FIELDS).split(',').map((f) => f.trim()).filter(Boolean);
-  return values.length ? [...new Set(values)].join(',') : QMETRY_TEST_CASE_FIELDS;
+  const supported = values.filter((f) => !/^(executedOn|lastModified)$/i.test(f));
+  return supported.length ? [...new Set(supported)].join(',') : QMETRY_TEST_CASE_FIELDS;
 }
 
 function mergeQmetry(raw: Partial<QmetryIntegrationConfig> | undefined): QmetryIntegrationConfig {
