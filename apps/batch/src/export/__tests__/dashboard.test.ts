@@ -186,4 +186,28 @@ function duplicateDataset(): Dataset {
   console.log('✓ report payload non-zero in data range');
 }
 
+// A2 date-leak regression: open issues must NOT leak across periods.
+// DLM-101 (open Story, created 2026-01-10, updated 2026-07-03) and
+// DLM-102 (open Bug, created 2026-02-10, updated 2026-07-04).
+// The old buggy clause (status==='open' && createdAt <= endDate) kept both for ANY later
+// range because it ignored startDate. Under A2 an issue counts only if created/updated/
+// resolved falls inside [start,end].
+{
+  // A period BEFORE either issue's activity: must be empty (this is what the leak broke).
+  const pre = buildDashboardPayload(focusedDataset(), { startDate: '2026-03-01', endDate: '2026-03-31', project: 'DLM' });
+  assert.strictEqual(pre.storyBug.bugOpen, 0, 'A2: no open bugs in a period with no issue activity (was leaking before)');
+  assert.strictEqual(pre.storyBug.story + pre.storyBug.bug, 0, 'A2: no issues at all in an inactive period');
+
+  // The window where both were updated: both count.
+  const active = buildDashboardPayload(focusedDataset(), { startDate: '2026-07-01', endDate: '2026-07-31', project: 'DLM' });
+  assert.strictEqual(active.storyBug.bugOpen, 1, 'A2: the open bug counts in the period it was updated');
+  assert.strictEqual(active.storyBug.story + active.storyBug.bug, 2, 'A2: both issues count in their active period');
+
+  // Monotonicity: extending endDate later must NOT increase open-bug count when startDate
+  // is fixed after all activity — the exact "count stuck/growing" symptom, now impossible.
+  const narrow = buildDashboardPayload(focusedDataset(), { startDate: '2026-08-01', endDate: '2026-08-02', project: 'DLM' });
+  assert.strictEqual(narrow.storyBug.bugOpen, 0, 'A2: a period after all activity shows zero, not the full backlog');
+  console.log('✓ A2 date-leak regression (open issues do not cross periods)');
+}
+
 console.log('All dashboard filter tests passed');
