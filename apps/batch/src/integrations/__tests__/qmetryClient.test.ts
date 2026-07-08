@@ -41,7 +41,7 @@ function installFetchMock(calls: FetchCall[]): void {
       return jsonResponse({
         warningMessages: [],
         data: [
-          { key: 'DLM-TC-1', executionResult: { name: 'Pass' }, updated: { updatedOn: '02/Jul/2026 10:00' }, executedBy: { displayName: 'Tester One' } },
+          { key: 'DLM-TC-1', executionResult: { name: 'Pass' }, updated: { updatedOn: '02/Jul/2026 10:00' }, executedBy: { name: 's716363', key: 'JIRAUSER31341', displayName: 'Muhammad Annus', emailAddress: 'S497045@emirates.com' } },
           { key: 'DLM-TC-2', executionResult: { name: 'Not Executed' }, executionAssignee: { displayName: 'Tester Two' }, updated: { updatedOn: '05/Jul/2026 09:00' } },
           { key: 'DLM-TC-3', executionResult: { name: 'Fail' }, executionAssignee: { displayName: 'Tester Three' }, updated: { updatedOn: '06/Jul/2026 09:00' } },
           { key: 'DLM-TC-4', executionResult: { name: 'Not Applicable' }, updated: 1782950400 },
@@ -125,6 +125,7 @@ async function main(): Promise<void> {
   const byKey = new Map(result.executions.map((row) => [row.caseKey, row]));
   assert.equal(byKey.size, 6, 'all rows from a date-scoped cycle should survive with row or cycle updated dates');
   assert.equal(byKey.get('DLM-TC-1')?.result, 'PASS', 'executionResult object should unwrap to PASS');
+  assert.equal(byKey.get('DLM-TC-1')?.tester, 'Muhammad Annus', 'user fields should prefer displayName over raw login/key');
   assert.equal(byKey.get('DLM-TC-1')?.updatedAt, '2026-07-02');
 
   const notExecuted = byKey.get('DLM-TC-2');
