@@ -13,6 +13,7 @@
  *   QA_FOLDER_ID      e.g. 96225
  *   QA_COOKIE         full Cookie header value if your server requires browser session cookies
  *   QA_PROXY_URL      e.g. http://zscaler.example.com:10068
+ *   QA_VERBOSE        true to print response previews for successful calls
  *
  * Run:
  *   node scripts/live-check-v2.mjs
@@ -41,22 +42,10 @@ const runtimeQmetry = runtime.qmetry || {};
 const integrationQmetry = integrations.qmetry || {};
 const integrationJira = integrations.jira || {};
 
-function clean(value) {
-  return String(value || '').trim();
-}
-
-function first(...values) {
-  return values.map(clean).find(Boolean) || '';
-}
-
-function folderIdFromQmetryBody(body) {
-  const filter = body?.filter || {};
-  return clean(filter.folderId || filter.filter?.folderId);
-}
-
-function truthy(value) {
-  return ['1', 'true', 'yes', 'y', 'on'].includes(clean(value).toLowerCase());
-}
+function clean(value) { return String(value || '').trim(); }
+function first(...values) { return values.map(clean).find(Boolean) || ''; }
+function truthy(value) { return ['1', 'true', 'yes', 'y', 'on'].includes(clean(value).toLowerCase()); }
+function folderIdFromQmetryBody(body) { const filter = body?.filter || {}; return clean(filter.folderId || filter.filter?.folderId); }
 
 const BASE = first(process.env.QA_BASE_URL, integrationQmetry.baseUrl, integrationJira.baseUrl).replace(/\/+$/, '');
 const AUTH = first(process.env.QA_AUTH_BASIC, runtimeQmetry.basicAuth, runtimeJira.onPremSecret, runtimeJira.apiToken);
@@ -88,36 +77,23 @@ const dispatcher = PROXY
     ? new Agent({ connect: tlsOptions })
     : undefined;
 
-function safeUrl(url) {
-  return url.replace(BASE, '<BASE>');
-}
-
+function safeUrl(url) { return url.replace(BASE, '<BASE>'); }
 function preview(value, max = 2000) {
   const text = typeof value === 'string' ? value : JSON.stringify(value, null, 2);
   return text.length > max ? `${text.slice(0, max)}...<truncated>` : text;
 }
-
 function nonJsonHint(text) {
   const compact = String(text || '').replace(/\s+/g, ' ').trim();
-  if (/<html/i.test(compact) && /BIG-IP logout page|apm\.css|logout|login|Sign In|SSO/i.test(compact)) {
-    return 'HTML login/logout page returned — session cookie is expired or not accepted for API requests.';
-  }
+  if (/<html/i.test(compact) && /BIG-IP logout page|apm\.css|logout|login|Sign In|SSO/i.test(compact)) return 'HTML login/logout page returned — session cookie is expired or not accepted for API requests.';
   if (/<html/i.test(compact)) return 'HTML returned instead of JSON — likely SSO/login redirect.';
   return '';
 }
 
 async function call(method, url, body) {
   const startedAt = Date.now();
-  const init = {
-    method,
-    headers,
-    body: body === undefined ? undefined : JSON.stringify(body),
-    ...(dispatcher ? { dispatcher } : {}),
-  };
-
+  const init = { method, headers, body: body === undefined ? undefined : JSON.stringify(body), ...(dispatcher ? { dispatcher } : {}) };
   console.log(`\n--> ${method} ${safeUrl(url)}`);
   if (body !== undefined) console.log(`payload: ${preview(body, 800)}`);
-
   try {
     const res = await fetch(url, init);
     const text = await res.text();
@@ -151,20 +127,33 @@ function arrayFromResponse(json) {
 
 const TEST_CASE_FIELDS = [
   'seqNo', 'key', 'versionNo', 'summary', 'priority', 'status', 'environment',
-  'executionResult', 'executionAssignee', 'executedOn', 'executedBy', 'lastModified', 'build',
+  'executionResult', 'executionAssignee', 'executedBy', 'build', 'updated',
+  // Known invalid on Emirates/on-prem /ui/latest testcase search, retained here to prove the server warning:
+  'executedOn', 'lastModified',
 ];
 
+const SUPPORTED_TESTCASE_FIELDS = 'seqNo,key,versionNo,summary,priority,status,environment,executionResult,executionAssignee,executedBy,build,updated';
+const INVALID_DATE_FIELDS = 'key,executionResult,executedOn,lastModified';
 const TEST_CYCLE_FIELDS = 'key,summary,priority,status,assignee,reporter,testcaseExecutionProgress,plannedStartDate,plannedEndDate,updated,automationRule';
 
-async function main() {
-  console.log(`\n=== live-check v2 against ${BASE} ===`);
-  console.log(`projectKey=${PROJECT_KEY} projectId=${PID} folderId=${FOLDER_ID} proxy=${PROXY ? 'yes' : 'no'} allowSelfSigned=${ALLOW_SELF_SIGNED ? 'yes' : 'no'}`);
-  console.log(`auth=${AUTH ? 'set' : 'empty'} cookie=${COOKIE ? 'set' : 'empty'} runtime=${runtime && Object.keys(runtime).length ? 'loaded' : 'missing'} integrations=${integrations && Object.keys(integrations).length ? 'loaded' : 'missing'}`);
+function rowResultName(row) {
+  return (row?.executionResult && (row.executionResult.name || row.executionResult)) || '';
+}
 
-  const projectIdNumber = Number(PID);
-  const folderPayload = { filter: { projectId: projectIdNumber, folderId: String(FOLDER_ID) } };
-  const projectPayload = { filter: { projectId: projectIdNumber } };
+function isExecuted(row) {
+  return /pass|fail|blocked|wip|work in progress/i.test(String(rowResultName(row)));
+}
 
+function dateFormatHint(value) {
+  const s = String(value ?? '');
+  if (typeof value === 'number' || /^\d{10,}$/.test(s)) return s.length >= 13 ? 'epoch-millis' : 'epoch-seconds';
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return 'ISO';
+  if (/^\d{1,2}\/[A-Za-z]{3}\/\d{2,4}/.test(s)) return 'dd/MMM/yyyy';
+  if (value && typeof value === 'object') return 'object';
+  return 'unknown';
+}
+
+async function runBaseProbe(projectPayload, folderPayload) {
   console.log('\n--- 1. requested folder-tree POST flow ---');
   const folderUrl = `${QTM}/projects/${encodeURIComponent(PID)}/testcycle-folders?sort=NAME:ASC`;
   const folderRes = await call('POST', folderUrl, folderPayload);
@@ -173,7 +162,7 @@ async function main() {
   if (folderRows.length) console.log(`folder sample: ${preview(folderRows[0], 1000)}`);
 
   console.log('\n--- 2. test cycle search using projectId/folderId ---');
-  const cycleSearchUrl = `${QTM}/testcycles/search?startAt=0&maxResults=5&fields=${encodeURIComponent(TEST_CYCLE_FIELDS)}`;
+  const cycleSearchUrl = `${QTM}/testcycles/search?startAt=0&maxResults=100&fields=${encodeURIComponent(TEST_CYCLE_FIELDS)}`;
   const cycleRes = await call('POST', cycleSearchUrl, folderPayload);
   const cycles = arrayFromResponse(cycleRes.json);
   console.log(`cycle result: HTTP ${cycleRes.status}, parsedRows=${cycles.length}`);
@@ -188,9 +177,8 @@ async function main() {
   const cid = cycle?.id || cycle?.key || cycle?.testCycleId || cycle?.cycleId;
   if (!cid) {
     console.log('\nCould not get a cycle id. Check auth, projectId, folderId, and QMetry response shape above.');
-    return;
+    return { folderRes, folderRows, cycles, cid: null };
   }
-
   console.log(`\nUsing cycle: ${cid}`);
   console.log(`cycle sample: ${preview(cycle, 1200)}`);
 
@@ -199,30 +187,32 @@ async function main() {
   console.log('\n--- 3. field-by-field testcase validity with POST body {filter:{projectId}} ---');
   const valid = [];
   const invalid = [];
+  const warned = [];
   for (const f of TEST_CASE_FIELDS) {
     const r = await call('POST', `${testCasePath}?startAt=0&maxResults=1&fields=${encodeURIComponent(f)}`, projectPayload);
-    const ok = r.status === 200;
-    (ok ? valid : invalid).push(f);
-    console.log(`field ${ok ? 'OK ' : 'BAD'} ${f} HTTP ${r.status}`);
+    const warningMessages = r.json?.warningMessages || [];
+    const ok = r.status === 200 && !warningMessages.length;
+    if (ok) valid.push(f); else invalid.push(f);
+    if (warningMessages.length) warned.push(`${f}: ${warningMessages.join('; ')}`);
+    console.log(`field ${ok ? 'OK ' : 'BAD'} ${f} HTTP ${r.status}${warningMessages.length ? ` warning=${JSON.stringify(warningMessages)}` : ''}`);
   }
 
   console.log(`\nVALID fields: ${valid.join(',') || '(none)'}`);
-  console.log(`INVALID fields: ${invalid.join(',') || '(none)'}`);
+  console.log(`INVALID/WARNED fields: ${invalid.join(',') || '(none)'}`);
+  if (warned.length) console.log(`Warnings: ${warned.join(' | ')}`);
 
-  console.log('\n--- 4. combined valid testcase fields ---');
-  if (valid.length) {
-    const combined = await call('POST', `${testCasePath}?startAt=0&maxResults=5&fields=${encodeURIComponent(valid.join(','))}`, projectPayload);
-    const rows = arrayFromResponse(combined.json);
-    console.log(`combined result: HTTP ${combined.status}, parsedRows=${rows.length}`);
-    if (rows.length) {
-      const row = rows.find((x) => x.executionResult || x.executedOn || x.executedBy) || rows[0];
-      console.log(`sample testcase row: ${preview(row, 2000)}`);
-      console.log(`has executedOn=${Object.prototype.hasOwnProperty.call(row, 'executedOn')} executionResult=${Object.prototype.hasOwnProperty.call(row, 'executionResult')} executedBy=${Object.prototype.hasOwnProperty.call(row, 'executedBy')}`);
-    }
+  console.log('\n--- 4. combined supported testcase fields ---');
+  const combined = await call('POST', `${testCasePath}?startAt=0&maxResults=100&fields=${encodeURIComponent(SUPPORTED_TESTCASE_FIELDS)}`, projectPayload);
+  const rows = arrayFromResponse(combined.json);
+  console.log(`combined result: HTTP ${combined.status}, parsedRows=${rows.length}, warningMessages=${JSON.stringify(combined.json?.warningMessages || [])}`);
+  if (rows.length) {
+    const row = rows.find((x) => x.executionResult || x.updated || x.executedBy) || rows[0];
+    console.log(`sample testcase row: ${preview(row, 2000)}`);
+    console.log(`has updated=${Object.prototype.hasOwnProperty.call(row, 'updated')} executionResult=${Object.prototype.hasOwnProperty.call(row, 'executionResult')} executedBy=${Object.prototype.hasOwnProperty.call(row, 'executedBy')}`);
   }
 
   console.log('\n--- 5. no-fields testcase default response ---');
-  const nf = await call('POST', `${testCasePath}?startAt=0&maxResults=5`, projectPayload);
+  const nf = await call('POST', `${testCasePath}?startAt=0&maxResults=100`, projectPayload);
   const nfRows = arrayFromResponse(nf.json);
   console.log(`no-fields result: HTTP ${nf.status}, parsedRows=${nfRows.length}`);
   if (nfRows.length) {
@@ -234,10 +224,64 @@ async function main() {
   console.log(`folder POST: HTTP ${folderRes.status}, rows=${folderRows.length}`);
   console.log(`cycles found: ${cycles.length}`);
   console.log(`valid testcase fields: ${valid.join(',') || '(none)'}`);
+
+  return { folderRes, folderRows, cycles, cid, testCasePath };
+}
+
+async function v4ExecutionDateProbe(projectPayload, cid) {
+  console.log('\n=== v4: execution-date field discovery ===');
+  let cycleId = cid;
+  if (!cycleId) {
+    const cyc = await call('POST', `${QTM}/testcycles/search?startAt=0&maxResults=1`, projectPayload);
+    cycleId = cyc?.json?.data?.[0]?.id;
+  }
+  if (!cycleId) { console.log('  no cycle id — cannot probe executions (check auth/network above)'); return; }
+  console.log(`  using cycle: ${cycleId}`);
+  const path = `${QTM}/testcycles/${encodeURIComponent(cycleId)}/testcases/search`;
+
+  const bad = await call('POST', `${path}?startAt=0&maxResults=3&fields=${encodeURIComponent(INVALID_DATE_FIELDS)}`, projectPayload);
+  console.log('  [invalid-field check] warningMessages:', JSON.stringify(bad?.json?.warningMessages || []));
+
+  const good = await call('POST', `${path}?startAt=0&maxResults=50&fields=${encodeURIComponent(SUPPORTED_TESTCASE_FIELDS)}`, projectPayload);
+  console.log('  [qmetry supported field list] warningMessages:', JSON.stringify(good?.json?.warningMessages || []));
+  const rows = arrayFromResponse(good.json);
+  console.log(`  rows returned: ${rows.length} of total ${good?.json?.total}`);
+
+  const executed = rows.filter(isExecuted);
+  console.log(`  executed (Pass/Fail/Blocked/WIP) rows in this page: ${executed.length}`);
+
+  const sample = executed[0] || rows[0];
+  if (sample) {
+    const dateKeys = Object.keys(sample).filter((k) => /date|updat|execut|time|modif/i.test(k));
+    console.log('  sample row key:', sample.key, '| result:', rowResultName(sample));
+    console.log('  date-ish fields on sample:');
+    for (const k of dateKeys) {
+      const v = sample[k];
+      console.log(`     ${k} = ${typeof v === 'object' ? JSON.stringify(v) : JSON.stringify(v)}  (type ${typeof v})`);
+    }
+    if (!('updated' in sample)) console.log('  !! "updated" NOT present on the row even though requested');
+  }
+
+  const updatedVals = executed.map((r) => r.updated).filter((v) => v != null);
+  console.log(`  executed rows WITH a populated "updated": ${updatedVals.length}/${executed.length}`);
+  updatedVals.slice(0, 3).forEach((v, i) => console.log(`     updated[${i}] raw = ${JSON.stringify(v)}  -> looks like: ${dateFormatHint(v)}`));
+
+  console.log('\n  CONCLUSION: report code should request "updated" and must not request unsupported "executedOn" / "lastModified" fields on this QMetry UI endpoint.');
+}
+
+async function main() {
+  console.log(`\n=== live-check v2 against ${BASE} ===`);
+  console.log(`projectKey=${PROJECT_KEY} projectId=${PID} folderId=${FOLDER_ID} proxy=${PROXY ? 'yes' : 'no'} allowSelfSigned=${ALLOW_SELF_SIGNED ? 'yes' : 'no'}`);
+  console.log(`auth=${AUTH ? 'set' : 'empty'} cookie=${COOKIE ? 'set' : 'empty'} runtime=${runtime && Object.keys(runtime).length ? 'loaded' : 'missing'} integrations=${integrations && Object.keys(integrations).length ? 'loaded' : 'missing'}`);
+
+  const projectIdNumber = Number(PID);
+  const folderPayload = { filter: { projectId: projectIdNumber, folderId: String(FOLDER_ID) } };
+  const projectPayload = { filter: { projectId: projectIdNumber } };
+
+  const result = await runBaseProbe(projectPayload, folderPayload);
+  await v4ExecutionDateProbe(projectPayload, result.cid);
+
   console.log('\nPaste this output back. It should not contain secrets because request headers are not printed.');
 }
 
-main().catch((err) => {
-  console.error(err);
-  process.exit(1);
-});
+main().catch((err) => { console.error(err); process.exit(1); });
