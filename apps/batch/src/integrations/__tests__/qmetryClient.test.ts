@@ -22,7 +22,7 @@ function qmetryConfig(): QmetryIntegrationConfig {
     testCasesSearchPath: '/testcycles/{cycleId}/testcases/search',
     testCasesSearchBody: null,
     usePostSearch: true,
-    testCaseFields: 'seqNo,key,versionNo,summary,priority,status,environment,executionResult,executionAssignee,executedOn,executedBy,lastModified,build',
+    testCaseFields: 'seqNo,key,versionNo,summary,priority,status,environment,executionResult,executionAssignee,executedBy,build',
     cycleIds: [],
     pageSize: 50,
     maxPages: 5,
@@ -39,13 +39,14 @@ function installFetchMock(calls: FetchCall[]): void {
 
     if (url.includes('/testcases/search')) {
       return jsonResponse({
+        warningMessages: [],
         data: [
-          { key: 'DLM-TC-1', executionResult: { name: 'Pass' }, executedOn: '02/Jul/2026 10:00', lastModified: '03/Jul/2026 11:30', executedBy: { displayName: 'Tester One' } },
-          { key: 'DLM-TC-2', executionResult: { name: 'Not Executed' }, executedOn: null, lastModified: '10/Jan/2026 09:00', executionAssignee: { displayName: 'Tester Two' } },
+          { key: 'DLM-TC-1', executionResult: { name: 'Pass' }, executedOn: '02/Jul/2026 10:00', executedBy: { displayName: 'Tester One' } },
+          { key: 'DLM-TC-2', executionResult: { name: 'Not Executed' }, executionAssignee: { displayName: 'Tester Two' } },
           { key: 'DLM-TC-3', executionResult: { name: 'Fail' }, executionAssignee: { displayName: 'Tester Three' } },
-          { key: 'DLM-TC-4', executionResult: { name: 'Not Applicable' }, executedOn: 1782950400, lastModified: '05/Jul/2026 08:00' },
-          { key: 'DLM-TC-5', executionResult: { name: 'Blocked' }, executedOn: 1783036800000, lastModified: '05/Jul/2026 08:00' },
-          { key: 'DLM-TC-6', executionResult: { name: 'Pass' }, executedOn: '04/Jul/2026 12:15', lastModified: '05/Jul/2026 08:00' },
+          { key: 'DLM-TC-4', executionResult: { name: 'Not Applicable' }, executedOn: 1782950400 },
+          { key: 'DLM-TC-5', executionResult: { name: 'Blocked' }, executedOn: 1783036800000 },
+          { key: 'DLM-TC-6', executionResult: { name: 'Pass' }, executedOn: '04/Jul/2026 12:15' },
         ],
         total: 6,
       });
@@ -113,8 +114,7 @@ async function main(): Promise<void> {
   assert.deepEqual(bodyJson(testCaseCall), { filter: { projectId: 19703 } });
   assert.match(testCaseCall.url, /fields=/, 'testcase request should include fields parameter');
   const decodedFieldsUrl = decodeURIComponent(testCaseCall.url);
-  assert.match(decodedFieldsUrl, /executedOn/, 'testcase request must include executedOn because date filtering depends on executedAt');
-  assert.match(decodedFieldsUrl, /lastModified/, 'testcase request must include lastModified for updatedAt metadata');
+  assert.doesNotMatch(decodedFieldsUrl, /executedOn|lastModified/, 'known-invalid QMetry UI fields must not be requested');
 
   const cycleSearchCall = calls.find((call) => call.url.includes('/testcycles/search') && !call.url.includes('/testcases/search'));
   assert.ok(cycleSearchCall, 'expected testcycle search request');
@@ -122,19 +122,20 @@ async function main(): Promise<void> {
   assert.deepEqual(bodyJson(cycleSearchCall), { filter: { projectId: 19703, folderId: '96225' } });
 
   const byKey = new Map(result.executions.map((row) => [row.caseKey, row]));
-  assert.equal(byKey.size, 6, 'all rows from a date-scoped cycle should survive even if QMetry omits executedOn');
+  assert.equal(byKey.size, 6, 'all rows from a date-scoped cycle should survive even when QMetry omits per-row execution dates');
   assert.equal(byKey.get('DLM-TC-1')?.result, 'PASS', 'executionResult object should unwrap to PASS');
   assert.equal(byKey.get('DLM-TC-1')?.executedAt, '2026-07-02');
 
   const notExecuted = byKey.get('DLM-TC-2');
-  assert.ok(notExecuted, 'NE row should survive a period filter even without executedOn');
-  assert.equal(notExecuted.executedAt, null, 'executedAt must not fall back to lastModified');
-  assert.equal(notExecuted.updatedAt, '2026-01-10');
+  assert.ok(notExecuted, 'NE row should survive a period filter when its parent cycle is date-scoped');
+  assert.equal(notExecuted.executedAt, null, 'executedAt must remain null when QMetry omits a row execution date');
+  assert.equal(notExecuted.updatedAt, '2026-07-05', 'row should inherit the parent cycle date so dashboard date filters keep it');
   assert.equal(notExecuted.result, 'NE');
 
   const failedWithoutDate = byKey.get('DLM-TC-3');
   assert.ok(failedWithoutDate, 'non-NE rows should survive when their parent cycle is date-scoped');
-  assert.equal(failedWithoutDate.executedAt, null, 'executedAt must remain null when QMetry omits executedOn');
+  assert.equal(failedWithoutDate.executedAt, null, 'executedAt must remain null when QMetry omits a row execution date');
+  assert.equal(failedWithoutDate.updatedAt, '2026-07-05', 'row should inherit the parent cycle date so dashboard date filters keep it');
   assert.equal(failedWithoutDate.result, 'FAIL');
 
   assert.equal(byKey.get('DLM-TC-4')?.executedAt, '2026-07-02', 'epoch seconds should parse');
