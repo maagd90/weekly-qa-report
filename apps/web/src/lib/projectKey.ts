@@ -2,7 +2,7 @@ export function canonicalProjectKey(value?: string | null): string {
   const raw = (value || '').trim();
   if (!raw) return '';
   if (raw.toLowerCase() === 'all') return 'all';
-  return raw.toUpperCase().replace(/\s+/g, ' ').trim();
+  return raw;
 }
 
 export function canonicalProjectOrAll(value?: string | null): string {
