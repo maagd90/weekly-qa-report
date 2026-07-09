@@ -1,14 +1,15 @@
 import type { Dataset, ExecutionRow, FilterParams, IssueRow, UatRow } from '../types/dataset';
 import { canonicalProjectKey } from '../projects/projectKey';
 
+interface DateWindow {
+  start?: string;
+  end?: string;
+  allDates: boolean;
+}
+
 function inRange(date: string | null | undefined, start: string, end: string): boolean {
   if (!date) return false;
   return date >= start && date <= end;
-}
-
-function isAllDates(start?: string, end?: string, dataMin?: string | null, dataMax?: string | null): boolean {
-  if (!start || !end || !dataMin || !dataMax) return !start && !end;
-  return start <= dataMin && end >= dataMax;
 }
 
 function dataDateBounds(dataset: Dataset): { min: string | null; max: string | null } {
@@ -31,18 +32,29 @@ function dataDateBounds(dataset: Dataset): { min: string | null; max: string | n
   return { min: dates[0], max: dates[dates.length - 1] };
 }
 
+function dateWindow(filter: FilterParams, bounds: { min: string | null; max: string | null }): DateWindow {
+  const hasStart = Boolean(filter.startDate);
+  const hasEnd = Boolean(filter.endDate);
+  if (!hasStart && !hasEnd) return { allDates: true };
+
+  const start = filter.startDate || bounds.min || undefined;
+  const end = filter.endDate || bounds.max || undefined;
+  const allDates = Boolean(start && end && bounds.min && bounds.max && start <= bounds.min && end >= bounds.max);
+  return { start, end, allDates };
+}
+
 function filterByProject<T extends { project: string }>(rows: T[], project?: string): T[] {
   const selected = canonicalProjectKey(project);
   if (!selected || selected === 'all') return rows;
   return rows.filter((r) => canonicalProjectKey(r.project) === selected);
 }
 
-function filterExecutions(rows: ExecutionRow[], filter: FilterParams, allDates: boolean): ExecutionRow[] {
+function filterExecutions(rows: ExecutionRow[], filter: FilterParams, window: DateWindow): ExecutionRow[] {
   let out = rows;
-  if (!allDates && filter.startDate && filter.endDate) {
+  if (!window.allDates && window.start && window.end) {
     out = out.filter((r) =>
-      inRange(r.executedAt, filter.startDate!, filter.endDate!) ||
-      inRange(r.updatedAt, filter.startDate!, filter.endDate!)
+      inRange(r.executedAt, window.start!, window.end!) ||
+      inRange(r.updatedAt, window.start!, window.end!)
     );
   }
   const q = (filter.search || '').trim().toLowerCase();
@@ -57,14 +69,14 @@ function filterExecutions(rows: ExecutionRow[], filter: FilterParams, allDates: 
   return out;
 }
 
-function filterIssues(rows: IssueRow[], filter: FilterParams, allDates: boolean): IssueRow[] {
+function filterIssues(rows: IssueRow[], filter: FilterParams, window: DateWindow): IssueRow[] {
   let out = rows;
-  if (!allDates && filter.startDate && filter.endDate) {
-    const { startDate, endDate } = filter;
+  if (!window.allDates && window.start && window.end) {
+    const { start, end } = window;
     out = out.filter((r) =>
-      inRange(r.updatedAt, startDate, endDate) ||
-      (r.resolvedAt ? inRange(r.resolvedAt, startDate, endDate) : false) ||
-      (r.createdAt ? inRange(r.createdAt, startDate, endDate) : false)
+      inRange(r.updatedAt, start!, end!) ||
+      (r.resolvedAt ? inRange(r.resolvedAt, start!, end!) : false) ||
+      (r.createdAt ? inRange(r.createdAt, start!, end!) : false)
       // A2 (strictly in-period): an issue counts only if it was created, updated, or
       // resolved within [startDate, endDate]. The previous "open && createdAt <= endDate"
       // clause is removed — it ignored startDate and made open-defect counts grow with the
@@ -80,12 +92,12 @@ function filterIssues(rows: IssueRow[], filter: FilterParams, allDates: boolean)
   return out;
 }
 
-function filterUat(rows: UatRow[], filter: FilterParams, allDates: boolean): UatRow[] {
+function filterUat(rows: UatRow[], filter: FilterParams, window: DateWindow): UatRow[] {
   let out = rows;
-  if (!allDates && filter.startDate && filter.endDate) {
+  if (!window.allDates && window.start && window.end) {
     out = out.filter((r) =>
-      inRange(r.submittedAt, filter.startDate!, filter.endDate!) ||
-      inRange(r.updatedAt, filter.startDate!, filter.endDate!)
+      inRange(r.submittedAt, window.start!, window.end!) ||
+      inRange(r.updatedAt, window.start!, window.end!)
     );
   }
   const q = (filter.search || '').trim().toLowerCase();
@@ -108,17 +120,17 @@ export interface FilteredDataset {
 
 export function applyFilters(dataset: Dataset, filter: FilterParams): FilteredDataset {
   const bounds = dataDateBounds(dataset);
-  const allDates = isAllDates(filter.startDate, filter.endDate, bounds.min, bounds.max);
+  const window = dateWindow(filter, bounds);
 
   let executions = filterByProject(dataset.executions, filter.project);
   let issues = filterByProject(dataset.issues, filter.project);
   let uat = filterByProject(dataset.uat, filter.project);
 
-  executions = filterExecutions(executions, filter, allDates);
-  issues = filterIssues(issues, filter, allDates);
-  uat = filterUat(uat, filter, allDates);
+  executions = filterExecutions(executions, filter, window);
+  issues = filterIssues(issues, filter, window);
+  uat = filterUat(uat, filter, window);
 
-  return { executions, issues, uat, dataMin: bounds.min, dataMax: bounds.max, allDates };
+  return { executions, issues, uat, dataMin: bounds.min, dataMax: bounds.max, allDates: window.allDates };
 }
 
 export { dataDateBounds };
