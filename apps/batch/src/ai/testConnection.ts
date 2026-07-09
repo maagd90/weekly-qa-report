@@ -29,20 +29,34 @@ export interface LlmTestResult extends AnthropicTestResult {
 
 const TEST_TIMEOUT_MS = 25_000;
 
+function networkHint(raw: string, route: 'direct' | 'proxy'): string {
+  const lower = raw.toLowerCase();
+  if (/enotfound|dns/.test(lower)) return ' — DNS lookup failed. Check internet connectivity, DNS settings, VPN, or whether the provider domain is blocked.';
+  if (/eai_again/.test(lower)) return ' — temporary DNS lookup failure. Retry, then check DNS/VPN/proxy settings if it continues.';
+  if (/econnrefused/.test(lower)) return ' — connection was actively refused. Check local firewall, VPN client, antivirus HTTPS inspection, or a blocked provider endpoint.';
+  if (/etimedout|timed out|timeout|aborted|abort/.test(lower)) {
+    return route === 'proxy'
+      ? ' — request timed out through the configured proxy. Check officeProxyUrl in config/runtime.json or proxy availability.'
+      : ' — request timed out. A corporate network, VPN, firewall, or Docker/office network may be silently blocking outbound HTTPS; configure officeProxyUrl only if your network requires it.';
+  }
+  if (/fetch failed|connection error|socket|connect/.test(lower)) {
+    return route === 'proxy'
+      ? ' — network connection failed through the configured proxy. Check officeProxyUrl in config/runtime.json.'
+      : ' — network connection failed. Check internet access, VPN/firewall/antivirus HTTPS inspection, or configure a proxy only if your network requires one.';
+  }
+  return '';
+}
+
 function formatError(err: unknown, model: string, route: 'direct' | 'proxy'): string {
   const raw = describeFetchError(err);
   const lower = raw.toLowerCase();
   let hint = '';
-  if (/timed out|timeout|aborted|abort/.test(lower)) {
-    hint = ' — request timed out.';
-  } else if (/self.signed|self-signed|unable to verify|cert|unauthorized certificate/.test(lower)) {
+  if (/self.signed|self-signed|unable to verify|cert|unauthorized certificate/.test(lower)) {
     hint = route === 'proxy'
       ? ' — office proxy TLS issue; keep integrationAllowSelfSignedCerts=true in config/runtime.json.'
-      : ' — office network TLS issue; configure officeProxyUrl in config/runtime.json.';
-  } else if (/connection error|fetch failed|econnrefused|etimedout|enotfound|eai_again|socket|connect/.test(lower)) {
-    hint = route === 'proxy'
-      ? ' — check officeProxyUrl in config/runtime.json.'
-      : ' — Docker/office networks may block direct outbound HTTPS. Configure officeProxyUrl in config/runtime.json.';
+      : ' — TLS certificate validation failed. If your network uses HTTPS inspection, configure officeProxyUrl or NODE_EXTRA_CA_CERTS in config/runtime.json.';
+  } else if (/connection error|fetch failed|econnrefused|etimedout|enotfound|eai_again|socket|connect|timed out|timeout|aborted|abort|dns/.test(lower)) {
+    hint = networkHint(raw, route);
   } else if (/401|authentication|invalid x-api-key|unauthorized/.test(lower)) {
     hint = ' — key is missing, invalid, or revoked.';
   } else if (/not_found_error|model|400|bad request/.test(lower)) {
@@ -60,7 +74,7 @@ export async function testAnthropicConnection(apiKey: string, configDir: string)
   log('runtime', `node=${process.version} platform=${process.platform}`);
   log('route', route === 'proxy'
     ? `proxy via ${maskProxyUrl(getOptionalAnthropicProxyUrl()!)} (${anthropicProxySource()})`
-    : 'direct — set officeProxyUrl in config/runtime.json for office networks');
+    : 'direct — no proxy configured');
 
   if (!apiKey) {
     log('API key check', 'missing — add the key in Settings or config/runtime.json');
@@ -139,7 +153,7 @@ export async function testLlmConnection(selection: LlmSelectionInput, configDir:
   } catch (err) {
     const raw = describeFetchError(err);
     const lower = raw.toLowerCase();
-    let hint = '';
+    let hint = networkHint(raw, 'direct');
     if (/401|authentication|unauthorized|api key/.test(lower)) hint = ` — check ${envKeyForProvider(provider)} or the key saved in Settings.`;
     if (/429|quota|rate limit|exceeded/.test(lower)) hint = ' — quota/rate limit reached; select another provider/model/key.';
     if (/model|not found|400|bad request/.test(lower)) hint = ` — check selected model "${model}".`;
