@@ -4,7 +4,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import clsx from 'clsx';
 import { Download } from 'lucide-react';
-import { AI_TOOLS } from 'qa-dashboard-batch';
+import { AI_TOOLS } from 'qa-dashboard-batch/dist/ai/datasetTools';
 import type { DashboardPayload } from 'qa-dashboard-batch';
 import { batchApi, apiErrorMessage, getReportBranding, type ReportType } from '../lib/api';
 import type { KpiStyle } from '../theme/qaTheme';
