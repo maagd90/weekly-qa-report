@@ -22,6 +22,8 @@ export type { LlmProvider, LlmSelectionInput, LlmModelOption } from './ai/llmPro
 export { loadIntegrations, integrationsSummary, jiraConfigFromConnection, qmetryConfigFromConnection } from './config/loadIntegrations';
 export { buildDataset, loadRawDataset, computeFingerprint, loadFingerprint, saveRawDataset } from './cache/datasetCache';
 export { canonicalProjectKey, canonicalProjectOrUndefined, sameProjectKey, uniqueCanonicalProjects } from './projects/projectKey';
+export { listWorkspaces, workspaceIdFromName, workspaceNameFromConnection, workspaceDisplayName, filterConnectionsForWorkspace, stampDatasetWorkspace } from './projects/workspace';
+export type { ProjectWorkspace } from './projects/workspace';
 export { fetchJiraIssues } from './integrations/jiraClient';
 export { fetchQmetryExecutions, fetchProjectCycles, fetchProjectFolders, fetchFolderCycleHealth } from './integrations/qmetryClient';
 export { searchQmetryTestCycles, searchQmetryFolders } from './integrations/qmetryClient';
