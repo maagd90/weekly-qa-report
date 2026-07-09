@@ -55,8 +55,8 @@ function AppContent() {
     setFilteredByTab((prev) => ({ ...prev, [tab]: freshDashboard }));
   };
 
-  const filterCachedDashboard = useMutation({
-    mutationFn: (vars: { params?: Partial<FilterParams>; tab: QaTab }) => batchApi.getDashboard(vars.params || filters.filterParams).then((d) => ({ d, tab: vars.tab })),
+  const searchDashboardData = useMutation({
+    mutationFn: (vars: { params?: Partial<FilterParams>; tab: QaTab }) => batchApi.searchDashboardByDates(vars.params || filters.filterParams).then((d) => ({ d, tab: vars.tab })),
     onSuccess: ({ d, tab }) => setFilteredView(d, tab),
   });
 
@@ -71,7 +71,7 @@ function AppContent() {
 
   const showFilters = !currentTab.hideFilters;
   const hasDashboard = !!display;
-  const canFilterCached = activeTab === 'overview' || activeTab === 'testers' || activeTab === 'cycles' || activeTab === 'trace' || activeTab === 'uat';
+  const canSearch = activeTab === 'overview' || activeTab === 'testers' || activeTab === 'cycles' || activeTab === 'trace' || activeTab === 'uat';
 
   const handleTabChange = (tab: QaTab) => {
     setActiveTab(tab);
@@ -115,16 +115,16 @@ function AppContent() {
           onKpiStyleChange={ui.setKpiStyle}
           dataMin={display?.meta.dataMin}
           dataMax={display?.meta.dataMax}
-          onSearchApis={canFilterCached ? () => filterCachedDashboard.mutate({ tab: activeTab }) : undefined}
-          searchApisLabel="Filter Cached Data"
-          isSearchingApis={filterCachedDashboard.isPending}
+          onSearchApis={canSearch ? () => searchDashboardData.mutate({ tab: activeTab }) : undefined}
+          searchApisLabel="Search"
+          isSearchingApis={searchDashboardData.isPending}
         />
       )}
 
-      {filterCachedDashboard.isError && showFilters && (
+      {searchDashboardData.isError && showFilters && (
         <div className="max-w-qa mx-auto w-full px-8 pt-3 print:hidden">
           <div className="p-3 border border-[#ecccc2] bg-[#f8ece8] text-[#a13d2c] text-sm">
-            {(filterCachedDashboard.error as Error).message}
+            {(searchDashboardData.error as Error).message}
           </div>
         </div>
       )}
