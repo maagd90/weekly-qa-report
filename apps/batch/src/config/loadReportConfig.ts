@@ -21,7 +21,7 @@ export interface ReportConfig {
 const DEFAULTS: ReportConfig = {
   provider: DEFAULT_LLM_PROVIDER,
   model: defaultModelForProvider(DEFAULT_LLM_PROVIDER),
-  maxTokens: 4096,
+  maxTokens: 6000,
 };
 
 function providerModelEnv(provider: LlmProvider): string | undefined {
@@ -33,6 +33,12 @@ function providerModelEnv(provider: LlmProvider): string | undefined {
     default:
       return process.env.ANTHROPIC_MODEL;
   }
+}
+
+function positiveNumber(value?: string): number | undefined {
+  if (!value) return undefined;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
 }
 
 /** Precedence: env vars > config/report.json > provider defaults. */
@@ -60,11 +66,13 @@ export function loadReportConfig(configDir: string): ReportConfig {
     fromFile.baseUrl ||
     undefined
   )?.trim();
+  const maxTokens = positiveNumber(process.env.LLM_MAX_TOKENS) ||
+    (typeof fromFile.maxTokens === 'number' && fromFile.maxTokens > 0 ? fromFile.maxTokens : DEFAULTS.maxTokens);
 
   return {
     provider,
     model,
-    maxTokens: typeof fromFile.maxTokens === 'number' && fromFile.maxTokens > 0 ? fromFile.maxTokens : DEFAULTS.maxTokens,
+    maxTokens,
     ...(baseUrl ? { baseUrl } : {}),
     ...(fromFile.proxy ? { proxy: fromFile.proxy } : {}),
   };
