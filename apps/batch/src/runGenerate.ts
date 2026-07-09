@@ -7,49 +7,35 @@ import { hasDashboardMetrics, noMetricsForScopeMessage } from './export/reportMe
 import { generateReportFromDataset, resolveReportLlmConfig } from './ai/reportWriter';
 import { LLM_PROVIDER_LABELS, envKeyForProvider } from './ai/llmProviders';
 import { discoverInputFiles } from './parse/dispatcher';
-import { canonicalProjectOrUndefined } from './projects/projectKey';
+import { workspaceIdFromName, stampDatasetWorkspace } from './projects/workspace';
 
 function resolveRoot(): string { return path.resolve(__dirname, '../../..'); }
-
-function validDate(value?: string): string | undefined {
-  return /^\d{4}-\d{2}-\d{2}$/.test(value || '') ? value : undefined;
-}
-
-function hasBrowserConnections(params: GenerateParams): boolean {
-  return Boolean(params.connections?.jira?.length || params.connections?.qmetry?.length);
-}
-
-function removeIfExists(filePath: string): void {
-  if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
-}
-
-function clearStaleReportFiles(reportPath: string, metaPath: string): void {
-  removeIfExists(reportPath);
-  removeIfExists(metaPath);
-}
+function validDate(value?: string): string | undefined { return /^\d{4}-\d{2}-\d{2}$/.test(value || '') ? value : undefined; }
+function hasBrowserConnections(params: GenerateParams): boolean { return Boolean(params.connections?.jira?.length || params.connections?.qmetry?.length); }
+function removeIfExists(filePath: string): void { if (fs.existsSync(filePath)) fs.unlinkSync(filePath); }
+function clearStaleReportFiles(reportPath: string, metaPath: string): void { removeIfExists(reportPath); removeIfExists(metaPath); }
 
 function sanitizeParamsForMeta(params: GenerateParams): GenerateParams {
   const safe: GenerateParams = { ...params };
   delete safe.apiKey;
   if (safe.llm) safe.llm = { provider: safe.llm.provider, model: safe.llm.model, baseUrl: safe.llm.baseUrl };
-  if (safe.connections) {
-    safe.connections = {
-      jira: safe.connections.jira.map((c) => ({ ...c, apiToken: c.apiToken ? '***redacted***' : '', credential: c.credential ? '***redacted***' : '' })),
-      qmetry: safe.connections.qmetry.map((c) => ({ ...c, apiToken: c.apiToken ? '***redacted***' : '', credential: c.credential ? '***redacted***' : '' })),
-    };
-  }
+  if (safe.connections) safe.connections = {
+    jira: safe.connections.jira.map((c) => ({ ...c, apiToken: c.apiToken ? '***redacted***' : '', credential: c.credential ? '***redacted***' : '' })),
+    qmetry: safe.connections.qmetry.map((c) => ({ ...c, apiToken: c.apiToken ? '***redacted***' : '', credential: c.credential ? '***redacted***' : '' })),
+  };
   return safe;
 }
 
 function apiScopeFromParams(params: GenerateParams): ApiFetchScope | undefined {
+  // Project/workspace isolation is handled by the selected project output folder and by filtering
+  // browser connections before buildDataset is called. Do not pass workspace ids as JIRA/QMetry
+  // technical project keys, otherwise live sync can skip the real source projects.
   const scope: ApiFetchScope = {};
-  const project = canonicalProjectOrUndefined(params.project);
   const startDate = validDate(params.startDate);
   const endDate = validDate(params.endDate);
-  if (project) scope.project = project;
   if (startDate) scope.startDate = startDate;
   if (endDate) scope.endDate = endDate;
-  return scope.project || scope.startDate || scope.endDate ? scope : undefined;
+  return scope.startDate || scope.endDate ? scope : undefined;
 }
 
 export async function runGenerate(params: GenerateParams): Promise<GenerateResult> {
@@ -57,7 +43,6 @@ export async function runGenerate(params: GenerateParams): Promise<GenerateResul
   const inputDir = params.inputDir || path.join(root, 'input');
   const outputDir = params.outputDir || path.join(root, 'output');
   const configDir = params.configDir || path.join(root, 'config');
-
   fs.mkdirSync(inputDir, { recursive: true });
   fs.mkdirSync(outputDir, { recursive: true });
 
@@ -65,12 +50,10 @@ export async function runGenerate(params: GenerateParams): Promise<GenerateResul
   const reportPath = path.join(outputDir, 'report.md');
   const metaPath = path.join(outputDir, 'report-meta.json');
   const rawPath = path.join(outputDir, 'raw-dataset.json');
-
-  const project = canonicalProjectOrUndefined(params.project);
+  const project = workspaceIdFromName(params.project) || undefined;
   const filterParams = { startDate: params.startDate, endDate: params.endDate, search: params.search, result: params.result, project };
   const apiScope = apiScopeFromParams(params);
   const buildOptions = { apiScope, liveSync: true, includeFiles: true };
-
   const fingerprint = computeFingerprint(inputDir, configDir, params.connections, buildOptions);
   const cachedFingerprint = loadFingerprint(outputDir);
 
@@ -78,7 +61,8 @@ export async function runGenerate(params: GenerateParams): Promise<GenerateResul
   try {
     const cached = loadRawDataset(outputDir);
     const forceLiveBuild = hasBrowserConnections(params) || cachedFingerprint !== fingerprint;
-    dataset = forceLiveBuild ? await buildDataset(inputDir, configDir, params.connections, buildOptions) : (cached || await buildDataset(inputDir, configDir, params.connections, buildOptions));
+    const built = forceLiveBuild ? await buildDataset(inputDir, configDir, params.connections, buildOptions) : (cached || await buildDataset(inputDir, configDir, params.connections, buildOptions));
+    dataset = stampDatasetWorkspace(built, project);
   } catch (err) {
     clearStaleReportFiles(reportPath, metaPath);
     return { ok: false, filesParsed: 0, rowCounts: {}, warnings: [], paths: { dashboard: '', report: '', meta: '', raw: '' }, error: (err as Error).message };
@@ -92,10 +76,7 @@ export async function runGenerate(params: GenerateParams): Promise<GenerateResul
   }
 
   saveRawDataset(outputDir, dataset, fingerprint);
-
   const payload = buildDashboardPayload(dataset, filterParams);
-  // dashboard-data.json is a cold-start fallback. Keep it full-scope so generating a
-  // scoped report does not poison the fallback cache with one project/date slice.
   const isScoped = Boolean(filterParams.project || filterParams.startDate || filterParams.endDate);
   const snapshotPayload = isScoped ? buildDashboardPayload(dataset, {}) : payload;
   fs.writeFileSync(dashboardPath, JSON.stringify(snapshotPayload, null, 2));
@@ -103,15 +84,7 @@ export async function runGenerate(params: GenerateParams): Promise<GenerateResul
   if (!hasDashboardMetrics(payload)) {
     clearStaleReportFiles(reportPath, metaPath);
     const message = noMetricsForScopeMessage({ project, startDate: params.startDate, endDate: params.endDate, dataset });
-    return {
-      ok: false,
-      filesParsed: fileCount,
-      rowCounts: { executions: dataset.executions.length, issues: dataset.issues.length, uat: dataset.uat.length },
-      warnings: [...dataset.meta.warnings, message],
-      paths: { dashboard: dashboardPath, report: '', meta: '', raw: rawPath },
-      payload,
-      error: message,
-    };
+    return { ok: false, filesParsed: fileCount, rowCounts: { executions: dataset.executions.length, issues: dataset.issues.length, uat: dataset.uat.length }, warnings: [...dataset.meta.warnings, message], paths: { dashboard: dashboardPath, report: '', meta: '', raw: rawPath }, payload, error: message };
   }
 
   const llmConfig = resolveReportLlmConfig(params, configDir, params.apiKey);
