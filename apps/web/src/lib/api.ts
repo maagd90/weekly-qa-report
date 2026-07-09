@@ -139,7 +139,7 @@ export const batchApi = {
   getIntegrations: () => api.get('/integrations').then((r) => r.data as IntegrationsStatus),
   testIntegrations: () => api.post('/integrations/test').then((r) => r.data),
   testConnection: (type: 'jira' | 'qmetry', connection: JiraConnectionInput | QmetryConnectionInput) => api.post('/integrations/test-connection', { type, connection: type === 'jira' ? normalizeJiraConnection(connection as JiraConnectionInput) : normalizeQmetryConnection(connection as QmetryConnectionInput) }, { timeout: 35_000 }).then((r) => r.data as { ok: boolean; count?: number; error?: string }).catch((err) => ({ ok: false, error: apiErrorMessage(err, 'Connection test failed') })),
-  getCycleFolders: () => api.get('/cycles/folders', { timeout: 45_000 }).then((r) => r.data as CycleFoldersResult),
+  getCycleFolders: (connectionId?: string) => api.get('/cycles/folders', { params: { connectionId }, timeout: 45_000 }).then((r) => r.data as CycleFoldersResult),
   getCyclesByFolder: (folderId: string, connectionId?: string, filter?: Partial<FilterParams>) => { const clean = normalizeFilter(filter); return api.get('/cycles/by-folder', { params: { folderId, connectionId, startDate: clean?.startDate, endDate: clean?.endDate, project: clean?.project }, timeout: 180_000 }).then((r) => r.data as FolderCycleHealthResult); },
   downloadReportPdf: async ({ startDate, endDate, reportType, kpiStyle, project, branding }: { startDate: string; endDate: string; reportType: ReportType; kpiStyle: string; project?: string; branding?: ReportBranding }) => {
     const cleanProject = canonicalProjectOrUndefined(project);
