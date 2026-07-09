@@ -13,7 +13,7 @@ export type { DashboardPayload, FilterParams, ReportType, GenerateParams, ApiFet
 export type { JiraConnectionInput, QmetryConnectionInput, UserConnections, JiraDeploymentType, JiraAuthType } from './types/connections';
 export { emptyConnections } from './types/connections';
 export { resultColor } from './types/dataset';
-export { applyFilters } from './filters/applyFilters';
+export { applyFilters, dataDateBounds } from './filters/applyFilters';
 export { executeTool, AI_TOOLS } from './ai/datasetTools';
 export { generateReportFromDataset } from './ai/reportWriter';
 export { testAnthropicConnection, testLlmConnection } from './ai/testConnection';
