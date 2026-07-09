@@ -94,7 +94,11 @@ export async function runGenerate(params: GenerateParams): Promise<GenerateResul
   saveRawDataset(outputDir, dataset, fingerprint);
 
   const payload = buildDashboardPayload(dataset, filterParams);
-  fs.writeFileSync(dashboardPath, JSON.stringify(payload, null, 2));
+  // dashboard-data.json is a cold-start fallback. Keep it full-scope so generating a
+  // scoped report does not poison the fallback cache with one project/date slice.
+  const isScoped = Boolean(filterParams.project || filterParams.startDate || filterParams.endDate);
+  const snapshotPayload = isScoped ? buildDashboardPayload(dataset, {}) : payload;
+  fs.writeFileSync(dashboardPath, JSON.stringify(snapshotPayload, null, 2));
 
   if (!hasDashboardMetrics(payload)) {
     clearStaleReportFiles(reportPath, metaPath);
