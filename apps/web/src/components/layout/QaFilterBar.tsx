@@ -45,7 +45,7 @@ export function QaFilterBar(props: QaFilterBarProps) {
     showResult = true,
     dataMin, dataMax,
     onSearchApis,
-    searchApisLabel = 'Search Test Cases',
+    searchApisLabel = 'Search',
     isSearchingApis = false,
   } = props;
 
@@ -63,7 +63,7 @@ export function QaFilterBar(props: QaFilterBarProps) {
             type="button"
             onClick={onSearchApis}
             disabled={isSearchingApis || !startDate || !endDate}
-            title="Filter cached data using the selected period"
+            title="Search latest live API and cached/imported data using the selected filters"
             className="font-mono-qa text-[10px] font-semibold tracking-wider uppercase px-3 py-[7px] border border-qa-ink bg-qa-ink text-[#F5F3ED] cursor-pointer disabled:opacity-50 disabled:cursor-wait"
           >
             {isSearchingApis ? 'Searching...' : searchApisLabel}
