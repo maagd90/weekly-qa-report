@@ -82,6 +82,24 @@ function duplicateDataset(): Dataset {
   console.log('✓ April 2026 filter window');
 }
 
+// Partial date bounds should still filter instead of silently returning all data.
+{
+  const startOnly = buildDashboardPayload(focusedDataset(), { project: 'DLM', startDate: '2026-07-04' });
+  const explicitStart = buildDashboardPayload(focusedDataset(), { project: 'DLM', startDate: '2026-07-04', endDate: '2026-07-04' });
+  assert.strictEqual(startOnly.overview.totalCases, explicitStart.overview.totalCases, 'startDate-only uses dataMax as implicit endDate');
+  assert.strictEqual(startOnly.storyBug.bugOpen, explicitStart.storyBug.bugOpen, 'startDate-only issue filter matches explicit bound');
+  assert.strictEqual(startOnly.overview.totalCases, 1);
+  assert.strictEqual(startOnly.storyBug.bugOpen, 1);
+
+  const endOnly = buildDashboardPayload(focusedDataset(), { project: 'DLM', endDate: '2026-07-03' });
+  const explicitEnd = buildDashboardPayload(focusedDataset(), { project: 'DLM', startDate: '2026-01-10', endDate: '2026-07-03' });
+  assert.strictEqual(endOnly.overview.totalCases, explicitEnd.overview.totalCases, 'endDate-only uses dataMin as implicit startDate');
+  assert.strictEqual(endOnly.storyBug.storyOpen, explicitEnd.storyBug.storyOpen, 'endDate-only issue filter matches explicit bound');
+  assert.strictEqual(endOnly.overview.totalCases, 1);
+  assert.strictEqual(endOnly.storyBug.storyOpen, 1);
+  console.log('✓ partial date bounds filter correctly');
+}
+
 // result=FAIL — execution sections only
 {
   const all = buildDashboardPayload(ds, { startDate: '2026-01-01', endDate: '2026-12-31' });
