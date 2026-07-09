@@ -2,10 +2,12 @@ import './loadRepoEnv';
 import express from 'express';
 import cors from 'cors';
 import util from 'util';
+import http from 'http';
 import batchRouter from './routes/batchRoutes';
 
 const app = express();
 const PORT = Number(process.env.PORT) || 3001;
+const MAX_HEADER_SIZE = Number(process.env.HTTP_MAX_HEADER_SIZE || 65_536);
 const corsOrigins = (process.env.CORS_ORIGINS || 'http://localhost:3000')
   .split(',')
   .map((s) => s.trim())
@@ -77,8 +79,9 @@ app.use((err: Error, req: express.Request, res: express.Response, _next: express
   res.status(500).json({ error: err.message || 'Unexpected server error', requestId });
 });
 
-app.listen(PORT, () => {
+http.createServer({ maxHeaderSize: MAX_HEADER_SIZE }, app).listen(PORT, () => {
   console.log(`[api] Server running on http://localhost:${PORT}`);
+  console.log(`[api] Max HTTP header size: ${MAX_HEADER_SIZE} bytes`);
   console.log('[api] File-based mode — no database. Drop files in input/, then POST /api/generate');
   console.log(`[api] CORS origins: ${corsOrigins.join(', ')}`);
   console.log(`[api] Integration debug logging: ${process.env.INTEGRATION_DEBUG === 'false' || process.env.API_DEBUG === 'false' ? 'disabled' : 'enabled'}`);
