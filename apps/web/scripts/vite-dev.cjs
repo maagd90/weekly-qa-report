@@ -1,6 +1,9 @@
 const { spawn } = require('node:child_process');
+const path = require('node:path');
 
-const viteBin = require.resolve('vite/bin/vite.js');
+const vitePkgPath = require.resolve('vite/package.json');
+const vitePkg = require(vitePkgPath);
+const viteBin = path.join(path.dirname(vitePkgPath), vitePkg.bin.vite);
 const child = spawn(
   process.execPath,
   ['--max-http-header-size=65536', viteBin, ...process.argv.slice(2)],
