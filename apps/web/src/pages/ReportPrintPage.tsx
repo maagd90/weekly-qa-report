@@ -8,7 +8,7 @@ import type { KpiStyle } from '../theme/qaTheme';
 import { ReportPrintContent } from '../components/qa/ReportPrintContent';
 
 const KPI_STYLES: KpiStyle[] = ['editorial', 'framed', 'minimal'];
-const REPORT_TYPES: ReportType[] = ['executive', 'full', 'testers', 'cycles'];
+const REPORT_TYPES: ReportType[] = ['executive', 'full', 'testers', 'defects', 'cycles'];
 
 function clearPdfSignals() {
   document.documentElement.classList.remove('qa-pdf-ready', 'qa-pdf-error');
