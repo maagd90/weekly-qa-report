@@ -43,14 +43,31 @@ function qmetryProjectMatches(key: string | undefined, scope?: ApiFetchScope): b
   return canonicalProjectKey(key) === selected;
 }
 
+function projectListLabel(keys?: string[]): string {
+  const values = (keys || []).map((key) => canonicalProjectKey(key) || key).filter(Boolean);
+  return values.length ? values.join(', ') : 'none';
+}
+
+function skippedLiveDataset(kind: 'jira' | 'qmetry', name: string, message: string): Dataset {
+  const ds = emptyDataset();
+  ds.meta.integrations[kind] = true;
+  ds.meta.fetchedAt = new Date().toISOString();
+  ds.meta.warnings.push(`[${name}] ${message}`);
+  return ds;
+}
+
 async function buildJiraConnectionDataset(configDir: string, connections?: UserConnections, options?: BuildDatasetOptions): Promise<Dataset[]> {
   const parts: Dataset[] = [];
   const apiScope = cleanApiScope(options?.apiScope);
+  const selected = canonicalProjectOrUndefined(apiScope?.project);
   if (!liveSyncEnabled(options)) return parts;
   if (connections?.jira?.length) {
     for (const conn of connections.jira) {
       if (conn.enabled === false || conn.syncIssues === false) continue;
-      if (!jiraProjectMatches(conn.projectKeys, apiScope)) continue;
+      if (!jiraProjectMatches(conn.projectKeys, apiScope)) {
+        parts.push(skippedLiveDataset('jira', conn.name || 'JIRA', `JIRA connection skipped because selected project ${selected} does not match configured projects ${projectListLabel(conn.projectKeys)}.`));
+        continue;
+      }
       const jiraCfg = jiraConfigFromConnection(conn);
       const { issues, error, jql } = await fetchJiraIssues(jiraCfg, apiScope);
       const ds = emptyDataset();
@@ -70,7 +87,10 @@ async function buildJiraConnectionDataset(configDir: string, connections?: UserC
     const cfg = loadIntegrations(configDir);
     const profiles = configuredJiraProfiles(cfg);
     for (const profile of profiles) {
-      if (!jiraProjectMatches(profile.projectKeys, apiScope)) continue;
+      if (!jiraProjectMatches(profile.projectKeys, apiScope)) {
+        parts.push(skippedLiveDataset('jira', profile.name || 'JIRA', `JIRA connection skipped because selected project ${selected} does not match configured projects ${projectListLabel(profile.projectKeys)}.`));
+        continue;
+      }
       parts.push(await fetchJiraDataset({ ...cfg, jira: profile }, apiScope));
     }
   }
@@ -80,11 +100,15 @@ async function buildJiraConnectionDataset(configDir: string, connections?: UserC
 async function buildQmetryConnectionDataset(configDir: string, connections?: UserConnections, options?: BuildDatasetOptions): Promise<Dataset[]> {
   const parts: Dataset[] = [];
   const apiScope = cleanApiScope(options?.apiScope);
+  const selected = canonicalProjectOrUndefined(apiScope?.project);
   if (!liveSyncEnabled(options)) return parts;
   if (connections?.qmetry?.length) {
     for (const conn of connections.qmetry) {
       if (conn.enabled === false || conn.syncExecutions === false) continue;
-      if (!qmetryProjectMatches(conn.projectKey, apiScope)) continue;
+      if (!qmetryProjectMatches(conn.projectKey, apiScope)) {
+        parts.push(skippedLiveDataset('qmetry', conn.name || 'QMetry', `QMetry connection skipped because selected project ${selected} does not match configured project ${canonicalProjectKey(conn.projectKey) || conn.projectKey || 'none'}.`));
+        continue;
+      }
       const qmetryCfg = qmetryConfigFromConnection(conn);
       const { executions, error } = await fetchQmetryExecutions(qmetryCfg, apiScope);
       const ds = emptyDataset();
@@ -101,7 +125,13 @@ async function buildQmetryConnectionDataset(configDir: string, connections?: Use
     }
   } else {
     const cfg = loadIntegrations(configDir);
-    if (cfg.qmetry.enabled && qmetryProjectMatches(cfg.qmetry.projectKey, apiScope)) parts.push(await fetchQmetryDataset(cfg, apiScope));
+    if (cfg.qmetry.enabled) {
+      if (!qmetryProjectMatches(cfg.qmetry.projectKey, apiScope)) {
+        parts.push(skippedLiveDataset('qmetry', `QMetry ${cfg.qmetry.projectKey}`, `QMetry connection skipped because selected project ${selected} does not match configured project ${canonicalProjectKey(cfg.qmetry.projectKey) || cfg.qmetry.projectKey || 'none'}.`));
+      } else {
+        parts.push(await fetchQmetryDataset(cfg, apiScope));
+      }
+    }
   }
   return parts;
 }
