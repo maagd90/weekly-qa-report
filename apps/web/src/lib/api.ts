@@ -59,14 +59,8 @@ function normalizeQmetryConnection(c: QmetryConnectionInput): QmetryConnectionIn
 function normalizeFilter(filter?: Partial<FilterParams>): Partial<FilterParams> | undefined { if (!filter) return undefined; return { ...filter, project: canonicalProjectOrUndefined(filter.project) }; }
 function normalizeGenerate(params: GenerateParams): GenerateParams { return { ...params, project: canonicalProjectOrUndefined(params.project) }; }
 function validDate(value?: string): string { return /^\d{4}-\d{2}-\d{2}$/.test(value || '') ? value! : ''; }
-function compactQmetryConnection(c: QmetryConnectionInput): QmetryConnectionInput {
-  const normalized = normalizeQmetryConnection(c);
-  // QMetry currently uses Basic/Auth value in the backend. Large copied Cookie/Session headers can exceed
-  // Vite/Node request-header limits when multiple connections are saved, so do not broadcast them globally.
-  return { ...normalized, sessionHeader: '', sessionId: '', xsrfToken: '' };
-}
 function browserConnectionsForHeader(): UserConnections {
-  return { jira: getJiraConnections(), qmetry: getQmetryConnections().map(compactQmetryConnection) };
+  return { jira: getJiraConnections(), qmetry: getQmetryConnections() };
 }
 function shouldAttachConnectionsHeader(url = '', method = 'get'): boolean {
   const cleanUrl = url.split('?')[0];
