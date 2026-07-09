@@ -4,7 +4,6 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import clsx from 'clsx';
 import { Download } from 'lucide-react';
-import { AI_TOOLS } from 'qa-dashboard-batch/dist/ai/datasetTools';
 import type { DashboardPayload } from 'qa-dashboard-batch';
 import { batchApi, apiErrorMessage, getReportBranding, type ReportType } from '../lib/api';
 import type { KpiStyle } from '../theme/qaTheme';
@@ -19,7 +18,17 @@ const REPORT_TYPES: { value: ReportType; label: string; desc: string }[] = [
   { value: 'cycles', label: 'Cycles', desc: 'cycle focus' },
 ];
 
-const DATASET_TOOLS = AI_TOOLS.map((t) => t.name);
+// Keep this list browser-local. Importing the batch runtime into Vite dev mode can blank the UI
+// because that package is compiled for Node/CommonJS. The list mirrors apps/batch/src/ai/datasetTools.ts.
+const DATASET_TOOLS = [
+  'get_result_mix',
+  'get_tester_stats',
+  'get_cycle_health',
+  'get_story_bug_split',
+  'get_defect_backlog',
+  'get_traceability',
+  'get_uat_summary',
+] as const;
 
 type ToolCallMeta = { toolName: string; rowCount: number };
 type ReportMeta = { toolCalls?: ToolCallMeta[]; params?: { startDate?: string; endDate?: string; reportType?: ReportType; project?: string } };
