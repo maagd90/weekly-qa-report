@@ -70,6 +70,16 @@ function hasMetrics(dashboard?: DashboardPayload | null): boolean {
   );
 }
 
+function formatSourceNote(note: string): string {
+  return note
+    .replace('JIRA API date search applied from selected dates.', 'JIRA search used the selected date range.')
+    .replace('QMetry testcase execution rows were unavailable for one or more cycles, so cycle-level execution progress was used for report charts.', 'QMetry testcase execution rows were unavailable for one or more cycles, so cycle-level execution progress was used for report charts.');
+}
+
+function sourceNotes(warning: string | null): string[] {
+  return warning ? warning.split(';').map((item) => formatSourceNote(item.trim())).filter(Boolean) : [];
+}
+
 export function AiReportPage({ dashboard, kpiStyle, project, onGenerated }: AiReportPageProps) {
   const queryClient = useQueryClient();
   const today = new Date().toISOString().slice(0, 10);
@@ -96,6 +106,7 @@ export function AiReportPage({ dashboard, kpiStyle, project, onGenerated }: AiRe
 
   const selectedProject = reportProject && reportProject !== 'all' ? reportProject : undefined;
   const selectedProjectLabel = selectedProject ? projectDisplayName(selectedProject) : 'All projects';
+  const notes = sourceNotes(warning);
 
   useEffect(() => {
     if (project && project !== reportProject) setReportProject(project);
@@ -228,7 +239,7 @@ export function AiReportPage({ dashboard, kpiStyle, project, onGenerated }: AiRe
           </aside>
           <article className="bg-white border border-qa-border min-h-[520px]">
             {error && <div className="m-6 p-4 border border-[#ecccc2] bg-[#f8ece8] text-[#a13d2c] text-sm">{error}</div>}
-            {warning && !error && <div className="m-6 p-4 border border-[#e8dcc2] bg-[#faf6ee] text-[#6a5a2c] text-sm">{warning}</div>}
+            {notes.length > 0 && !error && <div className="m-6 p-4 border border-[#d7e5ef] bg-[#f4f8fb] text-[#2c5266] text-sm"><div className="font-mono-qa text-[10px] tracking-wider uppercase mb-2">Data source notes</div><ul className="m-0 pl-4 space-y-1">{notes.map((note) => <li key={note}>{note}</li>)}</ul></div>}
             {!generating && !hasReport && !error && <div className="flex flex-col items-center justify-center h-[520px] text-center px-10"><div className="font-spectral text-[64px] leading-none text-qa-border">¶</div><h3 className="font-spectral font-semibold text-[22px] mt-3.5 mb-2">No report generated yet</h3><p className="text-[13.5px] text-qa-muted max-w-[420px] m-0">Pick a report type, project, and date range, then click <strong>Generate Report</strong>.</p></div>}
             {generating && <div className="p-10"><div className="font-mono-qa text-[11px] tracking-wider uppercase mb-6" style={{ color: QA.accent }}>• Generating — querying dataset</div>{['Reading staged exports', 'Parsing executions & issues', 'Building in-memory dataset', `Filtering project: ${selectedProjectLabel}`, 'Running dataset checks', 'Writing narrative'].map((label, i) => <div key={label} className="flex items-center gap-3 py-2.5 border-b border-[#f3f0e8]"><span className="w-2 h-2 rounded-full qa-pulse" style={{ background: i === 0 ? QA.accent : '#e2ded4' }} /><span className="font-mono-qa text-xs flex-1">{label}</span><span className="font-mono-qa text-[11px] text-qa-muted-pale">{i === 0 ? 'running' : 'queued'}</span></div>)}</div>}
             {hasReport && <div><div className="px-11 pt-7 pb-5 border-b-2 border-qa-ink flex flex-wrap items-start justify-between gap-4"><div><div className="font-mono-qa text-[10px] tracking-widest uppercase mb-2.5" style={{ color: QA.accent }}>Weekly QA Narrative · {reportType === 'testers' || reportType === 'defects' ? 'defects' : reportType}</div><h1 className="font-spectral font-extrabold text-[32px] leading-tight tracking-tight m-0 mb-3">QA Report</h1><div className="flex gap-4 font-mono-qa text-[10.5px] text-qa-muted-light uppercase tracking-wide flex-wrap"><span>{startDate} → {endDate}</span><span>·</span><span>{hasNarrative ? 'Narrative included' : 'Metrics only'}</span><span>·</span><span>{selectedProjectLabel}</span></div></div><button type="button" onClick={handleDownloadPdf} disabled={downloading} className="inline-flex items-center gap-2 px-4 py-2.5 border border-qa-ink bg-white text-qa-ink font-mono-qa text-[11px] font-semibold tracking-wide uppercase disabled:opacity-50"><Download size={14} />{downloading ? 'Exporting…' : 'Download PDF'}</button></div><div className="px-11 py-7 bg-white">{chartData && <div className="mb-10 pb-8 border-b border-qa-border"><div className="font-mono-qa text-[10px] tracking-wider uppercase text-qa-muted-light mb-5">Metrics & Charts</div><AiReportCharts dashboard={chartData} kpiStyle={kpiStyle} reportType={reportType} /></div>}{hasNarrative && <div className="prose prose-slate max-w-none prose-headings:font-spectral"><div className="font-mono-qa text-[10px] tracking-wider uppercase text-qa-muted-light mb-5">Narrative Summary</div><ReactMarkdown remarkPlugins={[remarkGfm]}>{reportMarkdown}</ReactMarkdown></div>}</div></div>}
