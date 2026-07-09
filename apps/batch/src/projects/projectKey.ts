@@ -1,8 +1,19 @@
+const SOURCE_PROJECT_ALIASES: Record<string, string> = {
+  DLM: 'DLM',
+  DN4_FT: 'DLM',
+  'DN4 FT': 'DLM',
+  'DN4_FT - SUPPLY & DMC': 'DLM',
+  'DN4_FT- SUPPLY & DMC': 'DLM',
+  'DN4 FT - SUPPLY & DMC': 'DLM',
+  'SUPPLY & DMC': 'DLM',
+};
+
 export function canonicalProjectKey(value?: string | null): string {
   const raw = (value || '').trim();
   if (!raw) return '';
   if (raw.toLowerCase() === 'all') return 'all';
-  return raw.toUpperCase().replace(/\s+/g, ' ').trim();
+  const normalized = raw.toUpperCase().replace(/\s+/g, ' ').trim();
+  return SOURCE_PROJECT_ALIASES[normalized] || normalized;
 }
 
 export function canonicalProjectOrUndefined(value?: string | null): string | undefined {
