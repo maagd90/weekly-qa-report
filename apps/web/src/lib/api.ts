@@ -59,6 +59,23 @@ function normalizeQmetryConnection(c: QmetryConnectionInput): QmetryConnectionIn
 function normalizeFilter(filter?: Partial<FilterParams>): Partial<FilterParams> | undefined { if (!filter) return undefined; return { ...filter, project: canonicalProjectOrUndefined(filter.project) }; }
 function normalizeGenerate(params: GenerateParams): GenerateParams { return { ...params, project: canonicalProjectOrUndefined(params.project) }; }
 function validDate(value?: string): string { return /^\d{4}-\d{2}-\d{2}$/.test(value || '') ? value! : ''; }
+function compactQmetryConnection(c: QmetryConnectionInput): QmetryConnectionInput {
+  const normalized = normalizeQmetryConnection(c);
+  // QMetry currently uses Basic/Auth value in the backend. Large copied Cookie/Session headers can exceed
+  // Vite/Node request-header limits when multiple connections are saved, so do not broadcast them globally.
+  return { ...normalized, sessionHeader: '', sessionId: '', xsrfToken: '' };
+}
+function browserConnectionsForHeader(): UserConnections {
+  return { jira: getJiraConnections(), qmetry: getQmetryConnections().map(compactQmetryConnection) };
+}
+function shouldAttachConnectionsHeader(url = '', method = 'get'): boolean {
+  const cleanUrl = url.split('?')[0];
+  const cleanMethod = method.toLowerCase();
+  if (cleanUrl === '/integrations/test-connection') return false;
+  if (cleanUrl.startsWith('/cycles/')) return true;
+  if (cleanMethod === 'post' && (cleanUrl === '/generate' || cleanUrl === '/dashboard/search' || cleanUrl === '/integrations/sync' || cleanUrl === '/integrations/test')) return true;
+  return false;
+}
 
 export function getReportBranding(): ReportBranding { return readStoredObject<ReportBranding>(REPORT_BRANDING_STORAGE, { logoUrl: '', logoAlt: 'Report logo', title: 'QA Sprint Report', subtitle: '' }); }
 export function setReportBranding(branding: ReportBranding): void { writeStoredObject(REPORT_BRANDING_STORAGE, { logoUrl: branding.logoUrl?.trim() || '', logoAlt: branding.logoAlt?.trim() || 'Report logo', title: branding.title?.trim() || 'QA Sprint Report', subtitle: branding.subtitle?.trim() || '' }); }
@@ -91,7 +108,9 @@ api.interceptors.request.use((config) => {
   if (anthropicKey) config.headers['x-anthropic-key'] = anthropicKey;
   const jira = getJiraConnections();
   const qmetry = getQmetryConnections();
-  if (jira.length || qmetry.length) config.headers['x-user-connections'] = JSON.stringify({ jira, qmetry } satisfies UserConnections);
+  if (shouldAttachConnectionsHeader(config.url || '', config.method || 'get') && (jira.length || qmetry.length)) {
+    config.headers['x-user-connections'] = JSON.stringify(browserConnectionsForHeader());
+  }
   logApi('request', { requestId: meta.requestId, method: (config.method || 'GET').toUpperCase(), url: `${config.baseURL || ''}${config.url || ''}`, activeProject: getActiveProject(), activeDateRange: getActiveDateRange(), llmProvider: selectedLlm.provider, hasSelectedLlmKey: Boolean(selectedLlm.apiKey), hasReportLogo: Boolean(getReportBranding().logoUrl), jiraConnections: jira.length, qmetryConnections: qmetry.length, params: safeJson(config.params), body: safeJson(config.data) });
   return config;
 });
