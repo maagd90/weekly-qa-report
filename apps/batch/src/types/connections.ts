@@ -4,6 +4,7 @@ export type JiraAuthType = 'basic' | 'bearer';
 export interface JiraConnectionInput {
   id: string;
   name: string;
+  workspaceName?: string;
   baseUrl: string;
   enabled?: boolean;
   syncIssues?: boolean;
@@ -25,6 +26,7 @@ export interface JiraConnectionInput {
 export interface QmetryConnectionInput {
   id: string;
   name: string;
+  workspaceName?: string;
   baseUrl: string;
   enabled?: boolean;
   syncExecutions?: boolean;
