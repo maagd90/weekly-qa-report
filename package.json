@@ -10,7 +10,11 @@
     "dev": "concurrently \"npm run dev --workspace=apps/api\" \"npm run dev --workspace=apps/web\"",
     "build": "npm run build --workspace=apps/batch && npm run build --workspace=apps/api && npm run build --workspace=apps/web",
     "generate": "npm run generate --workspace=apps/batch",
-    "test": "npm run test --workspace=apps/batch",
+    "test": "npm run test:unit",
+    "test:unit": "npm run test --workspace=apps/batch",
+    "test:api": "node scripts/quality/api-quality-gate.cjs",
+    "test:e2e": "node scripts/quality/e2e-quality-gate.cjs",
+    "test:quality-gate": "npm run build && npm run test:unit && npm run test:api && npm run test:e2e",
     "install:all": "npm install"
   },
   "devDependencies": {
