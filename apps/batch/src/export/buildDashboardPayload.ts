@@ -140,7 +140,9 @@ export function buildDashboardPayload(
   const byOwner = Object.entries(ownerMap).map(([name, open]) => ({ name, open })).sort((a, b) => b.open - a.open);
 
   let uatPayload: DashboardPayload['uat'] = null;
-  if (uat.length > 0 && (!normalizedProject || normalizedProject === 'DLM')) {
+  // UAT rows are already filtered by the selected workspace. Do not hardcode a source
+  // project key here because workspace ids intentionally differ from JIRA/QMetry keys.
+  if (uat.length > 0) {
     const total = uat.length;
     const closed = uat.filter((r) => !r.open).length;
     const open = total - closed;
