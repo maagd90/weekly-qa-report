@@ -12,8 +12,17 @@ export function canonicalProjectKey(value?: string | null): string {
   const raw = (value || '').trim();
   if (!raw) return '';
   if (raw.toLowerCase() === 'all') return 'all';
-  const normalized = raw.toUpperCase().replace(/\s+/g, ' ').trim();
-  return SOURCE_PROJECT_ALIASES[normalized] || normalized;
+
+  const normalizedSourceKey = raw.toUpperCase().replace(/\s+/g, ' ').trim();
+  const aliasedSourceKey = SOURCE_PROJECT_ALIASES[normalizedSourceKey];
+  if (aliasedSourceKey) return aliasedSourceKey;
+
+  // Workspace identities are generated as lowercase slugs from connection names.
+  // Preserve them so UI values, folders, filters and report scope use one stable id.
+  if (raw === raw.toLowerCase() && /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(raw)) return raw;
+
+  // Technical JIRA/QMetry keys remain case-insensitive and canonical uppercase.
+  return normalizedSourceKey;
 }
 
 export function canonicalProjectOrUndefined(value?: string | null): string | undefined {
