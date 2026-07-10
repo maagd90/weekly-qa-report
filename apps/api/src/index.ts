@@ -4,6 +4,7 @@ import cors from 'cors';
 import util from 'util';
 import http from 'http';
 import batchRouter from './routes/batchRoutes';
+import legacyMigrationRouter from './routes/legacyMigrationRoutes';
 
 const app = express();
 const PORT = Number(process.env.PORT) || 3001;
@@ -69,6 +70,7 @@ app.use((req, res, next) => {
   next();
 });
 
+app.use('/api', legacyMigrationRouter);
 app.use('/api', batchRouter);
 
 app.get('/health', (_req, res) => res.json({ ok: true }));
