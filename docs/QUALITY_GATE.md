@@ -61,6 +61,7 @@ Starts the compiled API and Vite UI, opens Chrome/Chromium through `puppeteer-co
 - Project selection survives browser refresh.
 - Testers and cycles stay scoped to the selected workspace.
 - Settings shows the correct JIRA/QMetry connection counts.
+- A workspace-scoped WonderMiles PDF is rendered through the real print page and begins with a valid `%PDF` signature.
 
 Set `CHROME_BIN` when Chrome or Chromium is not auto-detected.
 
@@ -71,6 +72,7 @@ Set `CHROME_BIN` when Chrome or Chromium is not auto-detected.
 - API and web process logs.
 - Machine-readable JSON results.
 - Browser screenshots, including a failure screenshot when possible.
+- The generated WonderMiles PDF when the PDF check succeeds.
 
 The GitHub `Build, unit, API and E2E` check should be configured as a required branch-protection status before merging.
 
