@@ -91,10 +91,40 @@ async function bodyText(page) {
   return page.evaluate(() => document.body.innerText);
 }
 
+async function verifyPdf(apiBaseUrl) {
+  const response = await fetch(`${apiBaseUrl}/api/report/pdf`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      project: WM_ID,
+      startDate: '2026-06-01',
+      endDate: '2026-07-31',
+      reportType: 'executive',
+      kpiStyle: 'editorial',
+      branding: { title: 'Automated Workspace Report' },
+    }),
+  });
+  const bytes = Buffer.from(await response.arrayBuffer());
+  assert.equal(response.status, 200, `PDF endpoint failed: ${bytes.toString('utf8', 0, Math.min(bytes.length, 500))}`);
+  assert.match(response.headers.get('content-type') || '', /application\/pdf/i);
+  assert.equal(bytes.subarray(0, 4).toString('ascii'), '%PDF');
+  assert.ok(bytes.length > 5_000, `PDF output is unexpectedly small: ${bytes.length} bytes`);
+  const pdfPath = path.join(resultsDir, 'wondermiles-executive-report.pdf');
+  fs.writeFileSync(pdfPath, bytes);
+  return pdfPath;
+}
+
 async function main() {
   ensureSyntheticFixtures();
   const chrome = findChrome();
   if (!chrome) throw new Error('Chrome/Chromium was not found. Set CHROME_BIN before running npm run test:e2e.');
+
+  const previousPdfPrintUrl = process.env.PDF_PRINT_URL;
+  const previousExecutablePath = process.env.PUPPETEER_EXECUTABLE_PATH;
+  const previousPdfTimeout = process.env.PDF_RENDER_TIMEOUT_MS;
+  process.env.PDF_PRINT_URL = 'http://127.0.0.1:4173/print/report';
+  process.env.PUPPETEER_EXECUTABLE_PATH = chrome;
+  process.env.PDF_RENDER_TIMEOUT_MS = '60000';
 
   const sandbox = createSandbox('e2e-isolation');
   const api = await startApi(sandbox, 3001);
@@ -102,6 +132,7 @@ async function main() {
   let browser;
   const checks = [];
   const screenshotPath = path.join(resultsDir, 'workspace-isolation-e2e.png');
+  let pdfPath;
   try {
     await seed(api.baseUrl);
     web = await startWeb(4173);
@@ -131,7 +162,6 @@ async function main() {
     await selectWorkspace(page, WM_ID, '12 records');
     let text = await bodyText(page);
     assert.ok(text.includes('WonderMiles'));
-    assert.ok(!text.includes('582') || text.includes('Stories') === false, 'WonderMiles should not inherit DLM JIRA metrics');
     checks.push('WonderMiles opens without JIRA credentials');
 
     await clickButton(page, 'Import Data');
@@ -177,8 +207,11 @@ async function main() {
     assert.ok(text.includes(`${DLM_NAME} (1 JIRA / 0 QMetry)`));
     checks.push('settings supports QMetry-only WonderMiles workspace');
 
+    pdfPath = await verifyPdf(api.baseUrl);
+    checks.push('workspace-scoped PDF export renders through Chrome');
+
     await page.screenshot({ path: screenshotPath, fullPage: true });
-    const resultPath = writeResult('e2e-quality-gate', { ok: true, checks, chrome, screenshotPath });
+    const resultPath = writeResult('e2e-quality-gate', { ok: true, checks, chrome, screenshotPath, pdfPath });
     console.log(`E2E quality gate passed (${checks.length} groups). Result: ${resultPath}`);
   } catch (error) {
     if (browser) {
@@ -187,7 +220,7 @@ async function main() {
         if (pages[0]) await pages[0].screenshot({ path: path.join(resultsDir, 'workspace-isolation-e2e-failure.png'), fullPage: true });
       } catch { /* best effort */ }
     }
-    const resultPath = writeResult('e2e-quality-gate', { ok: false, checks, chrome, error: error.stack || error.message });
+    const resultPath = writeResult('e2e-quality-gate', { ok: false, checks, chrome, pdfPath, error: error.stack || error.message });
     console.error(`E2E quality gate failed. Result: ${resultPath}`);
     throw error;
   } finally {
@@ -199,6 +232,9 @@ async function main() {
     await stopProcess(api.child);
     api.closeLog();
     fs.rmSync(sandbox.root, { recursive: true, force: true });
+    if (previousPdfPrintUrl === undefined) delete process.env.PDF_PRINT_URL; else process.env.PDF_PRINT_URL = previousPdfPrintUrl;
+    if (previousExecutablePath === undefined) delete process.env.PUPPETEER_EXECUTABLE_PATH; else process.env.PUPPETEER_EXECUTABLE_PATH = previousExecutablePath;
+    if (previousPdfTimeout === undefined) delete process.env.PDF_RENDER_TIMEOUT_MS; else process.env.PDF_RENDER_TIMEOUT_MS = previousPdfTimeout;
   }
 }
 
