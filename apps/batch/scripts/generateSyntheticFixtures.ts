@@ -78,7 +78,7 @@ function writeSheet(fileName: string, sheetName: string, rows: unknown[][]) {
       `DTTRV-TC-${i + 1}`,
       results[i],
       i % 2 === 0 ? 'WM Tester One' : 'WM Tester Two',
-      results[i] === 'NOT EXECUTED' ? '' : (july ? '05/Jul/2026 11:00:00' : '15/Jun/2026 11:00:00'),
+      july ? '05/Jul/2026 11:00:00' : '15/Jun/2026 11:00:00',
     ]);
   }
   writeSheet('wondermiles-qmetry-regression.xlsx', 'Data', rows);
