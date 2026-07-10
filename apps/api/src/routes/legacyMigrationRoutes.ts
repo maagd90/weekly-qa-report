@@ -24,14 +24,13 @@ const CONFIG_DIR = process.env.CONFIG_DIR || path.join(ROOT, 'config');
 const IMPORT_CACHE_FILE = 'raw-dataset.imported.json';
 const LIVE_CACHE_FILE = 'raw-dataset.live.json';
 const PROJECT_META_FILE = 'project.json';
-const LEGACY_OUTPUT_FILES = [
+const LEGACY_GENERATED_FILES = [
   'raw-dataset.json',
   'dataset-fingerprint.txt',
   'dashboard-data.json',
   'report.md',
   'report-meta.json',
   IMPORT_CACHE_FILE,
-  LIVE_CACHE_FILE,
 ];
 
 interface MovedFile {
@@ -52,6 +51,11 @@ function workspaceId(value?: string): string | undefined {
 function projectDirs(project: string): { inputDir: string; outputDir: string; rootDir: string } {
   const rootDir = path.join(PROJECT_DATA_DIR, project);
   return { rootDir, inputDir: path.join(rootDir, 'input'), outputDir: path.join(rootDir, 'output') };
+}
+
+function totalRows(dataset?: Dataset | null): number {
+  if (!dataset) return 0;
+  return dataset.executions.length + dataset.issues.length + dataset.uat.length;
 }
 
 function listFiles(dir: string): Array<{ name: string; size: number; modifiedAt: string }> {
@@ -105,9 +109,10 @@ function loadDatasetFile(outputDir: string, fileName: string): Dataset | null {
   return JSON.parse(fs.readFileSync(filePath, 'utf8')) as Dataset;
 }
 
-function clearLegacyOutputs(): string[] {
+function clearLegacyImportedOutputs(preserveLiveCache: boolean): string[] {
   const removed: string[] = [];
-  for (const name of LEGACY_OUTPUT_FILES) {
+  const names = preserveLiveCache ? LEGACY_GENERATED_FILES : [...LEGACY_GENERATED_FILES, LIVE_CACHE_FILE];
+  for (const name of names) {
     const filePath = path.join(LEGACY_OUTPUT_DIR, name);
     if (!fs.existsSync(filePath)) continue;
     fs.unlinkSync(filePath);
@@ -116,13 +121,21 @@ function clearLegacyOutputs(): string[] {
   return removed;
 }
 
+function restoreLegacyLiveSnapshot(liveDataset: Dataset): void {
+  const fingerprint = computeFingerprint(LEGACY_INPUT_DIR, CONFIG_DIR, emptyConnections(), { liveSync: false, includeFiles: true });
+  saveRawDataset(LEGACY_OUTPUT_DIR, liveDataset, fingerprint);
+  fs.writeFileSync(path.join(LEGACY_OUTPUT_DIR, 'dashboard-data.json'), JSON.stringify(refilterDashboard(liveDataset, {}), null, 2));
+}
+
 router.get('/input/legacy-files', (_req: Request, res: Response) => {
   const files = listFiles(LEGACY_INPUT_DIR);
   const legacyDataset = loadRawDataset(LEGACY_OUTPUT_DIR);
+  const legacyLive = loadDatasetFile(LEGACY_OUTPUT_DIR, LIVE_CACHE_FILE);
   res.json({
     files,
     count: files.length,
     hasLegacyOutput: Boolean(legacyDataset),
+    hasLegacyLiveCache: totalRows(legacyLive) > 0,
     rowCounts: legacyDataset ? {
       executions: legacyDataset.executions.length,
       issues: legacyDataset.issues.length,
@@ -147,7 +160,10 @@ router.post('/input/migrate-legacy', async (req: Request, res: Response) => {
   fs.mkdirSync(dirs.outputDir, { recursive: true });
   fs.writeFileSync(path.join(dirs.rootDir, PROJECT_META_FILE), JSON.stringify({ project, slug: project, migratedAt: new Date().toISOString() }, null, 2));
 
+  const legacyLive = loadDatasetFile(LEGACY_OUTPUT_DIR, LIVE_CACHE_FILE);
+  const preserveLegacyLive = totalRows(legacyLive) > 0;
   const moved: MovedFile[] = [];
+
   try {
     for (const file of files) {
       const source = path.join(LEGACY_INPUT_DIR, file.name);
@@ -160,12 +176,11 @@ router.post('/input/migrate-legacy', async (req: Request, res: Response) => {
     const buildOptions = { liveSync: false, includeFiles: true };
     const fingerprint = computeFingerprint(dirs.inputDir, CONFIG_DIR, emptyConnections(), buildOptions);
     const imported = stampDatasetWorkspace(await buildDataset(dirs.inputDir, CONFIG_DIR, emptyConnections(), buildOptions), project);
-    const importedRows = imported.executions.length + imported.issues.length + imported.uat.length;
-    if (!importedRows) throw new Error('Migrated files did not produce any supported QA rows. Files were returned to the legacy folder.');
+    if (!totalRows(imported)) throw new Error('Migrated files did not produce any supported QA rows. Files were returned to the legacy folder.');
 
     fs.writeFileSync(path.join(dirs.outputDir, IMPORT_CACHE_FILE), JSON.stringify(imported, null, 2));
-    const live = loadDatasetFile(dirs.outputDir, LIVE_CACHE_FILE);
-    const merged = live ? mergeDatasets([imported, live]) : imported;
+    const workspaceLive = loadDatasetFile(dirs.outputDir, LIVE_CACHE_FILE);
+    const merged = workspaceLive ? mergeDatasets([imported, workspaceLive]) : imported;
     saveRawDataset(dirs.outputDir, merged, fingerprint);
     const dashboard = refilterDashboard(merged, { project });
     fs.writeFileSync(path.join(dirs.outputDir, 'dashboard-data.json'), JSON.stringify(dashboard, null, 2));
@@ -174,7 +189,12 @@ router.post('/input/migrate-legacy', async (req: Request, res: Response) => {
       if (fs.existsSync(reportPath)) fs.unlinkSync(reportPath);
     }
 
-    const removedLegacyOutputs = clearLegacyOutputs();
+    const removedLegacyOutputs = clearLegacyImportedOutputs(preserveLegacyLive);
+    if (legacyLive && preserveLegacyLive) restoreLegacyLiveSnapshot(legacyLive);
+
+    const warnings = [...merged.meta.warnings];
+    if (preserveLegacyLive) warnings.push('Legacy live API cache was preserved under All projects and was not assigned automatically to this workspace.');
+
     return res.json({
       ok: true,
       project,
@@ -185,7 +205,8 @@ router.post('/input/migrate-legacy', async (req: Request, res: Response) => {
         uat: merged.uat.length,
       },
       removedLegacyOutputs,
-      warnings: merged.meta.warnings,
+      preservedLegacyLiveCache: preserveLegacyLive,
+      warnings,
       dashboard,
       requestId: requestId(req),
     });
