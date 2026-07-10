@@ -61,6 +61,7 @@ function spawnLogged(name, command, args, options = {}) {
     cwd: options.cwd || repoRoot,
     env: { ...process.env, ...(options.env || {}) },
     shell: options.shell ?? (process.platform === 'win32'),
+    detached: process.platform !== 'win32',
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   child.stdout.pipe(log);
@@ -85,18 +86,30 @@ async function waitForHttp(url, timeoutMs = 30_000) {
   throw new Error(`Timed out waiting for ${url}: ${lastError?.message || 'unknown error'}`);
 }
 
-async function stopProcess(child) {
-  if (!child || child.killed || child.exitCode !== null) return;
+function signalProcessTree(child, signal) {
   if (process.platform === 'win32') {
     spawnSync('taskkill', ['/pid', String(child.pid), '/T', '/F'], { stdio: 'ignore' });
     return;
   }
-  child.kill('SIGTERM');
+  try {
+    process.kill(-child.pid, signal);
+  } catch {
+    try { child.kill(signal); } catch { /* already stopped */ }
+  }
+}
+
+async function stopProcess(child) {
+  if (!child || child.exitCode !== null) return;
+  if (process.platform === 'win32') {
+    signalProcessTree(child, 'SIGTERM');
+    return;
+  }
+  signalProcessTree(child, 'SIGTERM');
   const exited = await Promise.race([
     new Promise((resolve) => child.once('exit', resolve)),
     sleep(2_000).then(() => false),
   ]);
-  if (exited === false && child.exitCode === null) child.kill('SIGKILL');
+  if (exited === false && child.exitCode === null) signalProcessTree(child, 'SIGKILL');
 }
 
 async function startApi(sandbox, requestedPort) {
@@ -177,67 +190,66 @@ function connectionHeader(connections) {
   return { 'x-user-connections': JSON.stringify(connections) };
 }
 
-function startMockQmetryServer(requestedPort) {
+async function startMockQmetryServer(requestedPort) {
   const requests = [];
-  return new Promise(async (resolve, reject) => {
-    const port = requestedPort || await getFreePort();
-    const server = http.createServer(async (req, res) => {
-      const chunks = [];
-      for await (const chunk of req) chunks.push(chunk);
-      const bodyText = Buffer.concat(chunks).toString('utf8');
-      requests.push({ method: req.method, url: req.url, authorization: req.headers.authorization, cookie: req.headers.cookie, body: bodyText });
-      const send = (status, payload) => {
-        res.statusCode = status;
-        res.setHeader('content-type', 'application/json');
-        res.end(JSON.stringify(payload));
-      };
-      if (!String(req.headers.authorization || '').startsWith('Basic ')) return send(401, { error: 'missing basic auth' });
-      const url = req.url || '';
-      if (url.includes('/projects/19703/testcycle-folders')) {
-        return send(200, { folders: [{ id: 'wm-folder-1', name: 'WonderMiles Regression', path: 'Regression / WonderMiles' }], total: 1 });
-      }
-      if (url.includes('/testcycles/search')) {
-        return send(200, {
-          data: [{
-            id: 'wm-cycle-1',
-            key: 'DTTRV-TR-1',
-            summary: 'WonderMiles On-Prem QMetry Cycle',
-            folderId: 'wm-folder-1',
-            updated: '2026-07-05',
-            plannedStartDate: '2026-07-01',
-            plannedEndDate: '2026-07-31',
-            testcaseExecutionProgress: [
-              { name: 'PASS', count: 2 },
-              { name: 'FAIL', count: 1 },
-              { name: 'BLOCKED', count: 1 },
-            ],
-          }],
-          total: 1,
-        });
-      }
-      if (url.includes('/testcycles/wm-cycle-1/testcases/search')) {
-        return send(200, {
-          data: [
-            { key: 'DTTRV-TC-101', cycleKey: 'DTTRV-TR-1', cycleSummary: 'WonderMiles On-Prem QMetry Cycle', executionResult: { name: 'PASS' }, executionAssignee: { displayName: 'WM Tester One' }, updated: '2026-07-05' },
-            { key: 'DTTRV-TC-102', cycleKey: 'DTTRV-TR-1', cycleSummary: 'WonderMiles On-Prem QMetry Cycle', executionResult: { name: 'FAIL' }, executionAssignee: { displayName: 'WM Tester Two' }, updated: '2026-07-05' },
-            { key: 'DTTRV-TC-103', cycleKey: 'DTTRV-TR-1', cycleSummary: 'WonderMiles On-Prem QMetry Cycle', executionResult: { name: 'BLOCKED' }, executionAssignee: { displayName: 'WM Tester One' }, updated: '2026-07-05' },
-            { key: 'DTTRV-TC-104', cycleKey: 'DTTRV-TR-1', cycleSummary: 'WonderMiles On-Prem QMetry Cycle', executionResult: { name: 'PASS' }, executionAssignee: { displayName: 'WM Tester Two' }, updated: '2026-07-05' },
+  const port = requestedPort || await getFreePort();
+  const server = http.createServer(async (req, res) => {
+    const chunks = [];
+    for await (const chunk of req) chunks.push(chunk);
+    const bodyText = Buffer.concat(chunks).toString('utf8');
+    requests.push({ method: req.method, url: req.url, authorization: req.headers.authorization, cookie: req.headers.cookie, body: bodyText });
+    const send = (status, payload) => {
+      res.statusCode = status;
+      res.setHeader('content-type', 'application/json');
+      res.end(JSON.stringify(payload));
+    };
+    if (!String(req.headers.authorization || '').startsWith('Basic ')) return send(401, { error: 'missing basic auth' });
+    const url = req.url || '';
+    if (url.includes('/projects/19703/testcycle-folders')) {
+      return send(200, { folders: [{ id: 'wm-folder-1', name: 'WonderMiles Regression', path: 'Regression / WonderMiles' }], total: 1 });
+    }
+    if (url.includes('/testcycles/search')) {
+      return send(200, {
+        data: [{
+          id: 'wm-cycle-1',
+          key: 'DTTRV-TR-1',
+          summary: 'WonderMiles On-Prem QMetry Cycle',
+          folderId: 'wm-folder-1',
+          updated: '2026-07-05',
+          plannedStartDate: '2026-07-01',
+          plannedEndDate: '2026-07-31',
+          testcaseExecutionProgress: [
+            { name: 'PASS', count: 2 },
+            { name: 'FAIL', count: 1 },
+            { name: 'BLOCKED', count: 1 },
           ],
-          total: 4,
-        });
-      }
-      return send(404, { error: `unhandled mock QMetry path ${url}` });
-    });
-    server.once('error', reject);
-    server.listen(port, '127.0.0.1', () => {
-      resolve({
-        port,
-        baseUrl: `http://127.0.0.1:${port}`,
-        requests,
-        close: () => new Promise((done) => server.close(done)),
+        }],
+        total: 1,
       });
-    });
+    }
+    if (url.includes('/testcycles/wm-cycle-1/testcases/search')) {
+      return send(200, {
+        data: [
+          { key: 'DTTRV-TC-101', cycleKey: 'DTTRV-TR-1', cycleSummary: 'WonderMiles On-Prem QMetry Cycle', executionResult: { name: 'PASS' }, executionAssignee: { displayName: 'WM Tester One' }, updated: '2026-07-05' },
+          { key: 'DTTRV-TC-102', cycleKey: 'DTTRV-TR-1', cycleSummary: 'WonderMiles On-Prem QMetry Cycle', executionResult: { name: 'FAIL' }, executionAssignee: { displayName: 'WM Tester Two' }, updated: '2026-07-05' },
+          { key: 'DTTRV-TC-103', cycleKey: 'DTTRV-TR-1', cycleSummary: 'WonderMiles On-Prem QMetry Cycle', executionResult: { name: 'BLOCKED' }, executionAssignee: { displayName: 'WM Tester One' }, updated: '2026-07-05' },
+          { key: 'DTTRV-TC-104', cycleKey: 'DTTRV-TR-1', cycleSummary: 'WonderMiles On-Prem QMetry Cycle', executionResult: { name: 'PASS' }, executionAssignee: { displayName: 'WM Tester Two' }, updated: '2026-07-05' },
+        ],
+        total: 4,
+      });
+    }
+    return send(404, { error: `unhandled mock QMetry path ${url}` });
   });
+  await new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(port, '127.0.0.1', resolve);
+  });
+  return {
+    port,
+    baseUrl: `http://127.0.0.1:${port}`,
+    requests,
+    close: () => new Promise((resolve) => server.close(resolve)),
+  };
 }
 
 function findChrome() {
