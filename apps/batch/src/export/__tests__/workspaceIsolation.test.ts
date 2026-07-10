@@ -69,40 +69,40 @@ const dlmDataset = stampDatasetWorkspace(dlmRaw, DLM_WORKSPACE_ID);
 const wmDataset = stampDatasetWorkspace(wmRaw, WM_WORKSPACE_ID);
 const merged = mergeDatasets([dlmDataset, wmDataset]);
 
-const dlm = buildDashboardPayload(merged, { project: DLM_WORKSPACE_ID });
-const wm = buildDashboardPayload(merged, { project: WM_WORKSPACE_ID });
+// Real API storage loads one dataset per workspace. Assert each isolated dataset directly,
+// then separately assert the explicit All projects merge.
+const dlm = buildDashboardPayload(dlmDataset, { project: DLM_WORKSPACE_ID });
+const wm = buildDashboardPayload(wmDataset, { project: WM_WORKSPACE_ID });
 const all = buildDashboardPayload(merged, {});
 
 assert.strictEqual(dlm.overview.totalCases, 2210);
 assert.strictEqual(dlm.storyBug.story, 582);
 assert.strictEqual(dlm.storyBug.bug, 197);
 assert.strictEqual(dlm.uat?.total, 74);
-assert.ok(dlm.scope.projects.includes(DLM_WORKSPACE_ID));
-assert.ok(!dlm.scope.projects.includes(WM_WORKSPACE_ID));
+assert.deepStrictEqual(dlm.scope.projects, [DLM_WORKSPACE_ID]);
 
 assert.strictEqual(wm.overview.totalCases, 12);
 assert.strictEqual(wm.storyBug.story, 0, 'WonderMiles has no JIRA connection/fixture');
 assert.strictEqual(wm.storyBug.bug, 0, 'WonderMiles has no JIRA connection/fixture');
-assert.strictEqual(wm.uat, undefined);
+assert.strictEqual(wm.uat, null);
 assert.strictEqual(wm.testers.length, 2);
 assert.ok(wm.cycles.every((cycle) => cycle.key.startsWith('DTTRV-')));
-assert.ok(wm.scope.projects.includes(WM_WORKSPACE_ID));
-assert.ok(!wm.scope.projects.includes(DLM_WORKSPACE_ID));
+assert.deepStrictEqual(wm.scope.projects, [WM_WORKSPACE_ID]);
 
 assert.strictEqual(all.overview.totalCases, 2222);
 assert.strictEqual(all.storyBug.story, 582);
 assert.strictEqual(all.storyBug.bug, 197);
 console.log('✓ imported datasets remain isolated by workspace');
 
-const wmFail = buildDashboardPayload(merged, { project: WM_WORKSPACE_ID, result: 'FAIL' });
+const wmFail = buildDashboardPayload(wmDataset, { project: WM_WORKSPACE_ID, result: 'FAIL' });
 assert.strictEqual(wmFail.overview.failed, 2);
 assert.strictEqual(wmFail.overview.executed, 2);
 assert.strictEqual(wmFail.storyBug.story, 0);
 assert.strictEqual(wmFail.storyBug.bug, 0);
 console.log('✓ WonderMiles result filtering remains QMetry-only');
 
-const wmJune = buildDashboardPayload(merged, { project: WM_WORKSPACE_ID, startDate: '2026-06-01', endDate: '2026-06-30' });
-const wmJuly = buildDashboardPayload(merged, { project: WM_WORKSPACE_ID, startDate: '2026-07-01', endDate: '2026-07-31' });
+const wmJune = buildDashboardPayload(wmDataset, { project: WM_WORKSPACE_ID, startDate: '2026-06-01', endDate: '2026-06-30' });
+const wmJuly = buildDashboardPayload(wmDataset, { project: WM_WORKSPACE_ID, startDate: '2026-07-01', endDate: '2026-07-31' });
 assert.strictEqual(wmJune.overview.totalCases, 6);
 assert.strictEqual(wmJuly.overview.totalCases, 6);
 assert.ok(wmJune.cycles.every((cycle) => cycle.key === 'DTTRV-TR-1'));
