@@ -3,16 +3,20 @@ import fs from 'fs';
 import path from 'path';
 import {
   buildDataset,
+  canonicalProjectKey,
   computeFingerprint,
   emptyConnections,
+  filterConnectionsForWorkspace,
   loadRawDataset,
   mergeDatasets,
+  parseFile,
   refilterDashboard,
   saveRawDataset,
   stampDatasetWorkspace,
+  uniqueCanonicalProjects,
   workspaceIdFromName,
 } from 'qa-dashboard-batch';
-import type { Dataset } from 'qa-dashboard-batch';
+import type { Dataset, UserConnections } from 'qa-dashboard-batch';
 
 const router = Router();
 const ROOT = process.env.PROJECT_ROOT || path.resolve(__dirname, '../../../..');
@@ -37,6 +41,13 @@ interface MovedFile {
   source: string;
   target: string;
   targetName: string;
+}
+
+interface LegacyFileInspection {
+  file: string;
+  projects: string[];
+  rows: number;
+  warnings: string[];
 }
 
 function requestId(req: Request): string {
@@ -127,6 +138,52 @@ function restoreLegacyLiveSnapshot(liveDataset: Dataset): void {
   fs.writeFileSync(path.join(LEGACY_OUTPUT_DIR, 'dashboard-data.json'), JSON.stringify(refilterDashboard(liveDataset, {}), null, 2));
 }
 
+function resolveConnections(req: Request): UserConnections {
+  const raw = req.header('x-user-connections');
+  if (!raw) return emptyConnections();
+  try {
+    const parsed = JSON.parse(raw) as Partial<UserConnections>;
+    return {
+      jira: Array.isArray(parsed.jira) ? parsed.jira : [],
+      qmetry: Array.isArray(parsed.qmetry) ? parsed.qmetry : [],
+    };
+  } catch {
+    return emptyConnections();
+  }
+}
+
+function allowedSourceProjects(connections: UserConnections, project: string): string[] {
+  const scoped = filterConnectionsForWorkspace(connections, project);
+  return uniqueCanonicalProjects([
+    ...scoped.jira.flatMap((connection) => connection.projectKeys || []),
+    ...scoped.qmetry.map((connection) => connection.projectKey),
+  ]);
+}
+
+function inspectLegacyFile(fileName: string): LegacyFileInspection {
+  const dataset = parseFile(path.join(LEGACY_INPUT_DIR, fileName));
+  const projects = uniqueCanonicalProjects([
+    ...dataset.executions.map((row) => row.project),
+    ...dataset.issues.map((row) => row.project),
+    ...dataset.uat.map((row) => row.project),
+    ...dataset.files.map((row) => row.project),
+  ]);
+  return {
+    file: fileName,
+    projects,
+    rows: totalRows(dataset),
+    warnings: dataset.meta.warnings,
+  };
+}
+
+function validateLegacyAssignment(files: Array<{ name: string }>, connections: UserConnections, project: string): { allowed: string[]; inspections: LegacyFileInspection[]; conflicts: LegacyFileInspection[] } {
+  const allowed = allowedSourceProjects(connections, project);
+  const allowedSet = new Set(allowed.map(canonicalProjectKey));
+  const inspections = files.map((file) => inspectLegacyFile(file.name));
+  const conflicts = inspections.filter((inspection) => inspection.projects.some((sourceProject) => !allowedSet.has(canonicalProjectKey(sourceProject))));
+  return { allowed, inspections, conflicts };
+}
+
 router.get('/input/legacy-files', (_req: Request, res: Response) => {
   const files = listFiles(LEGACY_INPUT_DIR);
   const legacyDataset = loadRawDataset(LEGACY_OUTPUT_DIR);
@@ -155,10 +212,32 @@ router.post('/input/migrate-legacy', async (req: Request, res: Response) => {
     return res.json({ ok: true, project, migrated: [], rowCounts: { executions: 0, issues: 0, uat: 0 }, warnings: ['No legacy input files were found.'], requestId: requestId(req) });
   }
 
+  const connections = resolveConnections(req);
+  const validation = validateLegacyAssignment(files, connections, project);
+  if (!validation.allowed.length) {
+    return res.status(400).json({
+      ok: false,
+      error: 'The selected workspace has no configured JIRA or QMetry project key. Save the workspace connection before migrating legacy files.',
+      project,
+      inspections: validation.inspections,
+      requestId: requestId(req),
+    });
+  }
+  if (validation.conflicts.length) {
+    return res.status(409).json({
+      ok: false,
+      error: `Legacy migration blocked: files contain project data outside the selected workspace (${validation.allowed.join(', ')}). Move or remove the conflicting files and retry.`,
+      project,
+      allowedProjects: validation.allowed,
+      conflicts: validation.conflicts,
+      requestId: requestId(req),
+    });
+  }
+
   const dirs = projectDirs(project);
   fs.mkdirSync(dirs.inputDir, { recursive: true });
   fs.mkdirSync(dirs.outputDir, { recursive: true });
-  fs.writeFileSync(path.join(dirs.rootDir, PROJECT_META_FILE), JSON.stringify({ project, slug: project, migratedAt: new Date().toISOString() }, null, 2));
+  fs.writeFileSync(path.join(dirs.rootDir, PROJECT_META_FILE), JSON.stringify({ project, slug: project, migratedAt: new Date().toISOString(), sourceProjects: validation.allowed }, null, 2));
 
   const legacyLive = loadDatasetFile(LEGACY_OUTPUT_DIR, LIVE_CACHE_FILE);
   const preserveLegacyLive = totalRows(legacyLive) > 0;
@@ -199,6 +278,7 @@ router.post('/input/migrate-legacy', async (req: Request, res: Response) => {
       ok: true,
       project,
       migrated: moved.map((item) => item.targetName),
+      sourceProjects: validation.allowed,
       rowCounts: {
         executions: merged.executions.length,
         issues: merged.issues.length,
