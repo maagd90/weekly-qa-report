@@ -201,6 +201,14 @@ async function verifyQmetryOnlyLivePath() {
     assert.ok(folders.folders.some((folder) => folder.id === 'wm-folder-1'));
     assert.ok(folders.cycles.some((cycle) => cycle.id === 'wm-cycle-1'));
 
+    // Regression for the previous HTTP 431 failure: a realistic multi-connection/session
+    // header larger than Node's old default must still reach the API route.
+    const oversizedConnections = { ...userConnections, padding: 'x'.repeat(20_000) };
+    const oversizedFolders = await jsonFetch(`${api.baseUrl}/api/cycles/folders?project=${WM_ID}&connectionId=wm-qmetry`, {
+      headers: { 'x-user-connections': JSON.stringify(oversizedConnections) },
+    });
+    assert.equal(oversizedFolders.source, 'qmetry-live');
+
     const cycles = await jsonFetch(`${api.baseUrl}/api/cycles/by-folder?project=${WM_ID}&connectionId=wm-qmetry&folderId=wm-folder-1&startDate=2026-07-01&endDate=2026-07-31`, { headers });
     assert.equal(cycles.source, 'qmetry-live');
     assert.equal(cycles.cycles.length, 1);
@@ -241,7 +249,7 @@ async function main() {
     await verifyMixedLegacyMigrationIsBlocked(api.baseUrl, sandbox);
     checks.push('mixed-project legacy migration rejection');
     await verifyQmetryOnlyLivePath();
-    checks.push('WonderMiles QMetry-only live integration');
+    checks.push('WonderMiles QMetry-only live integration and large headers');
     const resultPath = writeResult('api-quality-gate', { ok: true, checks });
     console.log(`API quality gate passed (${checks.length} groups). Result: ${resultPath}`);
   } catch (error) {
