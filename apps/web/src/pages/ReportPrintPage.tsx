@@ -48,8 +48,8 @@ export function ReportPrintPage() {
   });
 
   const reportQuery = useQuery({
-    queryKey: ['print-report'],
-    queryFn: batchApi.getReport,
+    queryKey: ['print-report', project || 'all'],
+    queryFn: () => batchApi.getReport(project),
     retry: false,
   });
 
