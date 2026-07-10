@@ -5,7 +5,8 @@
 #   ./run.sh setup        # first-time setup (dirs, runtime config, npm install)
 #   ./run.sh dev          # local dev (API :3001 + UI :5173)
 #   ./run.sh build        # production build
-#   ./run.sh test         # parser regression tests
+#   ./run.sh test         # batch/unit regression tests
+#   ./run.sh quality      # build + unit + API + browser E2E quality gate
 #   ./run.sh generate     # CLI report generation
 #   ./run.sh docker       # build & start Docker (UI :3000, API :3001)
 #   ./run.sh docker down  # stop Docker containers
@@ -63,6 +64,14 @@ cmd_test() {
   require_cmd node
   require_cmd npm
   npm test
+}
+
+cmd_quality() {
+  require_cmd node
+  require_cmd npm
+  info "Running build, unit, API integration, and browser E2E quality gates"
+  npm run test:quality-gate
+  ok "Quality gate passed"
 }
 
 cmd_generate() {
@@ -123,14 +132,15 @@ Commands:
   setup       First-time setup (runtime config, folders, npm install)
   dev         Run locally (API :3001, Vite UI :5173)
   build       Production build (batch + api + web)
-  test        Run parser regression tests
+  test        Run batch/unit regression tests
+  quality     Run build + unit + API integration + browser E2E gates
   generate    Generate dashboard + report from CLI
               ./run.sh generate 2026-06-24 2026-06-30 full
 
 Docker:
   docker          Build and start containers (UI :3000, API :3001)
   docker down     Stop containers
-  docker logs     Follow logs
+  docker logs     Follow container logs
   docker restart  Rebuild and restart
   docker build    Build images only
 
@@ -139,6 +149,10 @@ Quick start (local):
   cp fixtures/input/*.xlsx input/    # optional sample data
   ./run.sh dev
   open http://localhost:5173
+
+Quality gate:
+  ./run.sh quality
+  # Set CHROME_BIN when Chrome/Chromium is not auto-detected.
 
 Quick start (Docker):
   ./run.sh setup
@@ -162,6 +176,7 @@ main() {
     dev)            cmd_dev ;;
     build)          cmd_build ;;
     test)           cmd_test ;;
+    quality)        cmd_quality ;;
     generate)       cmd_generate "$@" ;;
     docker)         cmd_docker "$@" ;;
     *)
