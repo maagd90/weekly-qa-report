@@ -12,7 +12,7 @@ function writeSheet(fileName: string, sheetName: string, rows: unknown[][]) {
   XLSX.writeFile(wb, path.join(OUT, fileName));
 }
 
-// Zephyr — 2210 rows with exact result mix; April subset for filter tests
+// DLM QMetry/Zephyr execution export — deterministic result mix and April subset.
 {
   const headers = [
     'Test Cycle Key', 'Test Cycle Summary', 'Test Case Key',
@@ -33,7 +33,7 @@ function writeSheet(fileName: string, sheetName: string, rows: unknown[][]) {
     }
   }
 
-  // April window: 302 executed rows (21 FAIL + 51 BLOCKED + 230 PASS) without changing result totals
+  // April window: 302 executed rows (21 FAIL + 51 BLOCKED + 230 PASS).
   const aprilDate = '15/Apr/2026 10:00:00';
   let failSet = 0;
   let blockedSet = 0;
@@ -61,7 +61,31 @@ function writeSheet(fileName: string, sheetName: string, rows: unknown[][]) {
   console.log('Wrote zephyr-regression.xlsx', rows.length - 1, 'rows');
 }
 
-// JIRA — 779 issues (582 Story, 197 Bug; 63 open bugs)
+// WonderMiles is intentionally QMetry-only in automation. No JIRA fixture or credentials
+// are required. Half the rows are in June and half in July to test regeneration/date scope.
+{
+  const headers = [
+    'Test Cycle Key', 'Test Cycle Summary', 'Test Case Key',
+    'Testcase/Teststep Execution Result', 'Executed By', 'Executed On',
+  ];
+  const rows: unknown[][] = [headers];
+  const results = ['PASS', 'PASS', 'FAIL', 'BLOCKED', 'NOT EXECUTED', 'PASS', 'PASS', 'FAIL', 'PASS', 'NOT APPLICABLE', 'PASS', 'PASS'];
+  for (let i = 0; i < results.length; i++) {
+    const july = i >= 6;
+    rows.push([
+      july ? 'DTTRV-TR-2' : 'DTTRV-TR-1',
+      july ? 'WonderMiles July Regression' : 'WonderMiles June Regression',
+      `DTTRV-TC-${i + 1}`,
+      results[i],
+      i % 2 === 0 ? 'WM Tester One' : 'WM Tester Two',
+      results[i] === 'NOT EXECUTED' ? '' : (july ? '05/Jul/2026 11:00:00' : '15/Jun/2026 11:00:00'),
+    ]);
+  }
+  writeSheet('wondermiles-qmetry-regression.xlsx', 'Data', rows);
+  console.log('Wrote wondermiles-qmetry-regression.xlsx', rows.length - 1, 'rows');
+}
+
+// JIRA — 779 DLM issues (582 Story, 197 Bug; 63 open bugs).
 {
   const rows: unknown[][] = [
     ['Title banner'], [], [],
@@ -89,7 +113,7 @@ function writeSheet(fileName: string, sheetName: string, rows: unknown[][]) {
   console.log('Wrote jira-regression.xlsx', 779, 'issues');
 }
 
-// ODL — 74 UAT (43 closed, 31 open)
+// ODL — 74 DLM UAT rows (43 closed, 31 open).
 {
   const headers = ['TicketID', 'Subject', 'ProductArea', 'Change Request', 'odlPriorityDescription',
     'Client_Priority', 'Submittedby', 'Submittedon', 'Status', 'LastUpdate'];
