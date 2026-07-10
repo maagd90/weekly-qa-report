@@ -1,0 +1,61 @@
+name: Quality Gate
+
+on:
+  pull_request:
+  push:
+    branches:
+      - feature/project-workspace-isolation
+      - main
+      - master
+  workflow_dispatch:
+
+concurrency:
+  group: quality-gate-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality-gate:
+    name: Build, unit, API and E2E
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Use Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Locate Chrome or Chromium
+        shell: bash
+        run: |
+          set -euo pipefail
+          chrome="$(command -v google-chrome || command -v google-chrome-stable || command -v chromium || command -v chromium-browser || true)"
+          if [[ -z "$chrome" ]]; then
+            sudo apt-get update
+            sudo apt-get install -y chromium || sudo apt-get install -y chromium-browser
+            chrome="$(command -v chromium || command -v chromium-browser)"
+          fi
+          echo "CHROME_BIN=$chrome" >> "$GITHUB_ENV"
+          "$chrome" --version
+
+      - name: Run quality gate
+        env:
+          CI: "true"
+        run: npm run test:quality-gate
+
+      - name: Upload quality evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: quality-gate-${{ github.run_id }}
+          path: |
+            test-results/quality/**
+          if-no-files-found: warn
+          retention-days: 14
