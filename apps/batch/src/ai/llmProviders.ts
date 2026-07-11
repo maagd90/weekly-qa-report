@@ -135,7 +135,7 @@ export async function generateLlmText(request: LlmTextRequest): Promise<string> 
   const timeoutMs = request.timeoutMs ?? 120_000;
 
   if (request.provider === 'anthropic') {
-    const client = createAnthropicClient(request.apiKey, timeoutMs);
+    const client = createAnthropicClient(request.apiKey, timeoutMs, undefined, request.baseUrl);
     const response = await client.messages.create({
       model: request.model,
       max_tokens: request.maxTokens,
