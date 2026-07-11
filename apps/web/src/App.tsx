@@ -31,7 +31,6 @@ function AppContent() {
   const [baseDashboard, setBaseDashboard] = useState<DashboardPayload | null>(null);
   const ui = useUiPreferences();
 
-  // Respect a previously-selected project on first load, so the masthead and data agree.
   const storedProject = canonicalProjectOrUndefined(getActiveProject());
   const { data: initialDashboard, isLoading, refetch } = useQuery<DashboardPayload | null>({
     queryKey: ['dashboard-init', storedProject || 'all'],
@@ -46,7 +45,6 @@ function AppContent() {
 
   const isProjectLoading = projectBaseFetch.isPending;
   const base = isProjectLoading ? undefined : (baseDashboard ?? initialDashboard ?? undefined);
-  // Tabs without their own filtered view fall back to the stable current-project base.
   const display = (filteredByTab[activeTab] ?? base) ?? undefined;
   const filters = usePerTabFilters(activeTab, base);
 
@@ -56,7 +54,7 @@ function AppContent() {
   };
 
   const searchDashboardData = useMutation({
-    mutationFn: (vars: { params?: Partial<FilterParams>; tab: QaTab }) => batchApi.searchDashboardByDates(vars.params || filters.filterParams).then((d) => ({ d, tab: vars.tab })),
+    mutationFn: (vars: { params: Partial<FilterParams>; tab: QaTab }) => batchApi.searchDashboardByDates(vars.params).then((d) => ({ d, tab: vars.tab })),
     onSuccess: ({ d, tab }) => setFilteredView(d, tab),
   });
 
@@ -64,7 +62,6 @@ function AppContent() {
   const tabs = buildTabs(showUat);
   const currentTab = tabs.find((t) => t.id === activeTab) ?? tabs[0];
 
-  // If the active tab is no longer available, fall back to Overview to avoid a blank body.
   useEffect(() => {
     if (!tabs.some((t) => t.id === activeTab)) setActiveTab(tabs[0].id);
   }, [tabs, activeTab]);
@@ -85,7 +82,7 @@ function AppContent() {
     filters.setResult('all');
     ui.clearSelectedCycle();
     setFilteredByTab({});
-    setBaseDashboard(null); // Avoid showing stale previous-project data while the new scope loads.
+    setBaseDashboard(null);
     projectBaseFetch.mutate(nextProject);
   };
 
@@ -115,7 +112,7 @@ function AppContent() {
           onKpiStyleChange={ui.setKpiStyle}
           dataMin={display?.meta.dataMin}
           dataMax={display?.meta.dataMax}
-          onSearchApis={canSearch ? () => searchDashboardData.mutate({ tab: activeTab }) : undefined}
+          onSearchApis={canSearch ? () => searchDashboardData.mutate({ params: { ...filters.filterParams }, tab: activeTab }) : undefined}
           searchApisLabel="Search"
           isSearchingApis={searchDashboardData.isPending}
         />
