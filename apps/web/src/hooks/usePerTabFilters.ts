@@ -6,15 +6,18 @@ import { canonicalProjectOrAll, canonicalProjectOrUndefined, uniqueCanonicalProj
 
 // Tabs that have an independent date/search/result filter.
 const FILTERABLE: QaTab[] = ['overview', 'testers', 'cycles', 'trace', 'uat'];
+const DEFAULT_REPORT_START_DATE = '2026-01-01';
 
 type TabFilter = { startDate: string; endDate: string; search: string; result: 'all' | 'PASS' | 'FAIL' | 'BLOCKED' };
 
 function seedRange(baseDashboard: DashboardPayload | undefined): { startDate: string; endDate: string } {
   const today = new Date().toISOString().slice(0, 10);
-  // Default each tab to the FULL data range so nothing looks empty on first load.
+  // Default every dashboard tab to the agreed 2026 year-to-date reporting window.
+  // Do not seed from meta.dataMin because an old issue/execution can push the UI back to 2020.
+  // Users can still manually select an earlier date when historical analysis is required.
   return {
-    startDate: baseDashboard?.meta.dataMin || baseDashboard?.scope.startDate || today,
-    endDate: baseDashboard?.meta.dataMax || baseDashboard?.scope.endDate || today,
+    startDate: baseDashboard?.scope.startDate || DEFAULT_REPORT_START_DATE,
+    endDate: baseDashboard?.scope.endDate || today,
   };
 }
 
@@ -36,13 +39,11 @@ export function usePerTabFilters(activeTab: QaTab, baseDashboard: DashboardPaylo
   const [seededFor, setSeededFor] = useState<string | undefined>(undefined);
   const [customized, setCustomized] = useState<Partial<Record<QaTab, boolean>>>({});
 
-  // Re-seed ranges once when a baseDashboard with a real data range first arrives.
-  // MUST be an effect, not inline — setting state during render is unsafe.
-  // Include project + scope so a project change re-seeds each tab's dates to the new full range.
+  // Re-seed ranges once when a baseDashboard for a project first arrives.
   // Preserve date ranges for tabs the user has already customized manually.
-  const dataKey = `${project}:${baseDashboard?.meta.dataMin || ''}:${baseDashboard?.meta.dataMax || ''}`;
+  const dataKey = `${project}:${baseDashboard?.scope.project || 'all'}:${baseDashboard?.meta.generatedAt || ''}`;
   useEffect(() => {
-    if (baseDashboard && dataKey !== ':' && seededFor !== dataKey) {
+    if (baseDashboard && seededFor !== dataKey) {
       const fresh = blankMap(baseDashboard);
       setTabFilters((prev) => {
         const next: Record<string, TabFilter> = { ...fresh };
