@@ -16,7 +16,6 @@ const LEGEND = [
 interface TestersPerformanceSectionProps {
   dashboard: DashboardPayload;
   kpiStyle: KpiStyle;
-  /** When true, use a flat bordered card (AI report) instead of QaSection */
   embedded?: boolean;
 }
 
@@ -33,13 +32,7 @@ function TesterLegend() {
   );
 }
 
-function TesterList({
-  testers,
-  neCount,
-}: {
-  testers: DashboardPayload['testers'];
-  neCount: number;
-}) {
+function TesterList({ testers, neCount, unattributedCount }: { testers: DashboardPayload['testers']; neCount: number; unattributedCount: number }) {
   return (
     <div className="px-[22px] pb-[18px] pt-2">
       {testers.map((t) => (
@@ -64,6 +57,12 @@ function TesterList({
           <SegBar segments={testerSegSegments(t.pass, t.fail, t.blocked, t.na, t.executed)} />
         </div>
       ))}
+      {unattributedCount > 0 && (
+        <div className="flex items-start gap-2.5 pt-3.5 text-xs text-[#8a5a00]">
+          <span className="w-2.5 h-2.5 bg-[#B9861A] shrink-0 mt-0.5" />
+          <span>{fmt(unattributedCount)} executed cases were returned without an <strong>Executed By</strong> value. They are included in total execution metrics but excluded from tester rankings.</span>
+        </div>
+      )}
       {neCount > 0 && (
         <div className="flex items-center gap-2.5 pt-3.5 text-xs text-qa-muted-light">
           <span className="w-2.5 h-2.5 bg-[#B3AEA3] shrink-0" />
@@ -72,7 +71,7 @@ function TesterList({
       )}
       {!testers.length && (
         <div className="py-6 text-center text-[13px] text-qa-muted-light">
-          No tester executions match the current filters.
+          No named tester executions match the current filters. Check the QMetry Executed By data and selected period.
         </div>
       )}
     </div>
@@ -83,36 +82,39 @@ export function TestersPerformanceSection({ dashboard, kpiStyle, embedded = fals
   const { testers, overview } = dashboard;
 
   const stats = useMemo(() => {
-    const totalExec = testers.reduce((a, b) => a + b.executed, 0) || 1;
-    const wAvg = Math.round((testers.reduce((a, b) => a + b.pass, 0) / totalExec) * 100);
+    const attributedExec = testers.reduce((a, b) => a + b.executed, 0);
+    const totalPass = testers.reduce((a, b) => a + b.pass, 0);
+    const wAvg = attributedExec ? Math.round((totalPass / attributedExec) * 100) : 0;
+    const unattributedExec = Math.max(overview.executed - attributedExec, 0);
     const topPerf = [...testers].filter((t) => t.executed >= 20).sort((a, b) => b.passPct - a.passPct)[0]
       || testers[0]
       || { passPct: 0, name: '—', executed: 0 };
-    return { wAvg, topPerf };
-  }, [testers]);
+    return { attributedExec, unattributedExec, wAvg, topPerf };
+  }, [testers, overview.executed]);
 
   const neCount = overview.resultMix.find((r) => r.code === 'NE')?.count ?? 0;
-
-  const list = <TesterList testers={testers} neCount={neCount} />;
+  const list = <TesterList testers={testers} neCount={neCount} unattributedCount={stats.unattributedExec} />;
 
   return (
     <div className="flex flex-col gap-6">
-      <QaKpiGrid cols={4}>
-        <QaKpiCard kpiStyle={kpiStyle} label="Testers" value={testers.length}
-          sub="contributing executions" color={QA.accent} />
-        <QaKpiCard kpiStyle={kpiStyle} label="Executions Logged" value={fmt(overview.executed)}
-          sub="across all cycles" color="#2F7D5A" />
+      <QaKpiGrid cols={5}>
+        <QaKpiCard kpiStyle={kpiStyle} label="Named Testers" value={testers.length}
+          sub={stats.topPerf.executed ? `top: ${stats.topPerf.name}` : 'no attributed executions'} color={QA.accent} />
+        <QaKpiCard kpiStyle={kpiStyle} label="Total Executions" value={fmt(overview.executed)}
+          sub="PASS + FAIL + BLOCKED + N/A" color="#2F7D5A" />
+        <QaKpiCard kpiStyle={kpiStyle} label="Attributed" value={fmt(stats.attributedExec)}
+          sub="with Executed By" color={QA.PASS} />
+        <QaKpiCard kpiStyle={kpiStyle} label="Unassigned" value={fmt(stats.unattributedExec)}
+          sub="missing Executed By" color={QA.BLOCKED} />
         <QaKpiCard kpiStyle={kpiStyle} label="Avg Pass Rate" value={`${stats.wAvg}%`}
-          sub="weighted by volume" color={QA.BLOCKED} />
-        <QaKpiCard kpiStyle={kpiStyle} label="Top Performer" value={`${stats.topPerf.passPct}%`}
-          sub={`${stats.topPerf.name.split(' ')[0]} · ${stats.topPerf.executed} exec`} color={QA.NA} />
+          sub="named testers only" color={QA.NA} />
       </QaKpiGrid>
 
       {embedded ? (
         <div className="pdf-section border border-qa-border bg-white">
           <div className="flex items-center justify-between gap-4 px-5 py-4 border-b border-qa-border flex-wrap">
             <div className="font-mono-qa text-[10px] tracking-wider uppercase text-qa-muted-light">
-              Execution by Tester · {testers.length} testers
+              Execution by Tester · {testers.length} named testers
             </div>
             <TesterLegend />
           </div>
