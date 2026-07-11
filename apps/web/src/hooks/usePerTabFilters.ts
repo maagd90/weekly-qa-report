@@ -3,21 +3,21 @@ import type { DashboardPayload, FilterParams } from 'qa-dashboard-batch';
 import type { QaTab } from '../theme/qaTheme';
 import { getActiveProject, setActiveProject } from '../lib/api';
 import { canonicalProjectOrAll, canonicalProjectOrUndefined, uniqueCanonicalProjects } from '../lib/projectKey';
+import { defaultReportingPeriod } from '../lib/reportingPeriod';
 
 // Tabs that have an independent date/search/result filter.
 const FILTERABLE: QaTab[] = ['overview', 'testers', 'cycles', 'trace', 'uat'];
-const DEFAULT_REPORT_START_DATE = '2026-01-01';
 
 type TabFilter = { startDate: string; endDate: string; search: string; result: 'all' | 'PASS' | 'FAIL' | 'BLOCKED' };
 
 function seedRange(baseDashboard: DashboardPayload | undefined): { startDate: string; endDate: string } {
-  const today = new Date().toISOString().slice(0, 10);
+  const fallback = defaultReportingPeriod();
   // Default every dashboard tab to the agreed 2026 year-to-date reporting window.
   // Do not seed from meta.dataMin because an old issue/execution can push the UI back to 2020.
   // Users can still manually select an earlier date when historical analysis is required.
   return {
-    startDate: baseDashboard?.scope.startDate || DEFAULT_REPORT_START_DATE,
-    endDate: baseDashboard?.scope.endDate || today,
+    startDate: baseDashboard?.scope.startDate || fallback.startDate,
+    endDate: baseDashboard?.scope.endDate || fallback.endDate,
   };
 }
 
@@ -74,6 +74,11 @@ export function usePerTabFilters(activeTab: QaTab, baseDashboard: DashboardPaylo
     const value = canonicalProjectOrAll(next);
     setProjectState(value);
     setActiveProject(value);
+    // A project switch invalidates every tab's previous filter result. Reset all tabs to the
+    // same 2026 YTD period so the controls and the newly loaded base dashboard cannot disagree.
+    setTabFilters(blankMap(undefined));
+    setCustomized({});
+    setSeededFor(undefined);
   }, []);
 
   const filterParams: FilterParams = useMemo(() => ({
