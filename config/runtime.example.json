@@ -1,16 +1,17 @@
 {
   "notes": {
-    "CORS_ORIGINS": "Comma-separated browser origin allow-list for the API, for example: http://localhost:3000,http://localhost:5173"
+    "CORS_ORIGINS": "Comma-separated browser origin allow-list for the API, for example: http://localhost:3000,http://localhost:5173",
+    "paths": "Repository-relative paths are recommended for local development. Docker Compose supplies /data paths through environment variables."
   },
   "env": {
     "CORS_ORIGINS": "http://localhost:3000"
   },
   "paths": {
-    "inputDir": "/data/input",
-    "outputDir": "/data/output",
-    "configDir": "/data/config",
-    "puppeteerExecutablePath": "/usr/bin/chromium",
-    "pdfPrintUrl": "http://dashboard-web/print/report"
+    "inputDir": "input",
+    "outputDir": "output",
+    "configDir": "config",
+    "puppeteerExecutablePath": "",
+    "pdfPrintUrl": "http://localhost:3000/print/report"
   },
   "network": {
     "integrationAllowSelfSignedCerts": true,
