@@ -3,7 +3,7 @@
 # Usage:
 #   ./run.sh              # show help
 #   ./run.sh setup        # first-time setup (dirs, runtime config, npm install)
-#   ./run.sh dev          # local dev (API :3001 + UI :5173)
+#   ./run.sh dev          # local dev (API :3001 + UI :3000)
 #   ./run.sh build        # production build
 #   ./run.sh test         # parser regression tests
 #   ./run.sh generate     # CLI report generation
@@ -47,8 +47,8 @@ cmd_dev() {
   require_cmd npm
   [[ -d node_modules ]] || cmd_setup
   ensure_runtime_files
-  info "Starting dev servers (API http://localhost:3001, UI http://localhost:5173)"
-  npm run dev
+  info "Starting dev servers (API http://localhost:3001, UI http://localhost:3000)"
+  node "$ROOT/scripts/dev-runner.cjs"
 }
 
 cmd_build() {
@@ -121,7 +121,7 @@ Usage: ./run.sh <command>
 
 Commands:
   setup       First-time setup (runtime config, folders, npm install)
-  dev         Run locally (API :3001, Vite UI :5173)
+  dev         Run locally (API :3001, Vite UI :3000)
   build       Production build (batch + api + web)
   test        Run parser regression tests
   generate    Generate dashboard + report from CLI
@@ -138,7 +138,7 @@ Quick start (local):
   ./run.sh setup
   cp fixtures/input/*.xlsx input/    # optional sample data
   ./run.sh dev
-  open http://localhost:5173
+  open http://localhost:3000
 
 Quick start (Docker):
   ./run.sh setup
