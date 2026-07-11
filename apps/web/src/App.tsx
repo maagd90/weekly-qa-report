@@ -18,6 +18,7 @@ import { usePerTabFilters } from './hooks/usePerTabFilters';
 import { useUiPreferences } from './hooks/useUiPreferences';
 import { batchApi, getActiveProject } from './lib/api';
 import { canonicalProjectOrUndefined } from './lib/projectKey';
+import { defaultReportingPeriod } from './lib/reportingPeriod';
 import type { DashboardPayload, FilterParams } from 'qa-dashboard-batch';
 import type { QaTab } from './theme/qaTheme';
 
@@ -31,15 +32,23 @@ function AppContent() {
   const [baseDashboard, setBaseDashboard] = useState<DashboardPayload | null>(null);
   const ui = useUiPreferences();
 
+  const defaultPeriod = defaultReportingPeriod();
   const storedProject = canonicalProjectOrUndefined(getActiveProject());
+  const initialFilter: Partial<FilterParams> = {
+    ...defaultPeriod,
+    project: storedProject,
+  };
   const { data: initialDashboard, isLoading, refetch } = useQuery<DashboardPayload | null>({
-    queryKey: ['dashboard-init', storedProject || 'all'],
-    queryFn: () => batchApi.getDashboard(storedProject ? { project: storedProject } : undefined),
+    queryKey: ['dashboard-init', storedProject || 'all', defaultPeriod.startDate, defaultPeriod.endDate],
+    queryFn: () => batchApi.getDashboard(initialFilter),
     retry: false,
   });
 
   const projectBaseFetch = useMutation({
-    mutationFn: (project: string) => batchApi.getDashboard({ project: project === 'all' ? undefined : project }),
+    mutationFn: (project: string) => batchApi.getDashboard({
+      ...defaultReportingPeriod(),
+      project: project === 'all' ? undefined : project,
+    }),
     onSuccess: (d) => { if (d) { setBaseDashboard(d); setFilteredByTab({}); } },
   });
 
@@ -78,8 +87,6 @@ function AppContent() {
   const handleProjectChange = (project: string) => {
     const nextProject = project || 'all';
     filters.setProject(nextProject);
-    filters.setSearch('');
-    filters.setResult('all');
     ui.clearSelectedCycle();
     setFilteredByTab({});
     setBaseDashboard(null);
