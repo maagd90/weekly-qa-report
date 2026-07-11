@@ -16,6 +16,7 @@ import {
   setReportBranding,
   LLM_MODELS,
   LLM_PROVIDER_LABELS,
+  LLM_OFFICIAL_BASE_URLS,
 } from '../lib/api';
 import { QaPageShell, QaSection } from '../components/layout/QaPageShell';
 import { QA } from '../theme/qaTheme';
@@ -133,6 +134,7 @@ export function SettingsPage() {
   const [llmModel, setLlmModel] = useState(initialLlm.model || LLM_MODELS[initialProvider][0]);
   const [llmApiKey, setLlmApiKey] = useState(initialLlm.apiKey || getUserLlmKey(initialProvider));
   const [llmBaseUrl, setLlmBaseUrl] = useState(initialLlm.baseUrl || '');
+  const [llmUseCustomEndpoint, setLlmUseCustomEndpoint] = useState(Boolean(initialLlm.baseUrl) || initialProvider === 'openai-compatible');
   const [reportBranding, setReportBrandingState] = useState<ReportBranding>(initialBranding);
   const [logoUploadMsg, setLogoUploadMsg] = useState<string | null>(null);
   const [llmTestMsg, setLlmTestMsg] = useState<string | null>(null);
@@ -154,7 +156,18 @@ export function SettingsPage() {
     return [...values].sort();
   }, [settingsDashboard?.scope.projects, jiraConnections, qmetryConnections]);
 
-  function currentLlmSelection(): LlmSelectionInput { return { provider: llmProvider, model: llmModel, apiKey: llmApiKey.trim() || undefined, baseUrl: llmProvider === 'openai-compatible' ? llmBaseUrl.trim() || undefined : undefined }; }
+  const customEndpointSelected = llmProvider === 'openai-compatible' || llmUseCustomEndpoint;
+  const customModelAllowed = customEndpointSelected;
+  const officialBaseUrl = LLM_OFFICIAL_BASE_URLS[llmProvider];
+
+  function currentLlmSelection(): LlmSelectionInput {
+    return {
+      provider: llmProvider,
+      model: llmModel.trim() || undefined,
+      apiKey: llmApiKey.trim() || undefined,
+      baseUrl: customEndpointSelected ? llmBaseUrl.trim() || undefined : undefined,
+    };
+  }
   function globalSyncFilter() { return {}; }
   function saveAll() {
     setUserLlmSelection(currentLlmSelection());
@@ -173,7 +186,32 @@ export function SettingsPage() {
   const testResult = testMutation.data as TestResult | undefined;
   const syncResult = syncLiveMutation.data as SyncInputResult | undefined;
 
-  function changeLlmProvider(provider: LlmProvider) { setLlmProvider(provider); setLlmModel(LLM_MODELS[provider][0]); setLlmApiKey(getUserLlmKey(provider)); if (provider !== 'openai-compatible') setLlmBaseUrl(''); }
+  function changeLlmProvider(provider: LlmProvider) {
+    setLlmProvider(provider);
+    setLlmModel(LLM_MODELS[provider][0]);
+    setLlmApiKey(getUserLlmKey(provider));
+    setLlmUseCustomEndpoint(provider === 'openai-compatible');
+    setLlmBaseUrl('');
+    setLlmTestMsg(null);
+  }
+  function changeEndpointMode(mode: 'official' | 'custom') {
+    if (llmProvider === 'openai-compatible') return;
+    setLlmUseCustomEndpoint(mode === 'custom');
+    if (mode === 'official') setLlmBaseUrl('');
+    setLlmTestMsg(null);
+  }
+  function saveAndTestLlm() {
+    if (customEndpointSelected && !llmBaseUrl.trim()) {
+      setLlmTestMsg('Enter the custom base URL before testing the LLM connection.');
+      return;
+    }
+    if (!llmModel.trim()) {
+      setLlmTestMsg('Enter or select a model before testing the LLM connection.');
+      return;
+    }
+    saveAll();
+    llmTest.mutate();
+  }
   function handleLogoFile(event: React.ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -192,11 +230,18 @@ export function SettingsPage() {
     <QaPageShell title="Settings" intro="Configure LLM, report branding, JIRA, and QMetry. Settings Sync refreshes all enabled live API connections; dashboard Search handles scoped project/date filtering.">
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-[22px]">
         <QaSection title="Global LLM Provider">
-          <p className="text-[13px] text-qa-muted m-0 mb-3">Select the LLM once here.</p>
-          <div className="grid grid-cols-2 gap-2.5 mb-2.5"><div><label className={labelClass}>Provider</label><select className={fieldClass} value={llmProvider} onChange={(e) => changeLlmProvider(e.target.value as LlmProvider)}>{(Object.keys(LLM_PROVIDER_LABELS) as LlmProvider[]).map((p) => <option key={p} value={p}>{LLM_PROVIDER_LABELS[p]}</option>)}</select></div><div><label className={labelClass}>Model</label><select className={fieldClass} value={llmModel} onChange={(e) => setLlmModel(e.target.value)}>{LLM_MODELS[llmProvider].map((m) => <option key={m} value={m}>{m}</option>)}</select></div></div>
+          <p className="text-[13px] text-qa-muted m-0 mb-3">Select the provider, then choose the official API or a custom corporate endpoint.</p>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5 mb-2.5">
+            <div><label className={labelClass}>Provider</label><select className={fieldClass} value={llmProvider} onChange={(e) => changeLlmProvider(e.target.value as LlmProvider)}>{(Object.keys(LLM_PROVIDER_LABELS) as LlmProvider[]).map((p) => <option key={p} value={p}>{LLM_PROVIDER_LABELS[p]}</option>)}</select></div>
+            <div><label className={labelClass}>Endpoint</label><select className={fieldClass} value={customEndpointSelected ? 'custom' : 'official'} disabled={llmProvider === 'openai-compatible'} onChange={(e) => changeEndpointMode(e.target.value as 'official' | 'custom')}><option value="official">Official API</option><option value="custom">Custom URL</option></select></div>
+            <div><label className={labelClass}>Model</label>{customModelAllowed ? <input className={fieldClass} placeholder={llmProvider === 'anthropic' ? 'e.g. claude-sonnet-4-6' : 'Enter gateway model name'} value={llmModel} onChange={(e) => setLlmModel(e.target.value)} /> : <select className={fieldClass} value={llmModel} onChange={(e) => setLlmModel(e.target.value)}>{LLM_MODELS[llmProvider].map((m) => <option key={m} value={m}>{m}</option>)}</select>}</div>
+          </div>
+          <div className="mb-2.5 border border-qa-border bg-[#faf8f2] px-3 py-2 text-[11.5px] text-qa-muted">
+            {customEndpointSelected ? 'Custom endpoint selected. The provider-native request format and authentication are retained.' : `Official endpoint: ${officialBaseUrl || 'provider default'}`}
+          </div>
+          {customEndpointSelected && <div className="mb-2.5"><Field label="Custom base URL" placeholder={llmProvider === 'anthropic' ? 'https://gateway.example.com' : 'https://gateway.example.com/v1'} value={llmBaseUrl} onChange={(e) => setLlmBaseUrl(e.target.value)} /><p className="text-[10.5px] text-qa-muted-light mt-1 mb-0">For an Anthropic-native gateway, enter the base URL before <code>/v1/messages</code>. The app adds the messages path automatically.</p></div>}
           <Field label="LLM key" type="password" value={llmApiKey} onChange={(e) => setLlmApiKey(e.target.value)} />
-          {llmProvider === 'openai-compatible' && <div className="mt-2.5"><Field label="Custom base URL" value={llmBaseUrl} onChange={(e) => setLlmBaseUrl(e.target.value)} /></div>}
-          <div className="flex items-center gap-2 mt-3"><button type="button" onClick={saveAll} className="font-mono-qa text-xs font-semibold tracking-wider uppercase px-4 py-2.5 border-none cursor-pointer text-white" style={{ background: QA.accent }}>Save</button><button type="button" onClick={() => { saveAll(); llmTest.mutate(); }} disabled={llmTest.isPending} className="font-mono-qa text-xs font-semibold tracking-wider uppercase px-4 py-2.5 border-none cursor-pointer text-white disabled:opacity-50" style={{ background: QA.accent }}>{llmTest.isPending ? 'Testing...' : 'Save & Test LLM'}</button></div>
+          <div className="flex items-center gap-2 mt-3"><button type="button" onClick={saveAll} className="font-mono-qa text-xs font-semibold tracking-wider uppercase px-4 py-2.5 border-none cursor-pointer text-white" style={{ background: QA.accent }}>Save</button><button type="button" onClick={saveAndTestLlm} disabled={llmTest.isPending} className="font-mono-qa text-xs font-semibold tracking-wider uppercase px-4 py-2.5 border-none cursor-pointer text-white disabled:opacity-50" style={{ background: QA.accent }}>{llmTest.isPending ? 'Testing...' : 'Save & Test LLM'}</button></div>
           {llmTestMsg && <div className="mt-3 p-3 text-[13px] border border-qa-border bg-[#faf8f2] text-qa-ink">{llmTestMsg}</div>}
         </QaSection>
         <QaSection title="Report Branding">
