@@ -95,7 +95,7 @@ export function AiReportPage({ dashboard, kpiStyle, project, onGenerated }: AiRe
   const [toolCalls, setToolCalls] = useState<ToolCallMeta[]>([]);
   const [downloading, setDownloading] = useState(false);
 
-  const { data: reportData } = useQuery({ queryKey: ['report'], queryFn: batchApi.getReport, retry: false });
+  const { data: reportData } = useQuery({ queryKey: ['report'], queryFn: () => batchApi.getReport(), retry: false });
 
   const projectOptions = useMemo(() => {
     const values = new Set<string>(['all']);
@@ -229,7 +229,7 @@ export function AiReportPage({ dashboard, kpiStyle, project, onGenerated }: AiRe
           </div>
           {hasReport ? (
             <div className="p-8 space-y-8">
-              <AiReportCharts dashboard={chartData!} kpiStyle={kpiStyle} />
+              {chartData && <AiReportCharts dashboard={chartData} kpiStyle={kpiStyle} reportType={reportType} />}
               {toolCalls.length > 0 && <div className="border border-qa-border bg-[#faf8f2] p-3"><div className="font-mono-qa text-[10px] uppercase tracking-wider text-qa-muted-light mb-2">Grounding tool calls</div><div className="flex flex-wrap gap-2">{toolCalls.map((t, idx) => <span key={`${t.toolName}-${idx}`} className="font-mono-qa text-[10px] border border-qa-border bg-white px-2 py-1">{t.toolName}: {t.rowCount}</span>)}</div></div>}
               {hasNarrative ? <article className="prose prose-sm max-w-none prose-headings:font-spectral prose-table:text-sm"><ReactMarkdown remarkPlugins={[remarkGfm]}>{reportMarkdown}</ReactMarkdown></article> : <div className="border border-qa-border bg-[#faf8f2] p-6 text-qa-muted">Charts are ready. Configure an LLM key and generate to add narrative.</div>}
             </div>
