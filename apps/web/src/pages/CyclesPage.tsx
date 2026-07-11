@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import type { DashboardPayload, FilterParams } from 'qa-dashboard-batch';
 import type { CycleHealth } from '../lib/api';
@@ -60,6 +60,7 @@ export function CyclesPage({ dashboard, kpiStyle, selectedCycle, onSelectCycle, 
   const [loadAfterFolderChange, setLoadAfterFolderChange] = useState(false);
   const qmetryConnectionId = useMemo(() => qmetryConnectionIdForProject(filterParams.project), [filterParams.project]);
   const selectedProject = canonicalProjectOrUndefined(filterParams.project);
+  const lastDashboardGeneration = useRef(dashboard.meta.generatedAt);
   const liveCyclesQuery = useQuery({
     queryKey: ['cycles-by-folder-table', selectedFolder, qmetryConnectionId || 'all', selectedProject || 'all', filterParams.startDate || 'any', filterParams.endDate || 'any', filterParams.search || '', filterParams.result || 'all'],
     queryFn: () => batchApi.getCyclesByFolder(selectedFolder, qmetryConnectionId, filterParams),
@@ -77,9 +78,20 @@ export function CyclesPage({ dashboard, kpiStyle, selectedCycle, onSelectCycle, 
   useEffect(() => {
     if (selectedFolder && loadAfterFolderChange) {
       setLoadAfterFolderChange(false);
-      liveCyclesQuery.refetch();
+      void liveCyclesQuery.refetch();
     }
   }, [selectedFolder, loadAfterFolderChange, liveCyclesQuery]);
+
+  // The top dashboard Search updates the dashboard payload first. When a folder is selected,
+  // refresh its live QMetry cycle rows as part of the same applied date-filter action so the
+  // Cycles tab cannot continue showing data from the previous period.
+  useEffect(() => {
+    const generationChanged = lastDashboardGeneration.current !== dashboard.meta.generatedAt;
+    lastDashboardGeneration.current = dashboard.meta.generatedAt;
+    if (generationChanged && selectedFolder && qmetryConnectionId) {
+      void liveCyclesQuery.refetch();
+    }
+  }, [dashboard.meta.generatedAt, selectedFolder, qmetryConnectionId, liveCyclesQuery]);
 
   function handleSelectFolder(folderId: string): void {
     setSelectedFolder(folderId);
@@ -101,13 +113,13 @@ export function CyclesPage({ dashboard, kpiStyle, selectedCycle, onSelectCycle, 
 
   return (
     <>
-      <QaPageShell title="Test Cycle Health" subtitle="folder and cycle API calls run only after Load/Select/Search actions">
+      <QaPageShell title="Test Cycle Health" subtitle="top Search and folder Search both apply the selected date period">
         <FolderPicker selectedFolder={selectedFolder} onSelectFolder={handleSelectFolder} connectionId={qmetryConnectionId} project={selectedProject} />
         <div className="mb-4 flex items-center gap-3 flex-wrap">
           <button type="button" onClick={() => liveCyclesQuery.refetch()} disabled={!selectedFolder || liveCyclesQuery.isFetching || Boolean(selectedProject && !qmetryConnectionId)} className="font-mono-qa text-[10px] px-3 py-1.5 border border-qa-border bg-white cursor-pointer disabled:opacity-50">
             {liveCyclesQuery.isFetching ? 'Searching...' : 'Search test cycles'}
           </button>
-          <span className="font-mono-qa text-[10px] text-qa-muted-light">Date edits do not refetch automatically. Click Search test cycles to apply the current period.</span>
+          <span className="font-mono-qa text-[10px] text-qa-muted-light">Use the top Search to refresh the full tab. Search test cycles can refresh the selected folder directly.</span>
         </div>
         {selectedFolder && liveCyclesQuery.isLoading && <div className="mb-4 text-[12px] text-qa-muted-light">Loading cycles and execution results for selected folder...</div>}
         {selectedFolder && liveCyclesQuery.error && <div className="mb-4 text-[12px] text-[#a13d2c]">Could not load folder cycles: {(liveCyclesQuery.error as Error).message}</div>}
