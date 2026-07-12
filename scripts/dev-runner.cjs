@@ -3,6 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
+const { clearGeneratedDevCache, envFlag } = require('./dev-cache.cjs');
 
 const ROOT = path.resolve(__dirname, '..');
 const runtimePath = path.join(ROOT, 'config', 'runtime.json');
@@ -92,6 +93,17 @@ fs.mkdirSync(inputDir, { recursive: true });
 fs.mkdirSync(outputDir, { recursive: true });
 fs.mkdirSync(configDir, { recursive: true });
 
+const preserveDevCache = envFlag(process.env.PRESERVE_DEV_CACHE);
+const cacheResult = clearGeneratedDevCache(outputDir, { preserve: preserveDevCache });
+if (cacheResult.preserved) {
+  console.log('[dev-runner] Generated dashboard cache preserved because PRESERVE_DEV_CACHE is enabled.');
+} else if (cacheResult.deleted.length) {
+  console.log(`[dev-runner] Cleared generated dashboard cache: ${cacheResult.deleted.join(', ')}`);
+} else {
+  console.log('[dev-runner] Generated dashboard cache already clean.');
+}
+
+const env = { ...process.env };
 env.NODE_ENV = env.NODE_ENV || 'development';
 env.PROJECT_ROOT = ROOT;
 env.INPUT_DIR = inputDir;
