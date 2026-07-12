@@ -13,6 +13,11 @@ on:
       - 'apps/batch/src/config/loadIntegrations.ts'
       - 'apps/web/src/components/common/WarningDetails.tsx'
       - 'apps/web/src/pages/CyclesPage.tsx'
+      - 'scripts/dev-runner.cjs'
+      - 'scripts/dev-cache.cjs'
+      - 'scripts/__tests__/dev-cache.test.cjs'
+      - 'run.sh'
+      - 'package.json'
       - '.github/workflows/qmetry-contract.yml'
 
 permissions:
