@@ -18,6 +18,7 @@ import { usePerTabFilters } from './hooks/usePerTabFilters';
 import { useUiPreferences } from './hooks/useUiPreferences';
 import { batchApi, getActiveProject } from './lib/api';
 import { canonicalProjectOrUndefined } from './lib/projectKey';
+import { defaultReportingPeriod } from './lib/reportingPeriod';
 import type { DashboardPayload, FilterParams } from 'qa-dashboard-batch';
 import type { QaTab } from './theme/qaTheme';
 
@@ -31,22 +32,28 @@ function AppContent() {
   const [baseDashboard, setBaseDashboard] = useState<DashboardPayload | null>(null);
   const ui = useUiPreferences();
 
-  // Respect a previously-selected project on first load, so the masthead and data agree.
+  const defaultPeriod = defaultReportingPeriod();
   const storedProject = canonicalProjectOrUndefined(getActiveProject());
+  const initialFilter: Partial<FilterParams> = {
+    ...defaultPeriod,
+    project: storedProject,
+  };
   const { data: initialDashboard, isLoading, refetch } = useQuery<DashboardPayload | null>({
-    queryKey: ['dashboard-init', storedProject || 'all'],
-    queryFn: () => batchApi.getDashboard(storedProject ? { project: storedProject } : undefined),
+    queryKey: ['dashboard-init', storedProject || 'all', defaultPeriod.startDate, defaultPeriod.endDate],
+    queryFn: () => batchApi.getDashboard(initialFilter),
     retry: false,
   });
 
   const projectBaseFetch = useMutation({
-    mutationFn: (project: string) => batchApi.getDashboard({ project: project === 'all' ? undefined : project }),
+    mutationFn: (project: string) => batchApi.getDashboard({
+      ...defaultReportingPeriod(),
+      project: project === 'all' ? undefined : project,
+    }),
     onSuccess: (d) => { if (d) { setBaseDashboard(d); setFilteredByTab({}); } },
   });
 
   const isProjectLoading = projectBaseFetch.isPending;
   const base = isProjectLoading ? undefined : (baseDashboard ?? initialDashboard ?? undefined);
-  // Tabs without their own filtered view fall back to the stable current-project base.
   const display = (filteredByTab[activeTab] ?? base) ?? undefined;
   const filters = usePerTabFilters(activeTab, base);
 
@@ -56,7 +63,7 @@ function AppContent() {
   };
 
   const searchDashboardData = useMutation({
-    mutationFn: (vars: { params?: Partial<FilterParams>; tab: QaTab }) => batchApi.searchDashboardByDates(vars.params || filters.filterParams).then((d) => ({ d, tab: vars.tab })),
+    mutationFn: (vars: { params: Partial<FilterParams>; tab: QaTab }) => batchApi.searchDashboardByDates(vars.params).then((d) => ({ d, tab: vars.tab })),
     onSuccess: ({ d, tab }) => setFilteredView(d, tab),
   });
 
@@ -64,7 +71,6 @@ function AppContent() {
   const tabs = buildTabs(showUat);
   const currentTab = tabs.find((t) => t.id === activeTab) ?? tabs[0];
 
-  // If the active tab is no longer available, fall back to Overview to avoid a blank body.
   useEffect(() => {
     if (!tabs.some((t) => t.id === activeTab)) setActiveTab(tabs[0].id);
   }, [tabs, activeTab]);
@@ -81,11 +87,9 @@ function AppContent() {
   const handleProjectChange = (project: string) => {
     const nextProject = project || 'all';
     filters.setProject(nextProject);
-    filters.setSearch('');
-    filters.setResult('all');
     ui.clearSelectedCycle();
     setFilteredByTab({});
-    setBaseDashboard(null); // Avoid showing stale previous-project data while the new scope loads.
+    setBaseDashboard(null);
     projectBaseFetch.mutate(nextProject);
   };
 
@@ -115,7 +119,7 @@ function AppContent() {
           onKpiStyleChange={ui.setKpiStyle}
           dataMin={display?.meta.dataMin}
           dataMax={display?.meta.dataMax}
-          onSearchApis={canSearch ? () => searchDashboardData.mutate({ tab: activeTab }) : undefined}
+          onSearchApis={canSearch ? () => searchDashboardData.mutate({ params: { ...filters.filterParams }, tab: activeTab }) : undefined}
           searchApisLabel="Search"
           isSearchingApis={searchDashboardData.isPending}
         />

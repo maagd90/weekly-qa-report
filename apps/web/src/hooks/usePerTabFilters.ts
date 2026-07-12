@@ -3,6 +3,7 @@ import type { DashboardPayload, FilterParams } from 'qa-dashboard-batch';
 import type { QaTab } from '../theme/qaTheme';
 import { getActiveProject, setActiveProject } from '../lib/api';
 import { canonicalProjectOrAll, canonicalProjectOrUndefined, uniqueCanonicalProjects } from '../lib/projectKey';
+import { defaultReportingPeriod } from '../lib/reportingPeriod';
 
 // Tabs that have an independent date/search/result filter.
 const FILTERABLE: QaTab[] = ['overview', 'testers', 'cycles', 'trace', 'uat'];
@@ -10,11 +11,13 @@ const FILTERABLE: QaTab[] = ['overview', 'testers', 'cycles', 'trace', 'uat'];
 type TabFilter = { startDate: string; endDate: string; search: string; result: 'all' | 'PASS' | 'FAIL' | 'BLOCKED' };
 
 function seedRange(baseDashboard: DashboardPayload | undefined): { startDate: string; endDate: string } {
-  const today = new Date().toISOString().slice(0, 10);
-  // Default each tab to the FULL data range so nothing looks empty on first load.
+  const fallback = defaultReportingPeriod();
+  // Default every dashboard tab to the agreed 2026 year-to-date reporting window.
+  // Do not seed from meta.dataMin because an old issue/execution can push the UI back to 2020.
+  // Users can still manually select an earlier date when historical analysis is required.
   return {
-    startDate: baseDashboard?.meta.dataMin || baseDashboard?.scope.startDate || today,
-    endDate: baseDashboard?.meta.dataMax || baseDashboard?.scope.endDate || today,
+    startDate: baseDashboard?.scope.startDate || fallback.startDate,
+    endDate: baseDashboard?.scope.endDate || fallback.endDate,
   };
 }
 
@@ -36,13 +39,11 @@ export function usePerTabFilters(activeTab: QaTab, baseDashboard: DashboardPaylo
   const [seededFor, setSeededFor] = useState<string | undefined>(undefined);
   const [customized, setCustomized] = useState<Partial<Record<QaTab, boolean>>>({});
 
-  // Re-seed ranges once when a baseDashboard with a real data range first arrives.
-  // MUST be an effect, not inline — setting state during render is unsafe.
-  // Include project + scope so a project change re-seeds each tab's dates to the new full range.
+  // Re-seed ranges once when a baseDashboard for a project first arrives.
   // Preserve date ranges for tabs the user has already customized manually.
-  const dataKey = `${project}:${baseDashboard?.meta.dataMin || ''}:${baseDashboard?.meta.dataMax || ''}`;
+  const dataKey = `${project}:${baseDashboard?.scope.project || 'all'}:${baseDashboard?.meta.generatedAt || ''}`;
   useEffect(() => {
-    if (baseDashboard && dataKey !== ':' && seededFor !== dataKey) {
+    if (baseDashboard && seededFor !== dataKey) {
       const fresh = blankMap(baseDashboard);
       setTabFilters((prev) => {
         const next: Record<string, TabFilter> = { ...fresh };
@@ -73,6 +74,11 @@ export function usePerTabFilters(activeTab: QaTab, baseDashboard: DashboardPaylo
     const value = canonicalProjectOrAll(next);
     setProjectState(value);
     setActiveProject(value);
+    // A project switch invalidates every tab's previous filter result. Reset all tabs to the
+    // same 2026 YTD period so the controls and the newly loaded base dashboard cannot disagree.
+    setTabFilters(blankMap(undefined));
+    setCustomized({});
+    setSeededFor(undefined);
   }, []);
 
   const filterParams: FilterParams = useMemo(() => ({

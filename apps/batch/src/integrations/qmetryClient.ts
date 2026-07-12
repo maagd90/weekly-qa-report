@@ -16,6 +16,7 @@ type QmetrySessionConfig = QmetryIntegrationConfig & { sessionHeader?: string; s
 
 const TEST_CYCLE_FIELDS = 'key,summary,priority,status,assignee,reporter,testcaseExecutionProgress,plannedStartDate,plannedEndDate,updated,automationRule';
 const MONTHS: Record<string, string> = { jan: '01', feb: '02', mar: '03', apr: '04', may: '05', jun: '06', jul: '07', aug: '08', sep: '09', oct: '10', nov: '11', dec: '12' };
+const testerNameCache = new Map<string, string>();
 
 function authHeader(cfg: QmetryIntegrationConfig): string | null {
   const encoded = getEncodedAuth(cfg.authEncodedEnv);
@@ -49,13 +50,19 @@ function qmetrySessionHeader(cfg: QmetryIntegrationConfig): string | null {
   return parts.length ? parts.join('; ') : null;
 }
 
-async function qmetryFetch(cfg: QmetryIntegrationConfig, method: 'GET' | 'POST', path: string, body?: unknown): Promise<{ ok: boolean; data?: unknown; error?: string }> {
+function requestHeaders(cfg: QmetryIntegrationConfig): Record<string, string> | null {
   const auth = authHeader(cfg);
-  if (!auth) return { ok: false, error: 'QMetry credentials not configured' };
-  const url = `${cfg.baseUrl}${cfg.apiPrefix}${path}`;
+  if (!auth) return null;
   const headers: Record<string, string> = { Authorization: auth, Accept: 'application/json' };
   const sessionHeader = qmetrySessionHeader(cfg);
   if (sessionHeader) headers.Cookie = sessionHeader;
+  return headers;
+}
+
+async function qmetryFetch(cfg: QmetryIntegrationConfig, method: 'GET' | 'POST', path: string, body?: unknown): Promise<{ ok: boolean; data?: unknown; error?: string }> {
+  const headers = requestHeaders(cfg);
+  if (!headers) return { ok: false, error: 'QMetry credentials not configured' };
+  const url = `${cfg.baseUrl}${cfg.apiPrefix}${path}`;
   const init: RequestInit = { method, headers };
   if (body !== undefined) { headers['Content-Type'] = 'application/json'; init.body = JSON.stringify(body); }
   try {
@@ -93,9 +100,18 @@ function unwrapName(value: unknown): string {
 function unwrapUser(value: unknown): string {
   if (value && typeof value === 'object') {
     const o = value as Record<string, unknown>;
-    return sanitizeText(o.displayName ?? o.fullName ?? o.emailAddress ?? o.name ?? o.value ?? o.key);
+    const nested = o.user ?? o.assignee ?? o.executedBy ?? o.executionAssignee ?? o.updatedBy;
+    if (nested && nested !== value) {
+      const nestedName = unwrapUser(nested);
+      if (nestedName) return nestedName;
+    }
+    return sanitizeText(o.displayName ?? o.fullName ?? o.name ?? o.username ?? o.userName ?? o.emailAddress ?? o.value ?? o.key ?? o.accountId);
   }
   return sanitizeText(value);
+}
+
+function objectValue(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' ? value as Record<string, unknown> : {};
 }
 
 function qmetryDate(raw: unknown): string | null {
@@ -279,11 +295,18 @@ function progressRowsFromCycle(cycle: QmetryCycleSummary, projectKey?: string): 
 }
 
 function compactWarnings(warnings: string[]): string {
-  const max = 8;
   if (!warnings.length) return '';
-  const visible = warnings.slice(0, max);
-  const hidden = warnings.length - visible.length;
-  return hidden > 0 ? `${visible.join('; ')}; ${hidden} more QMetry cycle request(s) failed` : visible.join('; ');
+  const unique = [...new Set(warnings.filter(Boolean))];
+  const detailFailures = unique.filter((warning) => /QMetry API|request failed|invalid JSON|login\/logout|redirected to login/i.test(warning));
+  const notices = unique.filter((warning) => !detailFailures.includes(warning));
+  const parts: string[] = [];
+  if (detailFailures.length) {
+    const first = detailFailures[0].replace(/^.*?:\s*/, '').replace(/\s+/g, ' ').slice(0, 180);
+    parts.push(`QMetry detail retrieval failed for ${detailFailures.length} cycle(s). Aggregate execution progress was used where available; tester attribution may be incomplete.${first ? ` First error: ${first}` : ''}`);
+  }
+  parts.push(...notices.slice(0, 2));
+  if (notices.length > 2) parts.push(`${notices.length - 2} more QMetry notice(s)`);
+  return parts.join(' ');
 }
 
 export async function searchQmetryTestCycles(cfg: QmetryIntegrationConfig, options: { startAt?: number; maxResults?: number; folderId?: string } = {}): Promise<QmetryCycleSearchResult> {
@@ -348,17 +371,30 @@ export async function fetchProjectCycles(cfg: QmetryIntegrationConfig, folderId?
 }
 
 function normalizeTestCase(tc: Record<string, unknown>, cycleKey: string, cycleName: string, fallbackUpdatedAt: string | null = null): ExecutionRow | null {
-  const nestedTestCase = tc.testCase && typeof tc.testCase === 'object' ? (tc.testCase as Record<string, unknown>) : {};
+  const nestedTestCase = objectValue(tc.testCase);
+  const execution = objectValue(tc.execution || tc.executionDetails || tc.latestExecution);
+  const updated = objectValue(tc.updated);
+  const executionUpdated = objectValue(execution.updated);
   const caseKey = sanitizeText(tc.key || tc.testCaseKey || tc.issueKey || nestedTestCase.key || nestedTestCase.testCaseKey || nestedTestCase.issueKey);
   if (!caseKey) return null;
-  const executedAt = qmetryDate(tc.executedOn);
-  const updatedAt = qmetryDate(tc.updated) || qmetryDate(tc.lastModified) || executedAt || fallbackUpdatedAt;
-  const resultText = unwrapName(tc.executionResult) || unwrapName(tc.status);
-  const tester = unwrapUser(tc.executedBy) || unwrapUser(tc.executionAssignee);
-  return { project: projectFromKey(caseKey), cycleKey, cycleName, caseKey, result: mapExecutionResult(resultText), tester: tester || null, executedAt, updatedAt, source: 'qmetry' };
+  const executedAt = qmetryDate(tc.executedOn ?? execution.executedOn ?? execution.executedAt);
+  const updatedAt = qmetryDate(tc.updated) || qmetryDate(tc.lastModified) || qmetryDate(execution.updated) || qmetryDate(execution.lastModified) || executedAt || fallbackUpdatedAt;
+  const resultText = unwrapName(tc.executionResult) || unwrapName(execution.executionResult) || unwrapName(tc.status) || unwrapName(execution.status);
+  const result = mapExecutionResult(resultText);
+  const directTester = unwrapUser(tc.executedBy) || unwrapUser(execution.executedBy) || unwrapUser(tc.executionAssignee) || unwrapUser(execution.executionAssignee);
+  const updatedBy = unwrapUser(updated.updatedBy) || unwrapUser(executionUpdated.updatedBy);
+  const tester = directTester || (result !== 'NE' ? updatedBy : '');
+  return { project: projectFromKey(caseKey), cycleKey, cycleName, caseKey, result, tester: tester || null, executedAt, updatedAt, source: 'qmetry' };
 }
 
-function testCaseSearchBody(cfg: QmetryIntegrationConfig): Record<string, unknown> { return cfg.testCasesSearchBody || projectBody(cfg); }
+function testCaseSearchBody(cfg: QmetryIntegrationConfig): Record<string, unknown> {
+  const configured = objectValue(cfg.testCasesSearchBody);
+  const configuredFilter = objectValue(configured.filter);
+  const defaultFilter = objectValue(projectBody(cfg).filter);
+  return { ...configured, filter: { ...defaultFilter, ...configuredFilter } };
+}
+
+function invalidFieldsError(error?: string): boolean { return /field|fields|invalid|not supported/i.test(error || ''); }
 
 async function fetchCycleExecutions(cfg: QmetryIntegrationConfig, cycleId: string, cycleNameHint?: string, scope?: ApiFetchScope, cycleKeyHint?: string, allowUndatedScopedCycleRows = false, fallbackUpdatedAt: string | null = null): Promise<{ executions: ExecutionRow[]; cycleKey: string; cycleName: string; error?: string }> {
   const executions: ExecutionRow[] = [];
@@ -366,20 +402,25 @@ async function fetchCycleExecutions(cfg: QmetryIntegrationConfig, cycleId: strin
   let cycleName = cycleNameHint || cycleId;
   let startAt = 0;
   let includeFields = true;
+  const method: 'GET' | 'POST' = cfg.usePostSearch ? 'POST' : 'GET';
   const searchPath = cfg.testCasesSearchPath.replace('{cycleId}', encodeURIComponent(cycleId));
   const body = testCaseSearchBody(cfg);
+
   for (let page = 0; page < cfg.maxPages; page++) {
     const buildQs = (withFields: boolean) => {
       const qs = new URLSearchParams({ startAt: String(startAt), maxResults: String(cfg.pageSize) });
       if (withFields && cfg.testCaseFields) qs.set('fields', cfg.testCaseFields);
       return qs;
     };
-    let result = cfg.usePostSearch ? await qmetryFetch(cfg, 'POST', `${searchPath}?${buildQs(includeFields)}`, body) : await qmetryFetch(cfg, 'GET', `${searchPath}?${buildQs(includeFields)}`);
-    if (!result.ok && includeFields && /field|fields|invalid|not supported/i.test(result.error || '')) {
-      result = cfg.usePostSearch ? await qmetryFetch(cfg, 'POST', `${searchPath}?${buildQs(false)}`, body) : await qmetryFetch(cfg, 'GET', `${searchPath}?${buildQs(false)}`);
+    const request = (withFields: boolean) => qmetryFetch(cfg, method, `${searchPath}?${buildQs(withFields)}`, method === 'POST' ? body : undefined);
+
+    let result = await request(includeFields);
+    if (!result.ok && includeFields && invalidFieldsError(result.error)) {
+      result = await request(false);
       if (result.ok) includeFields = false;
     }
     if (!result.ok) return { executions, cycleKey, cycleName, error: result.error };
+
     const items = extractItems(result.data);
     if (!items.length) break;
     for (const item of items) {
@@ -393,6 +434,51 @@ async function fetchCycleExecutions(cfg: QmetryIntegrationConfig, cycleId: strin
     if (items.length < cfg.pageSize || startAt >= total) break;
   }
   return { executions, cycleKey, cycleName };
+}
+
+function looksLikeUserIdentifier(value: string): boolean {
+  const clean = value.trim();
+  if (!clean || clean.includes(' ') || clean.includes('@')) return false;
+  return /^(JIRAUSER\d+|[A-Za-z]\d{4,}|[A-Za-z0-9._-]+)$/i.test(clean);
+}
+
+async function resolveQmetryUserDisplayName(cfg: QmetryIntegrationConfig, identifier: string): Promise<string> {
+  const clean = identifier.trim();
+  if (!looksLikeUserIdentifier(clean)) return clean;
+  const cacheKey = `${cfg.baseUrl}|${clean.toLowerCase()}`;
+  const cached = testerNameCache.get(cacheKey);
+  if (cached) return cached;
+  const headers = requestHeaders(cfg);
+  if (!headers) return clean;
+
+  for (const parameter of ['key', 'username']) {
+    const url = `${cfg.baseUrl}/rest/api/2/user?${parameter}=${encodeURIComponent(clean)}`;
+    try {
+      const response = await fetchWithTimeout(url, { method: 'GET', headers });
+      if (!response.ok) continue;
+      const text = await response.text();
+      const authError = nonJsonAuthError(text);
+      if (authError) continue;
+      const data = JSON.parse(text) as Record<string, unknown>;
+      const resolved = unwrapUser(data);
+      if (resolved && resolved.toLowerCase() !== clean.toLowerCase()) {
+        testerNameCache.set(cacheKey, resolved);
+        return resolved;
+      }
+    } catch {
+      // Tester-name enrichment is best-effort. Keep the QMetry identifier when JIRA user lookup is unavailable.
+    }
+  }
+  testerNameCache.set(cacheKey, clean);
+  return clean;
+}
+
+async function hydrateTesterDisplayNames(cfg: QmetryIntegrationConfig, rows: ExecutionRow[]): Promise<ExecutionRow[]> {
+  const identifiers = [...new Set(rows.map((row) => row.tester || '').filter(looksLikeUserIdentifier))];
+  if (!identifiers.length) return rows;
+  const resolved = new Map<string, string>();
+  for (const identifier of identifiers) resolved.set(identifier, await resolveQmetryUserDisplayName(cfg, identifier));
+  return rows.map((row) => row.tester && resolved.has(row.tester) ? { ...row, tester: resolved.get(row.tester)! } : row);
 }
 
 function summarizeCycle(cycleKey: string, cycleName: string, executions: ExecutionRow[]): QmetryCycleHealthSummary {
@@ -460,13 +546,14 @@ export async function fetchQmetryExecutions(cfg: QmetryIntegrationConfig, scope?
     all.push(...(result.executions.length ? result.executions : fallbackRows));
     cycleMeta.set(result.cycleKey || cycle.key || cycle.id, result.cycleName || cycle.name || cycle.id);
   }
-  if (!all.length && !warnings.length) {
+  const hydrated = await hydrateTesterDisplayNames(cfg, all);
+  if (!hydrated.length && !warnings.length) {
     warnings.push(`QMetry cycles were found, but no testcase execution rows or cycle-level progress counts were available for ${cfg.projectKey || cfg.projectId || 'the configured project'}. Check the testcase search path, selected date range, and session permissions.`);
   } else if (usedProgressFallback) {
-    warnings.push('QMetry testcase execution rows were unavailable for one or more cycles, so cycle-level execution progress was used for report charts.');
+    warnings.push('One or more cycles used aggregate QMetry execution progress because detailed testcase rows were unavailable. Aggregate rows do not include Executed By and are excluded from tester rankings.');
   }
   const error = compactWarnings(warnings);
-  return error ? { executions: all, cycleMeta, error } : { executions: all, cycleMeta };
+  return error ? { executions: hydrated, cycleMeta, error } : { executions: hydrated, cycleMeta };
 }
 
 export async function fetchQmetryDataset(cfg: IntegrationsConfig, scope?: ApiFetchScope): Promise<import('../types/dataset').Dataset> {

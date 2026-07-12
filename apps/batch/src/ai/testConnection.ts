@@ -27,6 +27,11 @@ export interface LlmTestResult extends AnthropicTestResult {
   providerLabel?: string;
 }
 
+interface AnthropicTestOptions {
+  baseUrl?: string;
+  model?: string;
+}
+
 const TEST_TIMEOUT_MS = 25_000;
 
 function networkHint(raw: string, route: 'direct' | 'proxy'): string {
@@ -47,11 +52,18 @@ function networkHint(raw: string, route: 'direct' | 'proxy'): string {
   return '';
 }
 
+function isHtmlSecurityBlock(raw: string): boolean {
+  const lower = raw.toLowerCase();
+  return lower.includes('<!doctype html') || lower.includes('<html') || lower.includes('zscaler');
+}
+
 function formatError(err: unknown, model: string, route: 'direct' | 'proxy'): string {
   const raw = describeFetchError(err);
   const lower = raw.toLowerCase();
   let hint = '';
-  if (/self.signed|self-signed|unable to verify|cert|unauthorized certificate/.test(lower)) {
+  if (isHtmlSecurityBlock(raw)) {
+    hint = ' — the request returned an HTML security/proxy page instead of an LLM API response. Check the selected endpoint URL, VPN/Zscaler policy, proxy configuration, and gateway allowlisting.';
+  } else if (/self.signed|self-signed|unable to verify|cert|unauthorized certificate/.test(lower)) {
     hint = route === 'proxy'
       ? ' — office proxy TLS issue; keep integrationAllowSelfSignedCerts=true in config/runtime.json.'
       : ' — TLS certificate validation failed. If your network uses HTTPS inspection, configure officeProxyUrl or NODE_EXTRA_CA_CERTS in config/runtime.json.';
@@ -65,13 +77,17 @@ function formatError(err: unknown, model: string, route: 'direct' | 'proxy'): st
   return `${raw.slice(0, 280)}${hint}`;
 }
 
-export async function testAnthropicConnection(apiKey: string, configDir: string): Promise<AnthropicTestResult> {
+export async function testAnthropicConnection(apiKey: string, configDir: string, options: AnthropicTestOptions = {}): Promise<AnthropicTestResult> {
   const started = Date.now();
   const { log, lines } = createAnthropicLogger('anthropic');
   const route = anthropicRoute();
+  const reportCfg = loadReportConfig(configDir);
+  const model = (options.model || (reportCfg.provider === 'anthropic' ? reportCfg.model : 'claude-haiku-4-5-20251001')).trim();
+  const baseUrl = (options.baseUrl || (reportCfg.provider === 'anthropic' ? reportCfg.baseUrl : undefined))?.trim();
 
   log('connectivity test started', `configDir=${configDir}`);
   log('runtime', `node=${process.version} platform=${process.platform}`);
+  log('endpoint', baseUrl ? `custom ${baseUrl}` : 'official https://api.anthropic.com');
   log('route', route === 'proxy'
     ? `proxy via ${maskProxyUrl(getOptionalAnthropicProxyUrl()!)} (${anthropicProxySource()})`
     : 'direct — no proxy configured');
@@ -82,13 +98,12 @@ export async function testAnthropicConnection(apiKey: string, configDir: string)
   }
 
   log('API key check', `present (${apiKey.slice(0, 8)}…, length=${apiKey.length})`);
-  const reportCfg = loadReportConfig(configDir);
-  const model = reportCfg.provider === 'anthropic' ? reportCfg.model : 'claude-haiku-4-5-20251001';
   log('report config loaded', `model=${model}`);
 
   try {
-    await probeAnthropicReachability(log);
-    const client = createAnthropicClient(apiKey, TEST_TIMEOUT_MS, log);
+    if (!baseUrl) await probeAnthropicReachability(log);
+    else log('reachability probe', 'skipped public Anthropic probe because a custom endpoint is selected');
+    const client = createAnthropicClient(apiKey, TEST_TIMEOUT_MS, log, baseUrl);
     log('calling Anthropic API', `model=${model} max_tokens=1`);
     const response = await client.messages.create({
       model,
@@ -112,14 +127,13 @@ export async function testLlmConnection(selection: LlmSelectionInput, configDir:
   const cfg = loadReportConfig(configDir);
   const provider = selection.provider || cfg.provider;
   const model = (selection.model || cfg.model).trim();
-  const userKey = provider === 'anthropic' ? selection.apiKey : selection.apiKey;
-  const apiKey = resolveProviderApiKey(provider, userKey, process.env.ANTHROPIC_API_KEY);
+  const apiKey = resolveProviderApiKey(provider, selection.apiKey, process.env.ANTHROPIC_API_KEY);
   const baseUrl = selection.baseUrl || cfg.baseUrl;
   const providerLabel = LLM_PROVIDER_LABELS[provider];
-  const logs = [`[llm] provider=${providerLabel}`, `[llm] model=${model}`];
+  const logs = [`[llm] provider=${providerLabel}`, `[llm] model=${model}`, `[llm] endpoint=${baseUrl || 'official'}`];
 
   if (provider === 'anthropic') {
-    const result = await testAnthropicConnection(apiKey, configDir);
+    const result = await testAnthropicConnection(apiKey, configDir, { baseUrl, model });
     return { ...result, provider, providerLabel };
   }
 
@@ -154,9 +168,10 @@ export async function testLlmConnection(selection: LlmSelectionInput, configDir:
     const raw = describeFetchError(err);
     const lower = raw.toLowerCase();
     let hint = networkHint(raw, 'direct');
-    if (/401|authentication|unauthorized|api key/.test(lower)) hint = ` — check ${envKeyForProvider(provider)} or the key saved in Settings.`;
-    if (/429|quota|rate limit|exceeded/.test(lower)) hint = ' — quota/rate limit reached; select another provider/model/key.';
-    if (/model|not found|400|bad request/.test(lower)) hint = ` — check selected model "${model}".`;
+    if (isHtmlSecurityBlock(raw)) hint = ' — the request returned an HTML security/proxy page instead of an LLM API response. Check the endpoint URL, VPN/Zscaler policy, proxy configuration, and gateway allowlisting.';
+    else if (/401|authentication|unauthorized|api key/.test(lower)) hint = ` — check ${envKeyForProvider(provider)} or the key saved in Settings.`;
+    else if (/429|quota|rate limit|exceeded/.test(lower)) hint = ' — quota/rate limit reached; select another provider/model/key.';
+    else if (/model|not found|400|bad request/.test(lower)) hint = ` — check selected model "${model}".`;
     const error = `${raw.slice(0, 280)}${hint}`;
     logs.push(`[llm] connectivity test failed: ${error}`);
     return { ok: false, provider, providerLabel, model, route: 'direct', elapsedMs: Date.now() - started, error, logs };
