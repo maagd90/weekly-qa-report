@@ -9,6 +9,7 @@ import { QaKpiCard, QaKpiGrid } from '../components/qa/QaKpiCard';
 import { SegBar, cycleSegSegments } from '../components/qa/SegBar';
 import { CycleBadge, QaTable, QaThead } from '../components/qa/QaBadge';
 import { CycleDetailDrawer } from '../components/qa/CycleDetailDrawer';
+import { WarningDetails } from '../components/common/WarningDetails';
 import { batchApi, getQmetryConnections } from '../lib/api';
 import { canonicalProjectOrUndefined } from '../lib/projectKey';
 
@@ -123,7 +124,15 @@ export function CyclesPage({ dashboard, kpiStyle, selectedCycle, onSelectCycle, 
         </div>
         {selectedFolder && liveCyclesQuery.isLoading && <div className="mb-4 text-[12px] text-qa-muted-light">Loading cycles and execution results for selected folder...</div>}
         {selectedFolder && liveCyclesQuery.error && <div className="mb-4 text-[12px] text-[#a13d2c]">Could not load folder cycles: {(liveCyclesQuery.error as Error).message}</div>}
-        {selectedFolder && liveCyclesQuery.data?.source === 'qmetry-live' && <div className="mb-4 text-[12px] text-qa-muted-light">Showing live QMetry execution results for folder <span className="font-mono-qa text-qa-ink">{selectedFolder}</span> and selected period.{liveWarnings.length ? <span className="text-[#a13d2c]"> {liveWarnings.join('; ')}</span> : null}</div>}
+        {selectedFolder && liveCyclesQuery.data?.source === 'qmetry-live' && (
+          <div className="mb-4 space-y-2">
+            <div className="text-[12px] text-qa-muted-light">Showing live QMetry execution results for folder <span className="font-mono-qa text-qa-ink">{selectedFolder}</span> and selected period.</div>
+            <WarningDetails
+              summary="QMetry returned partial cycle data. Aggregate counts may be shown and tester attribution may be incomplete."
+              messages={liveWarnings}
+            />
+          </div>
+        )}
         <QaKpiGrid cols={4}>
           <QaKpiCard kpiStyle={kpiStyle} label="Test Cycles" value={cycles.length} sub={selectedFolder ? `${fullPass} clean cycles from selected folder` : 'in current scope'} color={QA.accent} />
           <QaKpiCard kpiStyle={kpiStyle} label="Executed Cases" value={executed} sub="PASS + FAIL + BLOCKED + NA" color={QA.PASS} />
