@@ -103,7 +103,6 @@ if (cacheResult.preserved) {
   console.log('[dev-runner] Generated dashboard cache already clean.');
 }
 
-const env = { ...process.env };
 env.NODE_ENV = env.NODE_ENV || 'development';
 env.PROJECT_ROOT = ROOT;
 env.INPUT_DIR = inputDir;
