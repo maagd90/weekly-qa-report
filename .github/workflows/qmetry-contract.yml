@@ -11,6 +11,8 @@ on:
       - 'apps/batch/src/integrations/qmetryClient.ts'
       - 'apps/batch/src/integrations/__tests__/qmetryClient.test.ts'
       - 'apps/batch/src/config/loadIntegrations.ts'
+      - 'apps/web/src/components/common/WarningDetails.tsx'
+      - 'apps/web/src/pages/CyclesPage.tsx'
       - '.github/workflows/qmetry-contract.yml'
 
 permissions:
