@@ -4,6 +4,8 @@ import remarkGfm from 'remark-gfm';
 import type { DashboardPayload, ReportType } from 'qa-dashboard-batch';
 import type { KpiStyle } from '../../theme/qaTheme';
 import { projectDisplayName } from '../../lib/projectDisplay';
+import { ResultDonut } from './ResultDonut';
+import { StackedMonthChart } from './StackedMonthChart';
 
 interface ReportPrintContentProps {
   dashboard: DashboardPayload;
@@ -12,12 +14,16 @@ interface ReportPrintContentProps {
   narrative: string;
   startDate: string;
   endDate: string;
+  title?: string;
+  subtitle?: string;
+  logoUrl?: string;
+  logoAlt?: string;
 }
 
 function Section({ no, title, children }: { no: number; title: string; children: React.ReactNode }) {
   return (
     <section className="qa-business-section">
-      <h2 className="qa-business-section-title">{no}. {title}</h2>
+      <h2 className="qa-business-section-title" data-no={no}>{title}</h2>
       {children}
     </section>
   );
@@ -48,20 +54,20 @@ function StatTable({ dashboard }: { dashboard: DashboardPayload }) {
 }
 
 function StatusDot({ status }: { status: string }) {
-  const color = /complete|closed|done|healthy/i.test(status) ? '#00a651' : /risk|open|fail/i.test(status) ? '#d00000' : '#ff9d00';
-  return <span style={{ color, fontWeight: 800 }}>■ {status}</span>;
+  const color = /complete|closed|done|healthy/i.test(status) ? '#2f6a48' : /risk|open|fail/i.test(status) ? '#a13d2c' : '#9a6a12';
+  return <span style={{ color, fontWeight: 600 }}>■ {status}</span>;
 }
 
 function DefectRows({ dashboard, limit = 8 }: { dashboard: DashboardPayload; limit?: number }) {
   const rows = dashboard.defectBacklog.byOwner.slice(0, limit);
   if (!rows.length) return <p>No open defects with activity in the selected period.</p>;
-  return <table className="qa-business-table"><thead><tr><th>Owner</th><th>Open in Period</th></tr></thead><tbody>{rows.map((r) => <tr key={r.name}><td>{r.name}</td><td>{r.open}</td></tr>)}</tbody></table>;
+  return <table className="qa-business-table"><thead><tr><th>Owner</th><th>Open in Period</th></tr></thead><tbody>{rows.map((r) => <tr key={r.name}><td>{r.name}</td><td className="qa-business-number">{r.open}</td></tr>)}</tbody></table>;
 }
 
 function CycleRows({ dashboard, limit = 8 }: { dashboard: DashboardPayload; limit?: number }) {
   const rows = dashboard.cyclesByPassPctAsc.slice(0, limit);
   if (!rows.length) return <p>No cycle execution data is available for the selected scope.</p>;
-  return <table className="qa-business-table"><thead><tr><th>Cycle</th><th>Status</th><th>Pass %</th><th>Coverage</th><th>Cases</th></tr></thead><tbody>{rows.map((c) => <tr key={c.key}><td>{c.name}</td><td><StatusDot status={c.status} /></td><td>{c.passPct}%</td><td>{c.coverage}%</td><td>{c.total}</td></tr>)}</tbody></table>;
+  return <table className="qa-business-table"><thead><tr><th>Cycle</th><th>Status</th><th>Pass %</th><th>Coverage</th><th>Cases</th></tr></thead><tbody>{rows.map((c) => <tr key={c.key}><td>{c.name}</td><td><StatusDot status={c.status} /></td><td className="qa-business-number">{c.passPct}%</td><td className="qa-business-number">{c.coverage}%</td><td className="qa-business-number">{c.total}</td></tr>)}</tbody></table>;
 }
 
 function ProjectStatus({ dashboard }: { dashboard: DashboardPayload }) {
@@ -75,9 +81,31 @@ function ProjectStatus({ dashboard }: { dashboard: DashboardPayload }) {
   return <table className="qa-business-table"><thead><tr><th>Area</th><th>Status</th></tr></thead><tbody>{rows.map((r) => <tr key={r.area}><td>{r.area}</td><td><StatusDot status={r.status} /></td></tr>)}</tbody></table>;
 }
 
-export function ReportPrintContent({ dashboard, reportType, narrative, startDate, endDate }: ReportPrintContentProps) {
+function formatReportDate(value: string): string {
+  const d = new Date(`${value}T00:00:00`);
+  if (Number.isNaN(d.getTime())) return value;
+  return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+}
+
+function formatGeneratedAt(value: string | undefined): string {
+  if (!value) return '';
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toLocaleString('en-GB', {
+    timeZone: 'UTC',
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZoneName: 'short',
+  });
+}
+
+export function ReportPrintContent({ dashboard, reportType, narrative, startDate, endDate, title, subtitle, logoUrl, logoAlt }: ReportPrintContentProps) {
   const projectLabel = dashboard.scope.project && dashboard.scope.project !== 'all' ? projectDisplayName(dashboard.scope.project) : 'All Projects';
-  const sprintLabel = `${startDate} - ${endDate}`;
+  const sprintLabel = `${formatReportDate(startDate)} – ${formatReportDate(endDate)}`;
+  const generatedLabel = formatGeneratedAt(dashboard.meta.generatedAt);
   const failedOrBlocked = dashboard.overview.failed + dashboard.overview.blocked;
   const defectReport = isDefectReport(reportType);
   const cycleReport = reportType === 'cycles';
@@ -94,9 +122,53 @@ export function ReportPrintContent({ dashboard, reportType, narrative, startDate
 
   return (
     <div className="qa-print-page qa-print-document qa-business-report bg-white">
+      <div className="qa-business-tearstrip" />
       <div className="qa-business-header">
-        <h1>QA Sprint Report</h1>
-        <p>{sprintLabel} &nbsp;|&nbsp; {projectLabel} &nbsp;|&nbsp; {reportTypeLabel(reportType)}</p>
+        <div className="qa-business-header-title">
+          <p className="qa-business-header-eyebrow">{subtitle || 'Weekly QA sprint report'}</p>
+          <h1>{title || 'QA Sprint Report'}</h1>
+        </div>
+        <div className="qa-business-header-meta">
+          <div><b>Project</b> &nbsp;{projectLabel}</div>
+          <div><b>Period</b> &nbsp;{sprintLabel}</div>
+          <div><b>Scope</b> &nbsp;{reportTypeLabel(reportType)}</div>
+          {generatedLabel && <div><b>Generated</b> &nbsp;{generatedLabel}</div>}
+        </div>
+        {logoUrl && (
+          <div className="qa-business-header-logo">
+            <img
+              src={logoUrl}
+              alt={logoAlt || 'Report logo'}
+              onError={(event) => {
+                const img = event.currentTarget;
+                img.style.display = 'none';
+              }}
+            />
+          </div>
+        )}
+      </div>
+
+      <div className="qa-business-manifest">
+        <div className="qa-business-stub">
+          <p className="qa-business-stub-label">Total cases</p>
+          <p className="qa-business-stub-value qa-mono">{dashboard.overview.totalCases}</p>
+          <p className="qa-business-stub-sub">across {dashboard.cycles.length} cycles</p>
+        </div>
+        <div className="qa-business-stub">
+          <p className="qa-business-stub-label">Pass rate</p>
+          <p className="qa-business-stub-value qa-mono qa-business-green">{dashboard.overview.passRate}%</p>
+          <p className="qa-business-stub-sub">of executed cases</p>
+        </div>
+        <div className="qa-business-stub">
+          <p className="qa-business-stub-label">Open defects</p>
+          <p className="qa-business-stub-value qa-mono qa-business-red">{dashboard.defectBacklog.openTotal}</p>
+          <p className="qa-business-stub-sub">active in period</p>
+        </div>
+        <div className="qa-business-stub">
+          <p className="qa-business-stub-label">At-risk cycles</p>
+          <p className="qa-business-stub-value qa-mono qa-business-red">{dashboard.cycles.filter((c) => c.status === 'At Risk').length}</p>
+          <p className="qa-business-stub-sub">of {dashboard.cycles.length} total</p>
+        </div>
       </div>
 
       <div className="px-6 pb-6">
@@ -113,7 +185,12 @@ export function ReportPrintContent({ dashboard, reportType, narrative, startDate
         </Section>}
 
         {showExecution && <Section no={nextNo()} title="Test Execution Summary">
-          <table className="qa-business-table"><thead><tr><th>Total Test Cases</th><th>Executed</th><th>Pass Rate</th><th>Failed</th><th>Blocked</th></tr></thead><tbody><tr><td>{dashboard.overview.totalCases}</td><td>{dashboard.overview.executed}</td><td>{dashboard.overview.passRate}%</td><td>{dashboard.overview.failed}</td><td>{dashboard.overview.blocked}</td></tr></tbody></table>
+          <table className="qa-business-table"><thead><tr><th>Total Test Cases</th><th>Executed</th><th>Pass Rate</th><th>Failed</th><th>Blocked</th></tr></thead><tbody><tr><td className="qa-business-number">{dashboard.overview.totalCases}</td><td className="qa-business-number">{dashboard.overview.executed}</td><td className="qa-business-number">{dashboard.overview.passRate}%</td><td className="qa-business-number">{dashboard.overview.failed}</td><td className="qa-business-number">{dashboard.overview.blocked}</td></tr></tbody></table>
+          {dashboard.overview.resultMix.length > 0 && <div className="mt-3 qa-business-chart"><ResultDonut items={dashboard.overview.resultMix} total={dashboard.overview.totalCases} /></div>}
+        </Section>}
+
+        {showExecution && dashboard.overview.byMonth.length > 0 && <Section no={nextNo()} title="Executions by Month">
+          <div className="qa-business-chart"><StackedMonthChart data={dashboard.overview.byMonth} showTitle={false} /></div>
         </Section>}
 
         {showCycles && <Section no={nextNo()} title="Test Cycle Health"><CycleRows dashboard={dashboard} /></Section>}
