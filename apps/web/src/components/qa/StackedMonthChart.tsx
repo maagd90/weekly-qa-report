@@ -8,17 +8,19 @@ interface MonthData {
   fail: number;
 }
 
-export function StackedMonthChart({ data }: { data: MonthData[] }) {
+export function StackedMonthChart({ data, showTitle = true, maxMonths }: { data: MonthData[]; showTitle?: boolean; maxMonths?: number }) {
   if (!data.length) {
     return <div className="h-[210px] flex items-center justify-center text-qa-muted-light text-sm">No monthly data</div>;
   }
 
-  const maxTotal = Math.max(...data.map((m) => m.pass + m.blocked + m.fail), 1);
+  const visible = maxMonths && data.length > maxMonths ? data.slice(data.length - maxMonths) : data;
+  const truncated = visible.length < data.length;
+  const maxTotal = Math.max(...visible.map((m) => m.pass + m.blocked + m.fail), 1);
 
   return (
     <div>
       <div className="flex items-baseline justify-between mb-1">
-        <h3 className="font-spectral font-semibold text-base m-0">Executions by Month</h3>
+        {showTitle ? <h3 className="font-spectral font-semibold text-base m-0">Executions by Month</h3> : <span />}
         <div className="flex gap-3.5 flex-wrap">
           {[
             { label: 'Pass', color: QA.PASS },
@@ -32,8 +34,9 @@ export function StackedMonthChart({ data }: { data: MonthData[] }) {
           ))}
         </div>
       </div>
+      {truncated && <p className="text-[10.5px] text-qa-muted-light m-0 mb-2">Showing the most recent {visible.length} of {data.length} months.</p>}
       <div className="flex items-end gap-[26px] h-[210px] px-2.5 mt-4">
-        {data.map((m) => {
+        {visible.map((m) => {
           const total = m.pass + m.blocked + m.fail;
           const h = (v: number) => ({ height: `${(v / maxTotal) * 170}px` });
           return (
