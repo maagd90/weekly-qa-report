@@ -1,7 +1,7 @@
 const { spawn } = require('child_process');
 
 function normalizeArgs(args) {
-  if (!Array.isArray(args) || args.some((arg) => typeof arg !== 'string' || !arg.trim())) {
+  if (!Array.isArray(args) || args.length === 0 || args.some((arg) => typeof arg !== 'string' || !arg.trim())) {
     throw new TypeError('npm arguments must be a non-empty string array');
   }
   return args.map((arg) => arg.trim());
