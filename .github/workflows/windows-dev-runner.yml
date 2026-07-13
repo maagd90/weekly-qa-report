@@ -1,0 +1,52 @@
+name: Windows Dev Runner
+
+on:
+  push:
+    branches:
+      - fix/windows-dev-runner-spawn
+      - fix-runtime-project-data-rc2
+    paths:
+      - 'scripts/dev-runner.cjs'
+      - 'scripts/npm-spawn.cjs'
+      - 'scripts/__tests__/npm-spawn.test.cjs'
+      - 'package.json'
+      - '.github/workflows/windows-dev-runner.yml'
+  pull_request:
+    paths:
+      - 'scripts/dev-runner.cjs'
+      - 'scripts/npm-spawn.cjs'
+      - 'scripts/__tests__/npm-spawn.test.cjs'
+      - 'package.json'
+      - '.github/workflows/windows-dev-runner.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  npm-spawn:
+    name: Windows Node ${{ matrix.node }} npm spawn
+    runs-on: windows-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['20', '24']
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Use Node.js ${{ matrix.node }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+
+      - name: Show runtime versions
+        shell: pwsh
+        run: |
+          node --version
+          npm --version
+          Write-Host "ComSpec=$env:ComSpec"
+
+      - name: Verify Windows npm spawn contract
+        run: node scripts/__tests__/npm-spawn.test.cjs
