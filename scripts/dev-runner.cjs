@@ -2,8 +2,8 @@
 
 const fs = require('fs');
 const path = require('path');
-const { spawn } = require('child_process');
 const { clearGeneratedDevCache, envFlag } = require('./dev-cache.cjs');
+const { spawnNpm } = require('./npm-spawn.cjs');
 
 const ROOT = path.resolve(__dirname, '..');
 const runtimePath = path.join(ROOT, 'config', 'runtime.json');
@@ -119,11 +119,11 @@ describeOverride('PDF_PRINT_URL', pdfConfigured, pdfPrintUrl);
 if (browserPath) describeOverride('PUPPETEER_EXECUTABLE_PATH', browserConfigured, browserPath);
 else if (browserConfigured) console.warn(`[dev-runner] PUPPETEER_EXECUTABLE_PATH ignored because it does not exist locally: ${browserConfigured}`);
 
-const npmCommand = process.platform === 'win32' ? 'npm.cmd' : 'npm';
-const child = spawn(npmCommand, ['run', 'dev'], {
+const child = spawnNpm(['run', 'dev'], {
   cwd: ROOT,
   env,
   stdio: 'inherit',
+  windowsHide: false,
 });
 
 child.on('error', (error) => {
