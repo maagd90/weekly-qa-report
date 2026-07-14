@@ -6,6 +6,8 @@ const GENERATED_DEV_CACHE_FILES = Object.freeze([
   'raw-dataset.json',
   'dataset-fingerprint.txt',
   'dashboard-data.json',
+  'report.md',
+  'report-meta.json',
 ]);
 
 function envFlag(value) {
