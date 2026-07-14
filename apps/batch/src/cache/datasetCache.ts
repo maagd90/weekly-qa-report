@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
-import type { ApiFetchScope, Dataset } from '../types/dataset';
+import type { ApiFetchScope, Dataset, ExecutionRow } from '../types/dataset';
 import type { UserConnections } from '../types/connections';
 import { emptyDataset } from '../types/dataset';
 import { loadIntegrations, jiraConfigFromConnection, qmetryConfigFromConnection, configuredJiraProfiles } from '../config/loadIntegrations';
@@ -41,6 +41,31 @@ function qmetryProjectMatches(key: string | undefined, scope?: ApiFetchScope): b
   const selected = canonicalProjectOrUndefined(scope?.project);
   if (!selected) return true;
   return canonicalProjectKey(key) === selected;
+}
+
+function qmetryScopeAnchorDate(scope?: ApiFetchScope): string | null {
+  const endDate = scope?.endDate || '';
+  if (/^\d{4}-\d{2}-\d{2}$/.test(endDate)) return endDate;
+  const startDate = scope?.startDate || '';
+  return /^\d{4}-\d{2}-\d{2}$/.test(startDate) ? startDate : null;
+}
+
+function isQmetryProgressFallback(row: ExecutionRow): boolean {
+  return row.source === 'qmetry'
+    && row.executedAt === null
+    && /-PROGRESS-(PASS|FAIL|BLOCKED|NE|NA)-\d+$/i.test(row.caseKey);
+}
+
+/**
+ * QMetry aggregate progress rows have no testcase-level execution timestamp. The
+ * QMetry client has already selected the cycle using the requested API scope, so
+ * keep those synthetic rows inside the same window for downstream dashboard/PDF
+ * filtering instead of dropping the entire cycle by its unrelated last-updated date.
+ */
+export function anchorQmetryProgressRowsToScope(rows: ExecutionRow[], scope?: ApiFetchScope): ExecutionRow[] {
+  const anchorDate = qmetryScopeAnchorDate(scope);
+  if (!anchorDate) return rows;
+  return rows.map((row) => isQmetryProgressFallback(row) ? { ...row, updatedAt: anchorDate } : row);
 }
 
 function projectListLabel(keys?: string[]): string {
@@ -111,15 +136,16 @@ async function buildQmetryConnectionDataset(configDir: string, connections?: Use
       }
       const qmetryCfg = qmetryConfigFromConnection(conn);
       const { executions, error } = await fetchQmetryExecutions(qmetryCfg, apiScope);
+      const scopedExecutions = anchorQmetryProgressRowsToScope(executions, apiScope);
       const ds = emptyDataset();
-      ds.executions = executions;
+      ds.executions = scopedExecutions;
       ds.meta.integrations.qmetry = true;
       ds.meta.fetchedAt = new Date().toISOString();
       if (error) ds.meta.warnings.push(`[${conn.name}] ${error}`);
       if (apiScope?.startDate || apiScope?.endDate) ds.meta.sourceFiles.push(`qmetry-api:${conn.name}:overview-date-search:${apiScope.startDate || 'any'}:${apiScope.endDate || 'any'}`);
-      if (executions.length) {
-        ds.files.push({ name: `qmetry-api:${conn.name}`, ext: 'API', project: executions[0]?.project || conn.projectKey, rows: executions.length, status: 'parsed', detectedType: 'test-execution', source: 'qmetry-api' });
-        ds.projects = [...new Set(executions.map((e) => canonicalProjectKey(e.project)))];
+      if (scopedExecutions.length) {
+        ds.files.push({ name: `qmetry-api:${conn.name}`, ext: 'API', project: scopedExecutions[0]?.project || conn.projectKey, rows: scopedExecutions.length, status: 'parsed', detectedType: 'test-execution', source: 'qmetry-api' });
+        ds.projects = [...new Set(scopedExecutions.map((e) => canonicalProjectKey(e.project)))];
       }
       parts.push(ds);
     }
@@ -129,7 +155,9 @@ async function buildQmetryConnectionDataset(configDir: string, connections?: Use
       if (!qmetryProjectMatches(cfg.qmetry.projectKey, apiScope)) {
         parts.push(skippedLiveDataset('qmetry', `QMetry ${cfg.qmetry.projectKey}`, `QMetry connection skipped because selected project ${selected} does not match configured project ${canonicalProjectKey(cfg.qmetry.projectKey) || cfg.qmetry.projectKey || 'none'}.`));
       } else {
-        parts.push(await fetchQmetryDataset(cfg, apiScope));
+        const ds = await fetchQmetryDataset(cfg, apiScope);
+        ds.executions = anchorQmetryProgressRowsToScope(ds.executions, apiScope);
+        parts.push(ds);
       }
     }
   }
