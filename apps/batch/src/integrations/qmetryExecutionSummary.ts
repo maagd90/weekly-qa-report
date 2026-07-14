@@ -198,6 +198,321 @@ function parseChartObject(row: Record<string, unknown>): QmetryExecutionSummaryC
   return namedPoints;
 }
 
+interface ResultLookup {
+  aliases: Map<string, ExecutionResult>;
+  ordered: ExecutionResult[];
+}
+
+interface TabularColumn {
+  result: ExecutionResult | null;
+  assignee: string | null;
+  isAssigneeLabel: boolean;
+}
+
+function lookupKey(value: unknown): string {
+  return stringValue(value).toLowerCase().replace(/\s+/g, ' ').trim();
+}
+
+function scalarValues(value: unknown): unknown[] {
+  if (value === null || value === undefined) return [];
+  if (typeof value !== 'object') return [value];
+  if (Array.isArray(value)) return value.flatMap((item) => scalarValues(item));
+  const row = value as Record<string, unknown>;
+  const preferred = [
+    'id', 'key', 'value', 'name', 'label', 'title', 'displayName', 'columnName', 'field', 'dataIndex',
+    'column', 'columnId', 'header', 'text', 'type',
+    'executionResultId', 'executionResultName', 'resultId', 'resultName', 'statusId', 'statusName',
+    'userAccountId', 'accountId', 'assigneeId', 'assignee',
+  ];
+  return preferred.flatMap((key) => {
+    const nested = row[key];
+    return nested === null || nested === undefined || typeof nested === 'object' ? [] : [nested];
+  });
+}
+
+function buildResultLookup(value: unknown): ResultLookup {
+  const aliases = new Map<string, ExecutionResult>();
+  const ordered: ExecutionResult[] = [];
+  if (!Array.isArray(value)) return { aliases, ordered };
+  for (const definition of value) {
+    const candidates = scalarValues(definition);
+    const result = candidates.map(resultFromLabel).find((item): item is ExecutionResult => item !== null);
+    if (!result) continue;
+    ordered.push(result);
+    for (const candidate of candidates) {
+      const key = lookupKey(candidate);
+      if (key) aliases.set(key, result);
+    }
+  }
+  return { aliases, ordered };
+}
+
+function resultFromDefinition(value: unknown, lookup: ResultLookup): ExecutionResult | null {
+  const direct = resultFromLabel(value);
+  if (direct) return direct;
+  for (const candidate of scalarValues(value)) {
+    const parsed = resultFromLabel(candidate) ?? lookup.aliases.get(lookupKey(candidate));
+    if (parsed) return parsed;
+  }
+  return null;
+}
+
+function buildAssigneeLookup(value: unknown): Map<string, string> {
+  const lookup = new Map<string, string>();
+  const source = objectValue(value);
+  for (const [id, displayValue] of Object.entries(source)) {
+    const displayName = stringValue(displayValue) || id;
+    lookup.set(lookupKey(id), displayName);
+    lookup.set(lookupKey(displayName), displayName);
+  }
+  return lookup;
+}
+
+function assigneeFromValue(value: unknown, lookup: Map<string, string>): string {
+  for (const candidate of scalarValues(value)) {
+    const key = lookupKey(candidate);
+    if (key && lookup.has(key)) return lookup.get(key) as string;
+  }
+  const raw = stringValue(value);
+  return lookup.get(lookupKey(raw)) || raw;
+}
+
+function isAssigneeColumn(value: unknown): boolean {
+  return scalarValues(value).some((candidate) => /(^|\b)(assignee|tester|user|user account|executed by|account id)(\b|$)/i.test(stringValue(candidate)));
+}
+
+function tabularColumns(value: unknown, results: ResultLookup, assignees: Map<string, string>): TabularColumn[] {
+  if (!Array.isArray(value)) return [];
+  return value.map((column) => ({
+    result: resultFromDefinition(column, results),
+    assignee: assigneeFromValue(column, assignees) || null,
+    isAssigneeLabel: isAssigneeColumn(column),
+  }));
+}
+
+function rowAssignee(row: Record<string, unknown>, assignees: Map<string, string>): string {
+  const raw = row.userAccountId
+    ?? row.accountId
+    ?? row.assigneeId
+    ?? row.assigneeName
+    ?? row.assignee
+    ?? row.executionAssignee
+    ?? row.executedBy
+    ?? row.tester
+    ?? row.user;
+  const explicit = assigneeFromValue(raw, assignees);
+  if (explicit) return explicit;
+  for (const candidate of [row.key, row.id, row.column, row.name, row.label]) {
+    const resolved = assigneeFromValue(candidate, assignees);
+    if (resolved && assignees.has(lookupKey(resolved))) return resolved;
+  }
+  const fallback = assigneeFromRow(row);
+  return assigneeFromValue(fallback, assignees) || fallback;
+}
+
+function rowResult(row: Record<string, unknown>, results: ResultLookup): ExecutionResult | null {
+  return resultFromDefinition(
+    row.executionResultId
+      ?? row.resultId
+      ?? row.statusId
+      ?? row.executionResult
+      ?? row.result
+      ?? row.status
+      ?? row.executionResultName
+      ?? row.resultName
+      ?? row.statusName
+      ?? row.column
+      ?? row.key
+      ?? row.id
+      ?? row.name
+      ?? row.label,
+    results,
+  );
+}
+
+function tabularValueArray(row: Record<string, unknown>): unknown[] | null {
+  for (const key of ['data', 'values', 'cells', 'columns', 'counts', 'row', 'rows']) {
+    if (Array.isArray(row[key])) return row[key] as unknown[];
+  }
+  return null;
+}
+
+function countFromCell(value: unknown): number | null {
+  if (value && typeof value === 'object' && !Array.isArray(value)) return countFromRow(value as Record<string, unknown>);
+  return nonNegativeInteger(value);
+}
+
+function resultFromCell(value: unknown, results: ResultLookup): ExecutionResult | null {
+  const cell = objectValue(value);
+  return resultFromDefinition(
+    cell.executionResultId
+      ?? cell.resultId
+      ?? cell.statusId
+      ?? cell.columnId
+      ?? cell.key
+      ?? cell.executionResult
+      ?? cell.result
+      ?? cell.status
+      ?? cell.name
+      ?? cell.label,
+    results,
+  );
+}
+
+function countsFromResultObject(
+  row: Record<string, unknown>,
+  assignee: string,
+  results: ResultLookup,
+): QmetryExecutionSummaryCount[] {
+  const out: QmetryExecutionSummaryCount[] = [];
+  const containers = [row, objectValue(row.counts), objectValue(row.values), objectValue(row.results), objectValue(row.summary)];
+  for (const container of containers) {
+    for (const [key, value] of Object.entries(container)) {
+      const result = resultFromDefinition(key, results);
+      const count = nonNegativeInteger(value);
+      if (result && count !== null) out.push({ assignee: assignee || 'Unassigned', result, count });
+    }
+  }
+  return out;
+}
+
+function parseAssigneesAsRows(
+  rows: unknown[],
+  columns: TabularColumn[],
+  results: ResultLookup,
+  assignees: Map<string, string>,
+): QmetryExecutionSummaryCount[] {
+  const out: QmetryExecutionSummaryCount[] = [];
+  const resultColumnCount = columns.filter((column) => column.result).length;
+  for (const rawRow of rows) {
+    const rowObject = objectValue(rawRow);
+    const values = Array.isArray(rawRow) ? rawRow : tabularValueArray(rowObject);
+    let assignee = Array.isArray(rawRow) ? '' : rowAssignee(rowObject, assignees);
+
+    if (values) {
+      for (let index = 0; index < values.length; index++) {
+        if (columns[index]?.isAssigneeLabel) assignee = assigneeFromValue(values[index], assignees) || assignee;
+      }
+      if (!assignee) {
+        const candidate = values.find((value, index) => {
+          if (columns[index]?.result) return false;
+          return nonNegativeInteger(value) === null && Boolean(stringValue(value));
+        });
+        assignee = assigneeFromValue(candidate, assignees);
+      }
+
+      if (resultColumnCount) {
+        values.forEach((value, index) => {
+          const result = columns[index]?.result ?? resultFromCell(value, results);
+          const count = countFromCell(value);
+          if (result && count !== null) out.push({ assignee: assignee || 'Unassigned', result, count });
+        });
+      } else if (results.ordered.length) {
+        const valuesWithoutExplicitResults = values.filter((value) => !resultFromCell(value, results));
+        const numericValues = valuesWithoutExplicitResults.filter((value) => countFromCell(value) !== null);
+        if (valuesWithoutExplicitResults.length === values.length && numericValues.length === results.ordered.length) {
+          numericValues.forEach((value, index) => {
+            const count = countFromCell(value);
+            if (count !== null) out.push({ assignee: assignee || 'Unassigned', result: results.ordered[index], count });
+          });
+        }
+      }
+    }
+
+    if (!Array.isArray(rawRow)) {
+      out.push(...countsFromResultObject(rowObject, assignee || rowAssignee(rowObject, assignees), results));
+      const cells = tabularValueArray(rowObject);
+      if (cells && !resultColumnCount) {
+        for (const cellValue of cells) {
+          const result = resultFromCell(cellValue, results);
+          const count = countFromCell(cellValue);
+          if (result && count !== null) out.push({ assignee: assignee || 'Unassigned', result, count });
+        }
+      }
+    }
+  }
+  return out;
+}
+
+function parseAssigneesAsColumns(
+  rows: unknown[],
+  columns: TabularColumn[],
+  results: ResultLookup,
+  assignees: Map<string, string>,
+): QmetryExecutionSummaryCount[] {
+  const out: QmetryExecutionSummaryCount[] = [];
+  const recognizedAssignees = columns.filter((column) => column.assignee && assignees.has(lookupKey(column.assignee))).length;
+  if (!recognizedAssignees) return out;
+
+  rows.forEach((rawRow, rowIndex) => {
+    const rowObject = objectValue(rawRow);
+    const values = Array.isArray(rawRow) ? rawRow : tabularValueArray(rowObject);
+    if (!values) return;
+    let result = Array.isArray(rawRow) ? null : rowResult(rowObject, results);
+    let offset = 0;
+    if (!result && values.length === columns.length + 1) {
+      result = resultFromDefinition(values[0], results);
+      if (result) offset = 1;
+    }
+    if (!result) {
+      result = values.map((value) => resultFromCell(value, results) ?? resultFromDefinition(value, results))
+        .find((item): item is ExecutionResult => item !== null) ?? results.ordered[rowIndex] ?? null;
+    }
+    if (!result) return;
+    columns.forEach((column, columnIndex) => {
+      if (!column.assignee || !assignees.has(lookupKey(column.assignee))) return;
+      const count = countFromCell(values[columnIndex + offset]);
+      if (count !== null) out.push({ assignee: column.assignee, result: result as ExecutionResult, count });
+    });
+  });
+  return out;
+}
+
+function parseResultColumnsAsSeries(
+  rawColumns: unknown[],
+  rows: unknown[],
+  results: ResultLookup,
+  assignees: Map<string, string>,
+): QmetryExecutionSummaryCount[] {
+  const out: QmetryExecutionSummaryCount[] = [];
+  rawColumns.forEach((rawColumn, columnIndex) => {
+    const columnObject = objectValue(rawColumn);
+    const result = resultFromDefinition(rawColumn, results) ?? results.ordered[columnIndex] ?? null;
+    if (!result) return;
+    const values = Array.isArray(rawColumn) ? rawColumn : tabularValueArray(columnObject);
+    if (values?.length === rows.length) {
+      values.forEach((value, rowIndex) => {
+        const rawAssignee = Array.isArray(rows[rowIndex]) ? (rows[rowIndex] as unknown[])[0] : rows[rowIndex];
+        const assignee = rawAssignee && typeof rawAssignee === 'object'
+          ? rowAssignee(rawAssignee as Record<string, unknown>, assignees)
+          : assigneeFromValue(rawAssignee, assignees);
+        const count = countFromCell(value);
+        if (count !== null) out.push({ assignee: assignee || 'Unassigned', result, count });
+      });
+      return;
+    }
+    for (const [key, value] of Object.entries(columnObject)) {
+      const assignee = assignees.get(lookupKey(key));
+      const count = nonNegativeInteger(value);
+      if (assignee && count !== null) out.push({ assignee, result, count });
+    }
+  });
+  return out;
+}
+
+function parseQmetryTabularObject(row: Record<string, unknown>): QmetryExecutionSummaryCount[][] {
+  if (!Array.isArray(row.rows) || !Array.isArray(row.column)) return [];
+  const results = buildResultLookup(row.executionResults);
+  const assignees = buildAssigneeLookup(row.userAccountIdDisplayNames);
+  const columns = tabularColumns(row.column, results, assignees);
+  const candidates = [
+    parseAssigneesAsRows(row.rows, columns, results, assignees),
+    parseAssigneesAsColumns(row.rows, columns, results, assignees),
+    parseResultColumnsAsSeries(row.column, row.rows, results, assignees),
+  ];
+  return candidates.filter((candidate) => candidate.length > 0);
+}
+
 function collectCandidates(value: unknown, depth = 0): QmetryExecutionSummaryCount[][] {
   if (depth > 8 || value === null || value === undefined) return [];
   const candidates: QmetryExecutionSummaryCount[][] = [];
@@ -209,10 +524,32 @@ function collectCandidates(value: unknown, depth = 0): QmetryExecutionSummaryCou
   }
   if (typeof value !== 'object') return candidates;
   const row = value as Record<string, unknown>;
+  candidates.push(...parseQmetryTabularObject(row));
   const chart = parseChartObject(row);
   if (chart.length) candidates.push(chart);
   for (const nested of Object.values(row)) candidates.push(...collectCandidates(nested, depth + 1));
   return candidates;
+}
+
+export function describeQmetryExecutionSummaryShape(value: unknown): string {
+  const top = objectValue(value);
+  const data = objectValue(top.data);
+  const table = Object.keys(data).length ? data : top;
+  const columns = Array.isArray(table.column) ? table.column : [];
+  const rows = Array.isArray(table.rows) ? table.rows : [];
+  const firstColumn = columns[0];
+  const firstRow = rows[0];
+  const columnShape = firstColumn && typeof firstColumn === 'object'
+    ? `object(${Object.keys(objectValue(firstColumn)).slice(0, 8).join('|') || 'no keys'})`
+    : typeof firstColumn;
+  const rowShape = Array.isArray(firstRow)
+    ? `array(${firstRow.length})`
+    : firstRow && typeof firstRow === 'object'
+      ? `object(${Object.keys(objectValue(firstRow)).slice(0, 8).join('|') || 'no keys'})`
+      : typeof firstRow;
+  const executionResults = Array.isArray(table.executionResults) ? table.executionResults.length : 0;
+  const displayNames = Object.keys(objectValue(table.userAccountIdDisplayNames)).length;
+  return `top=${Object.keys(top).slice(0, 8).join('|') || 'none'}; data=${Object.keys(table).slice(0, 8).join('|') || 'none'}; columns=${columns.length}:${columnShape}; rows=${rows.length}:${rowShape}; executionResults=${executionResults}; displayNames=${displayNames}`;
 }
 
 function consolidate(counts: QmetryExecutionSummaryCount[]): QmetryExecutionSummaryCount[] {

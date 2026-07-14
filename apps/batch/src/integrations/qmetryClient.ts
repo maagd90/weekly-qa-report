@@ -5,6 +5,7 @@ import { getBasicAuth, getEncodedAuth } from '../config/loadIntegrations';
 import { fetchWithTimeout, safeApiError, describeFetchError } from '../utils/fetchWithTimeout';
 import { mapExecutionResult, projectFromKey, sanitizeText } from '../utils/excel';
 import {
+  describeQmetryExecutionSummaryShape,
   executionRowsFromSummary,
   executionSummaryQql,
   parseQmetryExecutionSummary,
@@ -352,8 +353,8 @@ export async function fetchQmetryExecutionSummaryByAssignee(
   if (!response.ok) return { executions: [], total: 0, error: response.error || 'QMetry execution summary request failed' };
   const parsed = parseQmetryExecutionSummary(response.data);
   if (!parsed) {
-    const keys = Object.keys(objectValue(response.data)).slice(0, 12).join(', ') || 'none';
-    return { executions: [], total: 0, error: `QMetry execution summary returned an unsupported response shape (top-level keys: ${keys}). Detailed cycle data was kept.` };
+    const shape = describeQmetryExecutionSummaryShape(response.data);
+    return { executions: [], total: 0, error: `QMetry execution summary returned an unsupported response shape (${shape}). Detailed cycle data was kept.` };
   }
   return {
     executions: executionRowsFromSummary(parsed, cfg.projectKey, scope.startDate, scope.endDate),
@@ -578,7 +579,7 @@ export async function fetchQmetryExecutions(cfg: QmetryIntegrationConfig, scope?
   const summary = await fetchQmetryExecutionSummaryByAssignee(cfg, scope);
   const warnings: string[] = [];
   if (summary.error) warnings.push(`QMetry execution summary unavailable; detailed cycle fallback used: ${summary.error}`);
-  else if (summary.executions.length) warnings.push(`QMetry execution-level summary applied for ${scope?.startDate}..${scope?.endDate} using execution.executedon and latest executions only.`);
+  else if (summary.executions.length) warnings.push(`QMetry execution-level summary applied for ${scope?.startDate}..${scope?.endDate}: ${summary.total} result(s), using execution.executedon and latest executions only.`);
 
   let cycles: QmetryCycleSummary[] = cfg.cycleIds.map((id) => ({ id, key: id, name: id }));
   if (!cycles.length && cfg.projectId) {

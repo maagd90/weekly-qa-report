@@ -24,7 +24,7 @@ export { buildDataset, loadRawDataset, computeFingerprint, loadFingerprint, save
 export { canonicalProjectKey, canonicalProjectOrUndefined, sameProjectKey, uniqueCanonicalProjects } from './projects/projectKey';
 export { fetchJiraIssues } from './integrations/jiraClient';
 export { fetchQmetryExecutions, fetchQmetryExecutionSummaryByAssignee, fetchProjectCycles, fetchProjectFolders } from './integrations/qmetryClient';
-export { parseQmetryExecutionSummary, executionSummaryQql, executionRowsFromSummary } from './integrations/qmetryExecutionSummary';
+export { parseQmetryExecutionSummary, describeQmetryExecutionSummaryShape, executionSummaryQql, executionRowsFromSummary } from './integrations/qmetryExecutionSummary';
 export { fetchFolderCycleHealth } from './integrations/qmetryCycleHealth';
 export { searchQmetryTestCycles, searchQmetryFolders } from './integrations/qmetryClient';
 export type { QmetryCycleHealthSummary, QmetryFolderSummary } from './integrations/qmetryClient';

@@ -40,11 +40,29 @@ async function testExecutionSummaryUsesActualExecutionDateQql(): Promise<void> {
     calls.push(call);
     if (!url.includes('/gadgets/TESTCASE_EXECUTION_SUMMARY_BY_ASSIGNEE')) return jsonResponse({ errorMessage: `Unexpected URL ${url}` }, 404);
     return jsonResponse({
-      categories: ['Pass', 'Fail', 'Blocked', 'Not Executed'],
-      series: [
-        { name: 'Muhammad Annus', data: [100, 2, 3, 0] },
-        { name: 'Second Tester', data: [8, 1, 0, 0] },
-      ],
+      data: {
+        column: [
+          { field: 'userAccountId', label: 'Assignee' },
+          { id: 176, label: 'Pass' },
+          { id: 173, label: 'Fail' },
+          { id: 172, label: 'Blocked' },
+          { id: 175, label: 'Not Executed' },
+        ],
+        rows: [
+          ['JIRAUSER31341', 100, 2, 3, 0],
+          ['JIRAUSER31789', 8, 1, 0, 0],
+        ],
+        userAccountIdDisplayNames: {
+          JIRAUSER31341: 'Muhammad Annus',
+          JIRAUSER31789: 'Second Tester',
+        },
+        executionResults: [
+          { id: 172, name: 'Blocked' },
+          { id: 173, name: 'Fail' },
+          { id: 175, name: 'Not Executed' },
+          { id: 176, name: 'Pass' },
+        ],
+      },
     });
   }) as typeof fetch;
 
@@ -89,8 +107,113 @@ async function testExecutionSummaryUsesActualExecutionDateQql(): Promise<void> {
   });
   assert.equal(points?.total, 6, 'Highcharts-style named points should be recognized');
 
+  const chart = parseQmetryExecutionSummary({
+    categories: ['Pass', 'Fail', 'Blocked', 'Not Executed'],
+    series: [
+      { name: 'Muhammad Annus', data: [100, 2, 3, 0] },
+      { name: 'Second Tester', data: [8, 1, 0, 0] },
+    ],
+  });
+  assert.equal(chart?.total, 114, 'chart-oriented gadget responses should remain supported');
+
   const empty = parseQmetryExecutionSummary({ categories: ['Pass', 'Fail'], series: [{ name: 'Nobody', data: [0, 0] }] });
   assert.equal(empty?.total, 0, 'a recognized zero-result response must remain authoritative');
+
+  const emiratesRows = parseQmetryExecutionSummary({
+    data: {
+      column: [
+        { field: 'userAccountId', label: 'Assignee' },
+        { id: 176, label: 'Pass' },
+        { id: 173, label: 'Fail' },
+        { id: 172, label: 'Blocked' },
+        { id: 175, label: 'Not Executed' },
+      ],
+      rows: [
+        ['JIRAUSER31341', 100, 2, 3, 0],
+        ['JIRAUSER31789', 8, 1, 0, 0],
+      ],
+      userAccountIdDisplayNames: {
+        JIRAUSER31341: 'Muhammad Annus',
+        JIRAUSER31789: 'Second Tester',
+      },
+      executionResults: [
+        { id: 172, name: 'Blocked' },
+        { id: 173, name: 'Fail' },
+        { id: 175, name: 'Not Executed' },
+        { id: 176, name: 'Pass' },
+      ],
+    },
+  });
+  assert.equal(emiratesRows?.total, 114, 'Emirates tabular response with assignees as rows should be recognized');
+  assert.equal(emiratesRows?.counts.find((row) => row.assignee === 'Muhammad Annus' && row.result === 'PASS')?.count, 100);
+
+  const emiratesColumns = parseQmetryExecutionSummary({
+    data: {
+      column: ['JIRAUSER31341', 'JIRAUSER31789'],
+      rows: [
+        [100, 8],
+        [2, 1],
+        [3, 0],
+        [0, 0],
+      ],
+      userAccountIdDisplayNames: {
+        JIRAUSER31341: 'Muhammad Annus',
+        JIRAUSER31789: 'Second Tester',
+      },
+      executionResults: [
+        { id: 176, name: 'Pass' },
+        { id: 173, name: 'Fail' },
+        { id: 172, name: 'Blocked' },
+        { id: 175, name: 'Not Executed' },
+      ],
+    },
+  });
+  assert.equal(emiratesColumns?.total, 114, 'Emirates tabular response with assignees as columns should be recognized');
+  assert.equal(emiratesColumns?.counts.find((row) => row.assignee === 'Second Tester' && row.result === 'PASS')?.count, 8);
+
+  const emiratesObjectRows = parseQmetryExecutionSummary({
+    data: {
+      column: [{ field: 'userAccountId' }, { field: '176' }, { field: '173' }],
+      rows: [{ userAccountId: 'JIRAUSER31341', 176: 100, 173: 2 }],
+      userAccountIdDisplayNames: { JIRAUSER31341: 'Muhammad Annus' },
+      executionResults: [{ id: 176, name: 'Pass' }, { id: 173, name: 'Fail' }],
+    },
+  });
+  assert.equal(emiratesObjectRows?.total, 102, 'Emirates object rows keyed by execution-result ID should be recognized');
+  assert.ok(emiratesObjectRows?.counts.every((row) => row.assignee === 'Muhammad Annus'));
+
+  const emiratesNestedRows = parseQmetryExecutionSummary({
+    data: {
+      column: ['JIRAUSER31341'],
+      rows: [{
+        column: 'JIRAUSER31341',
+        rows: [
+          { executionResultId: 176, count: 100 },
+          { executionResultId: 173, count: 2 },
+        ],
+      }],
+      userAccountIdDisplayNames: { JIRAUSER31341: 'Muhammad Annus' },
+      executionResults: [{ id: 176, name: 'Pass' }, { id: 173, name: 'Fail' }],
+    },
+  });
+  assert.equal(emiratesNestedRows?.total, 102, 'nested tabular cells should resolve result IDs without double counting');
+
+  const emiratesColumnSeries = parseQmetryExecutionSummary({
+    data: {
+      column: [
+        { executionResultId: 176, data: [100, 8] },
+        { executionResultId: 173, data: [2, 1] },
+      ],
+      rows: ['JIRAUSER31341', 'JIRAUSER31789'],
+      userAccountIdDisplayNames: {
+        JIRAUSER31341: 'Muhammad Annus',
+        JIRAUSER31789: 'Second Tester',
+      },
+      executionResults: [{ id: 176, name: 'Pass' }, { id: 173, name: 'Fail' }],
+    },
+  });
+  assert.equal(emiratesColumnSeries?.total, 111, 'result columns containing per-assignee series should be recognized');
+  assert.equal(emiratesColumnSeries?.counts.find((row) => row.assignee === 'Second Tester' && row.result === 'PASS')?.count, 8);
 }
 
 function requestBody(call: FetchCall): Record<string, unknown> {
