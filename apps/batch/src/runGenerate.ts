@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import type { ApiFetchScope, DashboardPayload, GenerateParams, GenerateResult } from './types/dataset';
-import { buildDataset, computeFingerprint, loadFingerprint, loadRawDataset, saveRawDataset } from './cache/datasetCache';
+import { buildDataset, computeFingerprint } from './cache/datasetCache';
 import { buildDashboardPayload } from './export/buildDashboardPayload';
 import { hasDashboardMetrics, noMetricsForScopeMessage } from './export/reportMetrics';
 import { generateReportFromDataset, resolveReportLlmConfig } from './ai/reportWriter';
@@ -23,9 +23,30 @@ function removeIfExists(filePath: string): void {
   if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
 }
 
-function clearStaleReportFiles(reportPath: string, metaPath: string): void {
-  removeIfExists(reportPath);
-  removeIfExists(metaPath);
+function clearStaleReportFiles(...paths: string[]): void {
+  paths.forEach(removeIfExists);
+}
+
+function loadReportDataset(rawPath: string): import('./types/dataset').Dataset | null {
+  if (!fs.existsSync(rawPath)) return null;
+  try { return JSON.parse(fs.readFileSync(rawPath, 'utf8')) as import('./types/dataset').Dataset; } catch { return null; }
+}
+
+function loadReportFingerprint(fingerprintPath: string): string | null {
+  return fs.existsSync(fingerprintPath) ? fs.readFileSync(fingerprintPath, 'utf8').trim() : null;
+}
+
+function saveReportDataset(rawPath: string, fingerprintPath: string, dataset: import('./types/dataset').Dataset, fingerprint: string): void {
+  fs.writeFileSync(rawPath, JSON.stringify(dataset, null, 2));
+  fs.writeFileSync(fingerprintPath, fingerprint);
+}
+
+function reportRowCounts(payload: DashboardPayload): { executions: number; issues: number; uat: number } {
+  return {
+    executions: payload.overview.totalCases,
+    issues: payload.storyBug.story + payload.storyBug.bug,
+    uat: payload.uat?.total || 0,
+  };
 }
 
 function sanitizeParamsForMeta(params: GenerateParams): GenerateParams {
@@ -61,10 +82,11 @@ export async function runGenerate(params: GenerateParams): Promise<GenerateResul
   fs.mkdirSync(inputDir, { recursive: true });
   fs.mkdirSync(outputDir, { recursive: true });
 
-  const dashboardPath = path.join(outputDir, 'dashboard-data.json');
+  const dashboardPath = path.join(outputDir, 'report-dashboard.json');
   const reportPath = path.join(outputDir, 'report.md');
   const metaPath = path.join(outputDir, 'report-meta.json');
-  const rawPath = path.join(outputDir, 'raw-dataset.json');
+  const rawPath = path.join(outputDir, 'report-raw-dataset.json');
+  const fingerprintPath = path.join(outputDir, 'report-dataset-fingerprint.txt');
 
   const project = canonicalProjectOrUndefined(params.project);
   const filterParams = { startDate: params.startDate, endDate: params.endDate, search: params.search, result: params.result, project };
@@ -72,41 +94,37 @@ export async function runGenerate(params: GenerateParams): Promise<GenerateResul
   const buildOptions = { apiScope, liveSync: true, includeFiles: true };
 
   const fingerprint = computeFingerprint(inputDir, configDir, params.connections, buildOptions);
-  const cachedFingerprint = loadFingerprint(outputDir);
+  const cachedFingerprint = loadReportFingerprint(fingerprintPath);
 
   let dataset;
   try {
-    const cached = loadRawDataset(outputDir);
+    const cached = loadReportDataset(rawPath);
     const forceLiveBuild = hasBrowserConnections(params) || cachedFingerprint !== fingerprint;
     dataset = forceLiveBuild ? await buildDataset(inputDir, configDir, params.connections, buildOptions) : (cached || await buildDataset(inputDir, configDir, params.connections, buildOptions));
   } catch (err) {
-    clearStaleReportFiles(reportPath, metaPath);
+    clearStaleReportFiles(dashboardPath, reportPath, metaPath, rawPath, fingerprintPath);
     return { ok: false, filesParsed: 0, rowCounts: {}, warnings: [], paths: { dashboard: '', report: '', meta: '', raw: '' }, error: (err as Error).message };
   }
 
   const fileCount = discoverInputFiles(inputDir).length;
   const totalRows = dataset.executions.length + dataset.issues.length + dataset.uat.length;
   if (totalRows === 0) {
-    clearStaleReportFiles(reportPath, metaPath);
+    clearStaleReportFiles(dashboardPath, reportPath, metaPath, rawPath, fingerprintPath);
     return { ok: false, filesParsed: fileCount, rowCounts: {}, warnings: dataset.meta.warnings, paths: { dashboard: '', report: '', meta: '', raw: '' }, error: 'No data from APIs or input files. Configure Settings/API connections or stage Excel files.' };
   }
 
-  saveRawDataset(outputDir, dataset, fingerprint);
+  saveReportDataset(rawPath, fingerprintPath, dataset, fingerprint);
 
   const payload = buildDashboardPayload(dataset, filterParams);
-  // dashboard-data.json is a cold-start fallback. Keep it full-scope so generating a
-  // scoped report does not poison the fallback cache with one project/date slice.
-  const isScoped = Boolean(filterParams.project || filterParams.startDate || filterParams.endDate);
-  const snapshotPayload = isScoped ? buildDashboardPayload(dataset, {}) : payload;
-  fs.writeFileSync(dashboardPath, JSON.stringify(snapshotPayload, null, 2));
+  const counts = reportRowCounts(payload);
 
   if (!hasDashboardMetrics(payload)) {
-    clearStaleReportFiles(reportPath, metaPath);
+    clearStaleReportFiles(dashboardPath, reportPath, metaPath);
     const message = noMetricsForScopeMessage({ project, startDate: params.startDate, endDate: params.endDate, dataset });
     return {
       ok: false,
       filesParsed: fileCount,
-      rowCounts: { executions: dataset.executions.length, issues: dataset.issues.length, uat: dataset.uat.length },
+      rowCounts: counts,
       warnings: [...dataset.meta.warnings, message],
       paths: { dashboard: dashboardPath, report: '', meta: '', raw: rawPath },
       payload,
@@ -114,24 +132,34 @@ export async function runGenerate(params: GenerateParams): Promise<GenerateResul
     };
   }
 
+  fs.writeFileSync(dashboardPath, JSON.stringify(payload, null, 2));
+  const baseReportMeta = {
+    generatedAt: payload.meta.generatedAt,
+    params: sanitizeParamsForMeta({ ...params, project }),
+    toolCalls: [] as { toolName: string; rowCount: number }[],
+  };
+  fs.writeFileSync(metaPath, JSON.stringify(baseReportMeta, null, 2));
+
   const llmConfig = resolveReportLlmConfig(params, configDir, params.apiKey);
   if (!llmConfig.apiKey) {
-    clearStaleReportFiles(reportPath, metaPath);
-    return { ok: true, filesParsed: fileCount, rowCounts: { executions: dataset.executions.length, issues: dataset.issues.length, uat: dataset.uat.length }, warnings: [...dataset.meta.warnings, `${envKeyForProvider(llmConfig.provider)} not set — narrative skipped for ${LLM_PROVIDER_LABELS[llmConfig.provider]}`], paths: { dashboard: dashboardPath, report: '', meta: '', raw: rawPath }, payload };
+    removeIfExists(reportPath);
+    return { ok: true, filesParsed: fileCount, rowCounts: counts, warnings: [...dataset.meta.warnings, `${envKeyForProvider(llmConfig.provider)} not set — narrative skipped for ${LLM_PROVIDER_LABELS[llmConfig.provider]}`], paths: { dashboard: dashboardPath, report: '', meta: metaPath, raw: rawPath }, payload, report: { markdown: '', meta: baseReportMeta } };
   }
 
   try {
     const report = await generateReportFromDataset(dataset, { ...params, project }, llmConfig.apiKey, filterParams);
-    const reportMeta = { generatedAt: new Date().toISOString(), params: sanitizeParamsForMeta({ ...params, project }), toolCalls: report.toolCalls, llm: report.llm };
+    const reportMeta = { ...baseReportMeta, toolCalls: report.toolCalls, llm: report.llm };
     fs.writeFileSync(reportPath, report.markdown);
     fs.writeFileSync(metaPath, JSON.stringify(reportMeta, null, 2));
-    return { ok: true, filesParsed: fileCount, rowCounts: { executions: dataset.executions.length, issues: dataset.issues.length, uat: dataset.uat.length }, warnings: dataset.meta.warnings, paths: { dashboard: dashboardPath, report: reportPath, meta: metaPath, raw: rawPath }, payload, report: { markdown: report.markdown, meta: reportMeta } };
+    return { ok: true, filesParsed: fileCount, rowCounts: counts, warnings: dataset.meta.warnings, paths: { dashboard: dashboardPath, report: reportPath, meta: metaPath, raw: rawPath }, payload, report: { markdown: report.markdown, meta: reportMeta } };
   } catch (err) {
-    clearStaleReportFiles(reportPath, metaPath);
+    removeIfExists(reportPath);
     const msg = (err as Error).message;
     const isConn = /connection error|fetch failed|ECONNREFUSED|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|network|socket/i.test(msg);
     const hint = isConn ? ` — could not reach ${LLM_PROVIDER_LABELS[llmConfig.provider]}; verify network access and ${envKeyForProvider(llmConfig.provider)} in Settings or config/runtime.json.` : '';
-    return { ok: true, filesParsed: fileCount, rowCounts: { executions: dataset.executions.length, issues: dataset.issues.length, uat: dataset.uat.length }, warnings: [...dataset.meta.warnings, `Narrative generation failed: ${msg}${hint}`], paths: { dashboard: dashboardPath, report: '', meta: '', raw: rawPath }, payload, error: msg };
+    const reportMeta = { ...baseReportMeta, narrativeError: msg };
+    fs.writeFileSync(metaPath, JSON.stringify(reportMeta, null, 2));
+    return { ok: true, filesParsed: fileCount, rowCounts: counts, warnings: [...dataset.meta.warnings, `Narrative generation failed: ${msg}${hint}`], paths: { dashboard: dashboardPath, report: '', meta: metaPath, raw: rawPath }, payload, report: { markdown: '', meta: reportMeta }, error: msg };
   }
 }
 

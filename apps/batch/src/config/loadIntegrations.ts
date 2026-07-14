@@ -6,6 +6,7 @@ import { canonicalProjectKey, uniqueCanonicalProjects } from '../projects/projec
 const JIRA_SEARCH_PATH = '/rest/api/2/search';
 const QMETRY_TEST_CYCLES_SEARCH_PATH = '/testcycles/search';
 const QMETRY_TEST_CASE_FIELDS = 'seqNo,key,versionNo,summary,priority,status,environment,executionResult,executionAssignee,build,updated';
+const QMETRY_EXECUTION_SUMMARY_PATH = '/gadgets/TESTCASE_EXECUTION_SUMMARY_BY_ASSIGNEE';
 
 const DEFAULT_JIRA_FIELDS = [
   'summary', 'description', 'assignee', 'status', 'priority', 'issuetype',
@@ -57,6 +58,8 @@ export interface QmetryIntegrationConfig {
   cycleIds: string[];
   pageSize: number;
   maxPages: number;
+  executionSummaryEnabled?: boolean;
+  executionSummaryPath?: string;
 }
 
 export interface IntegrationsConfig {
@@ -129,6 +132,8 @@ const DEFAULTS: IntegrationsConfig = {
     cycleIds: [],
     pageSize: 50,
     maxPages: 200,
+    executionSummaryEnabled: true,
+    executionSummaryPath: QMETRY_EXECUTION_SUMMARY_PATH,
   },
 };
 
@@ -164,6 +169,8 @@ function mergeQmetry(raw: Partial<QmetryIntegrationConfig> | undefined): QmetryI
     testCaseFields: cleanQmetryTestCaseFields(cfg.testCaseFields),
     cycleIds: Array.isArray(cfg.cycleIds) ? cfg.cycleIds : [],
     usePostSearch: true,
+    executionSummaryEnabled: cfg.executionSummaryEnabled !== false,
+    executionSummaryPath: cfg.executionSummaryPath || QMETRY_EXECUTION_SUMMARY_PATH,
   };
 }
 
@@ -348,6 +355,8 @@ export function qmetryConfigFromConnection(conn: QmetryConnectionInput): QmetryI
     testCasesSearchBody: null,
     testCaseFields: cleanQmetryTestCaseFields((conn as unknown as Partial<QmetryIntegrationConfig>).testCaseFields || DEFAULTS.qmetry.testCaseFields),
     usePostSearch: true,
+    executionSummaryEnabled: (conn as unknown as Partial<QmetryIntegrationConfig>).executionSummaryEnabled !== false,
+    executionSummaryPath: (conn as unknown as Partial<QmetryIntegrationConfig>).executionSummaryPath || QMETRY_EXECUTION_SUMMARY_PATH,
   };
 }
 

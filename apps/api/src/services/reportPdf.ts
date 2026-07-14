@@ -129,13 +129,14 @@ function printBaseCandidates(): string[] {
   return [...new Set(values)];
 }
 
-function buildPrintUrl(baseUrl: string, startDate: string, endDate: string, reportType: string, kpiStyle: string, project: string | undefined, branding: ReportBrandingPayload | undefined, inlineLogo: InlineLogoAsset | null): string {
+function buildPrintUrl(baseUrl: string, startDate: string, endDate: string, reportType: string, kpiStyle: string, project: string | undefined, branding: ReportBrandingPayload | undefined, inlineLogo: InlineLogoAsset | null, reportId?: string): string {
   const qs = new URLSearchParams({ startDate, endDate, reportType, kpiStyle });
   if (project && project !== 'all') qs.set('project', project);
   if (inlineLogo) qs.set('logoUrl', INLINE_LOGO_PATH); else if (branding?.logoUrl) qs.set('logoUrl', branding.logoUrl);
   if (branding?.logoAlt) qs.set('logoAlt', branding.logoAlt);
   if (branding?.title) qs.set('title', branding.title);
   if (branding?.subtitle) qs.set('subtitle', branding.subtitle);
+  if (reportId) qs.set('reportId', reportId);
   return `${baseUrl}?${qs.toString()}`;
 }
 
@@ -159,7 +160,7 @@ async function renderPdfPage(page: Page, url: string, gotoTimeout: number, selec
   return Buffer.from(pdf);
 }
 
-export async function generateReportPdf(startDate: string, endDate: string, reportType: string, kpiStyle: string, project?: string, branding?: ReportBrandingPayload): Promise<Buffer> {
+export async function generateReportPdf(startDate: string, endDate: string, reportType: string, kpiStyle: string, project?: string, branding?: ReportBrandingPayload, reportId?: string): Promise<Buffer> {
   const totalTimeout = renderTimeoutMs();
   const gotoTimeout = Math.floor(totalTimeout * 0.6);
   const selectorTimeout = Math.floor(totalTimeout * 0.35);
@@ -172,7 +173,7 @@ export async function generateReportPdf(startDate: string, endDate: string, repo
   try {
     const browser = await getBrowser(executablePath);
     for (let i = 0; i < bases.length; i++) {
-      const url = buildPrintUrl(bases[i], startDate, endDate, reportType, kpiStyle, project, branding, inlineLogo);
+      const url = buildPrintUrl(bases[i], startDate, endDate, reportType, kpiStyle, project, branding, inlineLogo, reportId);
       let page: Page | null = null;
       try { page = await browser.newPage(); return await renderPdfPage(page, url, gotoTimeout, selectorTimeout, inlineLogo); }
       catch (err) { lastErr = err; pdfError('print URL failed', err, { url }); if (i >= bases.length - 1 || !shouldTryNextPrintUrl(err)) throw err; }

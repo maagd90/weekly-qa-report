@@ -13,6 +13,18 @@ export interface ExecutionRow {
   executedAt: string | null;
   updatedAt: string | null;
   source: DataSource;
+  /**
+   * True when this row represents one counted execution from QMetry's
+   * execution-level summary gadget rather than a testcase/cycle detail row.
+   * Summary rows are authoritative for overview/result/tester metrics, but are
+   * deliberately excluded from cycle-health breakdowns.
+   */
+  summaryOnly?: boolean;
+  /** Zero-count sentinel used to suppress unsafe detailed fallbacks. */
+  summaryMarker?: boolean;
+  /** Exact date window used by QMetry when producing a summary-only row. */
+  summaryScopeStart?: string;
+  summaryScopeEnd?: string;
 }
 
 export interface IssueRow {

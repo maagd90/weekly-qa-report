@@ -38,7 +38,7 @@ function AppContent() {
     ...defaultPeriod,
     project: storedProject,
   };
-  const { data: initialDashboard, isLoading, refetch } = useQuery<DashboardPayload | null>({
+  const { data: initialDashboard, isLoading } = useQuery<DashboardPayload | null>({
     queryKey: ['dashboard-init', storedProject || 'all', defaultPeriod.startDate, defaultPeriod.endDate],
     queryFn: () => batchApi.getDashboard(initialFilter),
     retry: false,
@@ -95,11 +95,6 @@ function AppContent() {
 
   const goGenerate = () => setActiveTab('ai');
 
-  const handleGenerated = async () => {
-    const refreshed = await refetch();
-    if (refreshed.data) { setFilteredByTab({}); setBaseDashboard(null); }
-  };
-
   return (
     <div className="min-h-screen bg-qa-bg text-qa-ink flex flex-col qa-scroll">
       <QaMasthead dashboard={display} project={filters.project} projects={filters.projects} onProjectChange={handleProjectChange} />
@@ -142,7 +137,7 @@ function AppContent() {
         {display && activeTab === 'trace' && <TraceabilityPage dashboard={display} kpiStyle={ui.kpiStyle} />}
         {display && activeTab === 'uat' && showUat && <UatPage dashboard={display} kpiStyle={ui.kpiStyle} />}
         {activeTab === 'import' && <ImportStatusPage />}
-        {activeTab === 'ai' && <AiReportPage dashboard={display} kpiStyle={ui.kpiStyle} project={filters.project} onGenerated={handleGenerated} />}
+        {activeTab === 'ai' && <AiReportPage dashboard={display} kpiStyle={ui.kpiStyle} project={filters.project} />}
         {activeTab === 'settings' && <SettingsPage />}
       </div>
 

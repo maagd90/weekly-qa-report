@@ -4,6 +4,11 @@ import type { IntegrationsConfig, QmetryIntegrationConfig } from '../config/load
 import { getBasicAuth, getEncodedAuth } from '../config/loadIntegrations';
 import { fetchWithTimeout, safeApiError, describeFetchError } from '../utils/fetchWithTimeout';
 import { mapExecutionResult, projectFromKey, sanitizeText } from '../utils/excel';
+import {
+  executionRowsFromSummary,
+  executionSummaryQql,
+  parseQmetryExecutionSummary,
+} from './qmetryExecutionSummary';
 
 export interface QmetryCycleProgressEntry { name: string; count: number }
 export interface QmetryCycleSummary { id: string; key?: string; name: string; status?: string; folderId?: string; updated?: string; plannedStartDate?: string; plannedEndDate?: string; progress?: QmetryCycleProgressEntry[] }
@@ -11,6 +16,7 @@ export interface QmetryFolderSummary { id: string; name: string; parentId?: stri
 export interface QmetryCycleHealthSummary { key: string; name: string; total: number; pass: number; fail: number; blocked: number; ne: number; na: number; passPct: number; coverage: number; status: string }
 export interface QmetryCycleSearchResult { cycles: QmetryCycleSummary[]; total: number; error?: string }
 export interface QmetryFolderSearchResult { folders: QmetryFolderSummary[]; total: number; error?: string }
+export interface QmetryExecutionSummaryFetchResult { executions: ExecutionRow[]; total: number; error?: string }
 
 type QmetrySessionConfig = QmetryIntegrationConfig & { sessionHeader?: string; sessionId?: string; xsrfToken?: string };
 
@@ -50,12 +56,23 @@ function qmetrySessionHeader(cfg: QmetryIntegrationConfig): string | null {
   return parts.length ? parts.join('; ') : null;
 }
 
+function qmetryXsrfToken(cfg: QmetryIntegrationConfig): string | null {
+  const sessionCfg = cfg as QmetrySessionConfig;
+  const direct = sessionCfg.xsrfToken || process.env.QMETRY_XSRF_TOKEN || process.env.JIRA_XSRF_TOKEN || process.env.ATLASSIAN_XSRF_TOKEN;
+  if (direct?.trim()) return direct.trim();
+  const cookie = qmetrySessionHeader(cfg) || '';
+  const match = cookie.match(/(?:^|;\s*)atlassian\.xsrf\.token=([^;]+)/i);
+  return match?.[1]?.trim() || null;
+}
+
 function requestHeaders(cfg: QmetryIntegrationConfig): Record<string, string> | null {
   const auth = authHeader(cfg);
   if (!auth) return null;
   const headers: Record<string, string> = { Authorization: auth, Accept: 'application/json' };
   const sessionHeader = qmetrySessionHeader(cfg);
   if (sessionHeader) headers.Cookie = sessionHeader;
+  const xsrfToken = qmetryXsrfToken(cfg);
+  if (xsrfToken) headers['X-XSRF-TOKEN'] = xsrfToken;
   return headers;
 }
 
@@ -68,7 +85,10 @@ async function qmetryFetch(cfg: QmetryIntegrationConfig, method: 'GET' | 'POST',
   try {
     const res = await fetchWithTimeout(url, init);
     const text = await res.text();
-    if (!res.ok) return { ok: false, error: safeApiError('QMetry API', res.status, text) };
+    if (!res.ok) {
+      if (res.status === 431) return { ok: false, error: 'QMetry API error 431: request headers are too large. Refresh or trim the JIRA/QMetry session cookie, then retry.' };
+      return { ok: false, error: safeApiError('QMetry API', res.status, text) };
+    }
     const authError = nonJsonAuthError(text);
     if (authError) return { ok: false, error: authError };
     try { return { ok: true, data: text ? JSON.parse(text) : null }; } catch (err) { return { ok: false, error: `QMetry API returned invalid JSON: ${(err as Error).message}` }; }
@@ -309,6 +329,38 @@ function compactWarnings(warnings: string[]): string {
   return parts.join(' ');
 }
 
+export async function fetchQmetryExecutionSummaryByAssignee(
+  cfg: QmetryIntegrationConfig,
+  scope?: ApiFetchScope,
+): Promise<QmetryExecutionSummaryFetchResult> {
+  if (cfg.executionSummaryEnabled === false) return { executions: [], total: 0 };
+  if (!scope?.startDate || !scope?.endDate) return { executions: [], total: 0 };
+  const projectId = numericProjectId(cfg);
+  if (typeof projectId !== 'number') {
+    return { executions: [], total: 0, error: 'QMetry execution summary requires a numeric Project ID.' };
+  }
+
+  const body = {
+    projectIds: [projectId],
+    qql: executionSummaryQql(scope.startDate, scope.endDate),
+    customFieldQQL: [],
+    defectJql: null,
+    requirementJql: null,
+  };
+  const path = cfg.executionSummaryPath || '/gadgets/TESTCASE_EXECUTION_SUMMARY_BY_ASSIGNEE';
+  const response = await qmetryFetch(cfg, 'POST', path, body);
+  if (!response.ok) return { executions: [], total: 0, error: response.error || 'QMetry execution summary request failed' };
+  const parsed = parseQmetryExecutionSummary(response.data);
+  if (!parsed) {
+    const keys = Object.keys(objectValue(response.data)).slice(0, 12).join(', ') || 'none';
+    return { executions: [], total: 0, error: `QMetry execution summary returned an unsupported response shape (top-level keys: ${keys}). Detailed cycle data was kept.` };
+  }
+  return {
+    executions: executionRowsFromSummary(parsed, cfg.projectKey, scope.startDate, scope.endDate),
+    total: parsed.total,
+  };
+}
+
 export async function searchQmetryTestCycles(cfg: QmetryIntegrationConfig, options: { startAt?: number; maxResults?: number; folderId?: string } = {}): Promise<QmetryCycleSearchResult> {
   if (!cfg.enabled) return { cycles: [], total: 0 };
   if (!cfg.projectId && !cfg.testCyclesSearchBody) return { cycles: [], total: 0, error: 'QMetry projectId is required for test cycle search' };
@@ -523,20 +575,35 @@ async function discoverProjectCyclesForExecution(cfg: QmetryIntegrationConfig, s
 
 export async function fetchQmetryExecutions(cfg: QmetryIntegrationConfig, scope?: ApiFetchScope): Promise<{ executions: ExecutionRow[]; cycleMeta: Map<string, string>; error?: string }> {
   if (!cfg.enabled) return { executions: [], cycleMeta: new Map() };
+  const summary = await fetchQmetryExecutionSummaryByAssignee(cfg, scope);
+  const warnings: string[] = [];
+  if (summary.error) warnings.push(`QMetry execution summary unavailable; detailed cycle fallback used: ${summary.error}`);
+  else if (summary.executions.length) warnings.push(`QMetry execution-level summary applied for ${scope?.startDate}..${scope?.endDate} using execution.executedon and latest executions only.`);
+
   let cycles: QmetryCycleSummary[] = cfg.cycleIds.map((id) => ({ id, key: id, name: id }));
   if (!cycles.length && cfg.projectId) {
     const discovered = await discoverProjectCyclesForExecution(cfg, scope);
-    if (discovered.error) return { executions: [], cycleMeta: new Map(), error: `QMetry test cycle search failed: ${discovered.error}` };
+    if (discovered.error) {
+      warnings.push(`QMetry test cycle search failed: ${discovered.error}`);
+      if (summary.executions.length) {
+        const error = compactWarnings(warnings);
+        return { executions: summary.executions, cycleMeta: new Map(), ...(error ? { error } : {}) };
+      }
+      return { executions: [], cycleMeta: new Map(), error: compactWarnings(warnings) };
+    }
     cycles = discovered.cycles;
   }
   if (!cycles.length) {
     const project = cfg.projectKey || cfg.projectId || 'unknown project';
     const range = scope?.startDate || scope?.endDate ? ` in ${scope.startDate || 'any'}..${scope.endDate || 'any'}` : '';
-    return { executions: [], cycleMeta: new Map(), error: `No QMetry test cycles found for ${project}${range}. Check Project ID, Folder ID, and session/auth headers.` };
+    warnings.push(`No QMetry test cycles found for ${project}${range}. Check Project ID, Folder ID, and session/auth headers.`);
+    const error = compactWarnings(warnings);
+    return summary.executions.length
+      ? { executions: summary.executions, cycleMeta: new Map(), ...(error ? { error } : {}) }
+      : { executions: [], cycleMeta: new Map(), error };
   }
   const all: ExecutionRow[] = [];
   const cycleMeta = new Map<string, string>();
-  const warnings: string[] = [];
   let usedProgressFallback = false;
   for (const cycle of cycles) {
     const result = await fetchCycleExecutions(cfg, cycle.id, cycle.name, scope, cycle.key || cycle.id, cycleHasUsableScopeDate(cycle), cycleDateFallback(cycle));
@@ -552,8 +619,9 @@ export async function fetchQmetryExecutions(cfg: QmetryIntegrationConfig, scope?
   } else if (usedProgressFallback) {
     warnings.push('One or more cycles used aggregate QMetry execution progress because detailed testcase rows were unavailable. Aggregate rows do not include Executed By and are excluded from tester rankings.');
   }
+  const executions = [...hydrated, ...summary.executions];
   const error = compactWarnings(warnings);
-  return error ? { executions: hydrated, cycleMeta, error } : { executions: hydrated, cycleMeta };
+  return error ? { executions, cycleMeta, error } : { executions, cycleMeta };
 }
 
 export async function fetchQmetryDataset(cfg: IntegrationsConfig, scope?: ApiFetchScope): Promise<import('../types/dataset').Dataset> {

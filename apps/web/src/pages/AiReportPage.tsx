@@ -5,7 +5,7 @@ import remarkGfm from 'remark-gfm';
 import clsx from 'clsx';
 import { Download } from 'lucide-react';
 import type { DashboardPayload } from 'qa-dashboard-batch';
-import { batchApi, apiErrorMessage, getReportBranding, type ReportType } from '../lib/api';
+import { batchApi, apiErrorMessage, getReportBranding, type GeneratedReportData, type ReportType } from '../lib/api';
 import type { KpiStyle } from '../theme/qaTheme';
 import { QA } from '../theme/qaTheme';
 import { AiReportCharts } from '../components/qa/AiReportCharts';
@@ -38,7 +38,6 @@ interface AiReportPageProps {
   dashboard?: DashboardPayload | null;
   kpiStyle: KpiStyle;
   project: string;
-  onGenerated?: () => void;
 }
 
 function overlapsDataRange(startDate: string, endDate: string, dashboard?: DashboardPayload | null): boolean {
@@ -80,7 +79,20 @@ function sourceNotes(warning: string | null): string[] {
   return warning ? warning.split(';').map((item) => formatSourceNote(item.trim())).filter(Boolean) : [];
 }
 
-export function AiReportPage({ dashboard, kpiStyle, project, onGenerated }: AiReportPageProps) {
+function reportMatchesSelection(
+  dashboard: DashboardPayload | null,
+  meta: ReportMeta | null,
+  selection: { startDate: string; endDate: string; reportType: ReportType; project?: string },
+): boolean {
+  if (!dashboard) return false;
+  const actualProject = dashboard.scope.project && dashboard.scope.project !== 'all' ? dashboard.scope.project : undefined;
+  return dashboard.scope.startDate === selection.startDate
+    && dashboard.scope.endDate === selection.endDate
+    && actualProject === selection.project
+    && meta?.params?.reportType === selection.reportType;
+}
+
+export function AiReportPage({ dashboard, kpiStyle, project }: AiReportPageProps) {
   const queryClient = useQueryClient();
   const today = new Date().toISOString().slice(0, 10);
   const seededRange = dashboardRange(dashboard);
@@ -92,6 +104,7 @@ export function AiReportPage({ dashboard, kpiStyle, project, onGenerated }: AiRe
   const [warning, setWarning] = useState<string | null>(null);
   const [reportMarkdown, setReportMarkdown] = useState('');
   const [reportDashboard, setReportDashboard] = useState<DashboardPayload | null>(null);
+  const [reportMeta, setReportMeta] = useState<ReportMeta | null>(null);
   const [toolCalls, setToolCalls] = useState<ToolCallMeta[]>([]);
   const [downloading, setDownloading] = useState(false);
 
@@ -100,9 +113,11 @@ export function AiReportPage({ dashboard, kpiStyle, project, onGenerated }: AiRe
   const projectOptions = useMemo(() => {
     const values = new Set<string>(['all']);
     for (const p of dashboard?.scope.projects || []) if (p) values.add(p);
+    for (const p of reportDashboard?.scope.projects || []) if (p) values.add(p);
     if (project) values.add(project);
+    if (reportProject) values.add(reportProject);
     return [...values];
-  }, [dashboard?.scope.projects, project]);
+  }, [dashboard?.scope.projects, reportDashboard?.scope.projects, project, reportProject]);
 
   const selectedProject = reportProject && reportProject !== 'all' ? reportProject : undefined;
   const selectedProjectLabel = selectedProject ? projectDisplayName(selectedProject) : 'All projects';
@@ -124,13 +139,18 @@ export function AiReportPage({ dashboard, kpiStyle, project, onGenerated }: AiRe
   useEffect(() => {
     if (!reportData) return;
     const meta = reportData.meta as ReportMeta | undefined;
-    if (reportData.markdown) setReportMarkdown(reportData.markdown);
-    if (meta?.toolCalls) setToolCalls(meta.toolCalls);
+    if (reportData.dashboard) {
+      setReportDashboard(reportData.dashboard);
+      setWarning(reportData.dashboard.meta.warnings?.length ? reportData.dashboard.meta.warnings.join('; ') : null);
+    }
+    setReportMeta(meta || null);
+    setReportMarkdown(reportData.markdown || '');
+    setToolCalls(meta?.toolCalls || []);
     const params = meta?.params;
     if (params?.startDate) setStartDate(params.startDate);
     if (params?.endDate) setEndDate(params.endDate);
     if (params?.reportType) setReportType(params.reportType);
-    if (params?.project) setReportProject(params.project);
+    if (params) setReportProject(params.project || 'all');
   }, [reportData]);
 
   const generateMutation = useMutation({
@@ -138,44 +158,57 @@ export function AiReportPage({ dashboard, kpiStyle, project, onGenerated }: AiRe
     onMutate: () => {
       setError(null);
       setWarning(null);
+      setReportDashboard(null);
+      setReportMeta(null);
+      setReportMarkdown('');
+      setToolCalls([]);
     },
     onSuccess: (result) => {
       if (result.payload) setReportDashboard(result.payload);
+      const nextMeta = result.report?.meta as ReportMeta | undefined;
+      setReportMeta(nextMeta || null);
       const emptyResult = result.payload && !hasMetrics(result.payload);
       if (!result.ok || emptyResult) {
+        queryClient.removeQueries({ queryKey: ['report'] });
+        setReportDashboard(null);
+        setReportMeta(null);
         setReportMarkdown('');
         setToolCalls([]);
         setError(result.error || 'No metrics found for the selected report scope. Narrative was not generated.');
         setWarning(null);
-        queryClient.invalidateQueries({ queryKey: ['dashboard'] });
-        queryClient.invalidateQueries({ queryKey: ['dashboard-init'] });
         return;
       }
       setError(null);
       setWarning(result.warnings?.length ? result.warnings.join('; ') : null);
+      if (result.payload && nextMeta) {
+        queryClient.setQueryData<GeneratedReportData>(['report'], {
+          dashboard: result.payload,
+          markdown: result.report?.markdown || '',
+          meta: nextMeta,
+        });
+      }
       if (result.report?.markdown) {
-        const meta = result.report.meta as ReportMeta | undefined;
         setReportMarkdown(result.report.markdown);
-        setToolCalls(meta?.toolCalls ?? []);
+        setToolCalls(nextMeta?.toolCalls ?? []);
       } else {
         setReportMarkdown('');
         setToolCalls([]);
       }
-      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
-      queryClient.invalidateQueries({ queryKey: ['dashboard-init'] });
-      queryClient.invalidateQueries({ queryKey: ['report'] });
-      onGenerated?.();
     },
     onError: (err: unknown) => {
+      setReportDashboard(null);
+      setReportMeta(null);
       setReportMarkdown('');
       setToolCalls([]);
       setError(apiErrorMessage(err, 'Report generation failed'));
     },
   });
 
-  const chartData = reportDashboard ?? dashboard ?? null;
+  const chartData = reportMatchesSelection(reportDashboard, reportMeta, { startDate, endDate, reportType, project: selectedProject })
+    ? reportDashboard
+    : null;
   const generating = generateMutation.isPending;
-  const hasNarrative = Boolean(reportMarkdown);
+  const hasNarrative = Boolean(chartData && reportMarkdown);
   const hasReport = !generating && (Boolean(chartData) || hasNarrative);
 
   const datePresets = [

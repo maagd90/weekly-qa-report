@@ -1,5 +1,6 @@
 import assert from 'assert';
-import { fetchQmetryExecutions } from '../qmetryClient';
+import { fetchQmetryExecutionSummaryByAssignee, fetchQmetryExecutions } from '../qmetryClient';
+import { parseQmetryExecutionSummary } from '../qmetryExecutionSummary';
 import type { QmetryIntegrationConfig } from '../../config/loadIntegrations';
 
 interface FetchCall { url: string; init: RequestInit }
@@ -26,7 +27,70 @@ function qmetryConfig(): QmetryIntegrationConfig {
     cycleIds: [],
     pageSize: 50,
     maxPages: 5,
+    executionSummaryEnabled: false,
+    executionSummaryPath: '/gadgets/TESTCASE_EXECUTION_SUMMARY_BY_ASSIGNEE',
   };
+}
+
+async function testExecutionSummaryUsesActualExecutionDateQql(): Promise<void> {
+  const calls: FetchCall[] = [];
+  globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+    const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+    const call = { url, init: init || {} };
+    calls.push(call);
+    if (!url.includes('/gadgets/TESTCASE_EXECUTION_SUMMARY_BY_ASSIGNEE')) return jsonResponse({ errorMessage: `Unexpected URL ${url}` }, 404);
+    return jsonResponse({
+      categories: ['Pass', 'Fail', 'Blocked', 'Not Executed'],
+      series: [
+        { name: 'Muhammad Annus', data: [100, 2, 3, 0] },
+        { name: 'Second Tester', data: [8, 1, 0, 0] },
+      ],
+    });
+  }) as typeof fetch;
+
+  const cfg = qmetryConfig() as QmetryIntegrationConfig & { sessionHeader?: string; xsrfToken?: string };
+  cfg.executionSummaryEnabled = true;
+  cfg.sessionHeader = 'JSESSIONID=abc; atlassian.xsrf.token=cookie-token';
+  cfg.xsrfToken = 'header-token';
+  const result = await fetchQmetryExecutionSummaryByAssignee(cfg, { project: 'DLM', startDate: '2026-07-01', endDate: '2026-07-14' });
+
+  assert.equal(result.error, undefined);
+  assert.equal(result.total, 114);
+  assert.equal(result.executions.length, 114);
+  assert.equal(result.executions.filter((row) => row.result === 'PASS').length, 108);
+  assert.equal(result.executions.filter((row) => row.tester === 'Muhammad Annus').length, 105);
+  assert.ok(result.executions.every((row) => row.summaryOnly));
+  assert.ok(result.executions.every((row) => row.executedAt === null && row.updatedAt === null), 'summary rows must not invent an execution date');
+
+  const call = calls[0];
+  assert.equal(call.init.method, 'POST');
+  assert.equal((call.init.headers as Record<string, string>)['X-XSRF-TOKEN'], 'header-token');
+  const body = requestBody(call) as { projectIds: number[]; qql: string; customFieldQQL: unknown[]; defectJql: null; requirementJql: null };
+  assert.deepEqual(body.projectIds, [19703]);
+  assert.match(body.qql, /execution\.executedon >= '01\/Jul\/2026'/);
+  assert.match(body.qql, /execution\.executedon <= '14\/Jul\/2026'/);
+  assert.match(body.qql, /execution\.onlylatestexecutions = true/);
+  assert.match(body.qql, /testcase\.includearchive = false/);
+  assert.match(body.qql, /testcycle\.includearchive = false/);
+
+  const named = parseQmetryExecutionSummary({
+    data: [{ assignee: { displayName: 'Named Tester' }, passedCount: 7, failedCount: 1, notExecuted: 2 }],
+  });
+  assert.equal(named?.total, 10, 'camel-case named counts should be recognized');
+
+  const nested = parseQmetryExecutionSummary({
+    data: [{ assigneeName: 'Nested Tester', results: [{ name: 'Pass', count: 4 }, { name: 'Blocked', count: 1 }] }],
+  });
+  assert.equal(nested?.total, 5, 'nested result rows should inherit their parent assignee');
+  assert.ok(nested?.counts.every((row) => row.assignee === 'Nested Tester'));
+
+  const points = parseQmetryExecutionSummary({
+    series: [{ name: 'Pass', data: [{ name: 'Point Tester', y: 6 }] }],
+  });
+  assert.equal(points?.total, 6, 'Highcharts-style named points should be recognized');
+
+  const empty = parseQmetryExecutionSummary({ categories: ['Pass', 'Fail'], series: [{ name: 'Nobody', data: [0, 0] }] });
+  assert.equal(empty?.total, 0, 'a recognized zero-result response must remain authoritative');
 }
 
 function requestBody(call: FetchCall): Record<string, unknown> {
@@ -201,6 +265,7 @@ async function testAggregateFallbackIsExplicitAndConcise(): Promise<void> {
 }
 
 async function main(): Promise<void> {
+  await testExecutionSummaryUsesActualExecutionDateQql();
   await testOnPremContractAndTesterResolution();
   await testFieldRetryKeepsPostContract();
   await testAggregateFallbackIsExplicitAndConcise();

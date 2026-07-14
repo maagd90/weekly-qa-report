@@ -25,7 +25,6 @@ import {
   emptyConnections,
   canonicalProjectKey,
   canonicalProjectOrUndefined,
-  dataDateBounds,
 } from 'qa-dashboard-batch';
 import type {
   ApiFetchScope,
@@ -50,14 +49,20 @@ fs.mkdirSync(INPUT_DIR, { recursive: true });
 fs.mkdirSync(OUTPUT_DIR, { recursive: true });
 fs.mkdirSync(CONFIG_DIR, { recursive: true });
 
-const GENERATED_OUTPUT_FILES = ['raw-dataset.json', 'dataset-fingerprint.txt', 'dashboard-data.json', 'report.md', 'report-meta.json'];
-const REPORT_OUTPUT_FILES = ['report.md', 'report-meta.json'];
+const GENERATED_OUTPUT_FILES = ['raw-dataset.json', 'dataset-fingerprint.txt', 'dashboard-data.json', 'report-dashboard.json', 'report-raw-dataset.json', 'report-dataset-fingerprint.txt', 'report.md', 'report-meta.json'];
+const REPORT_OUTPUT_FILES = ['report-dashboard.json', 'report-raw-dataset.json', 'report-dataset-fingerprint.txt', 'report.md', 'report-meta.json'];
 const IMPORT_CACHE_FILE = 'raw-dataset.imported.json';
 const LIVE_CACHE_FILE = 'raw-dataset.live.json';
 const REPORT_TYPES: ReportType[] = ['full', 'executive', 'testers', 'defects', 'cycles'];
 
 type BuildMode = 'cached' | 'import-only' | 'live';
 type DashboardPayload = ReturnType<typeof refilterDashboard>;
+type ReportMetaFile = {
+  generatedAt?: string;
+  params?: { startDate?: string; endDate?: string; reportType?: ReportType; project?: string };
+  toolCalls?: unknown[];
+  [key: string]: unknown;
+};
 
 function requestId(req: Request): string {
   return (req as Request & { requestId?: string }).requestId || req.header('x-request-id') || 'no-request-id';
@@ -73,6 +78,35 @@ function logError(req: Request, message: string, err: unknown, data?: Record<str
 
 function outputPath(fileName: string): string {
   return path.join(OUTPUT_DIR, fileName);
+}
+
+function loadJsonFile<T>(fileName: string): T | null {
+  const filePath = outputPath(fileName);
+  if (!fs.existsSync(filePath)) return null;
+  try { return JSON.parse(fs.readFileSync(filePath, 'utf8')) as T; } catch { return null; }
+}
+
+function reportArtifacts(): { dashboard: DashboardPayload; meta: ReportMetaFile; markdown: string } | null {
+  const dashboard = loadJsonFile<DashboardPayload>('report-dashboard.json');
+  if (!dashboard) return null;
+  const meta = loadJsonFile<ReportMetaFile>('report-meta.json') || {};
+  const markdownPath = outputPath('report.md');
+  const markdown = fs.existsSync(markdownPath) ? fs.readFileSync(markdownPath, 'utf8') : '';
+  return { dashboard, meta, markdown };
+}
+
+function reportScopeMatches(
+  dashboard: DashboardPayload,
+  meta: ReportMetaFile,
+  selection: { startDate?: string; endDate?: string; reportType?: ReportType; project?: string },
+): boolean {
+  const expectedProject = cleanProject(selection.project) || 'all';
+  const actualProject = cleanProject(dashboard.scope.project) || 'all';
+  const actualType = meta.params?.reportType || 'full';
+  return dashboard.scope.startDate === selection.startDate
+    && dashboard.scope.endDate === selection.endDate
+    && actualProject === expectedProject
+    && actualType === selection.reportType;
 }
 
 function removeOutputFile(fileName: string): string | null {
@@ -131,31 +165,6 @@ function filterFromBody(body: Partial<FilterParams>): FilterParams {
 
 function buildOptions(mode: BuildMode, apiScope?: ApiFetchScope) {
   return { apiScope: mode === 'live' ? cleanApiScope(apiScope) : undefined, liveSync: mode === 'live', includeFiles: mode !== 'live' };
-}
-
-function projectRows(dataset: Dataset): Array<{ project: string; rows: number }> {
-  const counts = new Map<string, number>();
-  const add = (project?: string, rows = 1) => {
-    const key = canonicalProjectKey(project || 'UNKNOWN') || 'UNKNOWN';
-    counts.set(key, (counts.get(key) || 0) + rows);
-  };
-  for (const row of dataset.executions) add(row.project);
-  for (const row of dataset.issues) add(row.project);
-  for (const row of dataset.uat) add(row.project);
-  return [...counts.entries()].map(([project, rows]) => ({ project, rows })).sort((a, b) => a.project.localeCompare(b.project));
-}
-
-function datasetProjectsSummary(dataset: Dataset): string {
-  const rows = projectRows(dataset);
-  if (!rows.length) return 'no projects / 0 rows';
-  return rows.map((p) => `${p.project} (${p.rows} rows)`).join(', ');
-}
-
-function noMetricsMessage(project: string | undefined, startDate: string | undefined, endDate: string | undefined, dataset: Dataset): string {
-  const requestedProject = project && project !== 'all' ? project : 'all projects';
-  const start = startDate || 'any';
-  const end = endDate || 'any';
-  return `No metrics for ${requestedProject} in ${start}..${end}. Dataset contains: ${datasetProjectsSummary(dataset)}. Re-sync imported data if a project is missing.`;
 }
 
 function hasMetrics(payload: DashboardPayload): boolean {
@@ -529,12 +538,9 @@ router.get('/cycles/by-folder', async (req: Request, res: Response) => {
 });
 
 router.get('/report', (_req: Request, res: Response) => {
-  const mdPath = path.join(OUTPUT_DIR, 'report.md');
-  const metaPath = path.join(OUTPUT_DIR, 'report-meta.json');
-  if (!fs.existsSync(mdPath)) return res.status(404).json({ error: 'No report generated yet.' });
-  const markdown = fs.readFileSync(mdPath, 'utf8');
-  const meta = fs.existsSync(metaPath) ? JSON.parse(fs.readFileSync(metaPath, 'utf8')) : {};
-  res.json({ markdown, meta });
+  const artifacts = reportArtifacts();
+  if (!artifacts) return res.status(404).json({ error: 'No report generated yet.' });
+  res.json(artifacts);
 });
 
 router.post('/report/pdf', async (req: Request, res: Response) => {
@@ -544,15 +550,17 @@ router.post('/report/pdf', async (req: Request, res: Response) => {
   log(req, 'POST /report/pdf:start', { startDate, endDate, reportType, kpiStyle, project: clean, hasLogo: Boolean(branding?.logoUrl), connections: connectionSummary(connections) });
   const type = REPORT_TYPES.includes(reportType as ReportType) ? (reportType as ReportType) : 'executive';
   const kpi = ['editorial', 'framed', 'minimal'].includes(kpiStyle || '') ? kpiStyle! : 'editorial';
-  const cached = await ensureDataset(req, connections, undefined, 'cached');
-  if (!cached) return res.status(404).json({ error: 'No dashboard data. Search or sync data before downloading PDF. Dataset contains: no projects / 0 rows.', requestId: requestId(req) });
-  const payload = refilterDashboard(cached.dataset, { startDate, endDate, project: clean });
-  if (!hasMetrics(payload)) return res.status(404).json({ error: noMetricsMessage(clean, startDate, endDate, cached.dataset), requestId: requestId(req), projects: projectRows(cached.dataset) });
-  const bounds = (!startDate || !endDate) ? dataDateBounds(cached.dataset) : null;
-  const effectiveStartDate = startDate || bounds?.min || '';
-  const effectiveEndDate = endDate || bounds?.max || '';
+  const artifacts = reportArtifacts();
+  if (!artifacts) return res.status(404).json({ error: 'No report snapshot is available. Generate the selected report before downloading its PDF.', requestId: requestId(req) });
+  const effectiveStartDate = startDate || artifacts.dashboard.scope.startDate || '';
+  const effectiveEndDate = endDate || artifacts.dashboard.scope.endDate || '';
+  if (!reportScopeMatches(artifacts.dashboard, artifacts.meta, { startDate: effectiveStartDate, endDate: effectiveEndDate, reportType: type, project: clean })) {
+    return res.status(409).json({ error: 'The saved report snapshot does not match the selected project, dates, or report type. Generate the report again before downloading the PDF.', requestId: requestId(req) });
+  }
+  if (!hasMetrics(artifacts.dashboard)) return res.status(404).json({ error: 'The saved report snapshot contains no metrics.', requestId: requestId(req) });
   try {
-    const pdfBuffer = await generateReportPdf(effectiveStartDate, effectiveEndDate, type, kpi, clean, branding);
+    const reportId = artifacts.meta.generatedAt || artifacts.dashboard.meta.generatedAt;
+    const pdfBuffer = await generateReportPdf(effectiveStartDate, effectiveEndDate, type, kpi, clean, branding, reportId);
     const suffix = clean ? `-${clean}` : '';
     const filename = `qa-report${suffix}-${effectiveStartDate}-to-${effectiveEndDate}.pdf`;
     res.setHeader('Content-Type', 'application/pdf');

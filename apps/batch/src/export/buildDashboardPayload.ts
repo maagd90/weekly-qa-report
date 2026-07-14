@@ -31,6 +31,23 @@ function cycleStatus(c: CycleAgg): string {
   return 'At Risk';
 }
 
+function authoritativeMetricExecutions(rows: ExecutionRow[]): ExecutionRow[] {
+  const summaryProjects = new Set(rows.filter((row) => row.summaryOnly).map((row) => canonicalProjectKey(row.project)));
+  if (!summaryProjects.size) return rows;
+  return rows.filter((row) => !row.summaryMarker && (row.summaryOnly || !summaryProjects.has(canonicalProjectKey(row.project))));
+}
+
+function monthBucket(row: ExecutionRow): { key: string; label?: string } | null {
+  const date = row.executedAt || row.updatedAt;
+  if (date) return { key: date.slice(0, 7) };
+  if (!row.summaryOnly || !row.summaryScopeStart || !row.summaryScopeEnd) return null;
+  const startMonth = row.summaryScopeStart.slice(0, 7);
+  const endMonth = row.summaryScopeEnd.slice(0, 7);
+  return startMonth === endMonth
+    ? { key: startMonth }
+    : { key: `${row.summaryScopeStart}..${row.summaryScopeEnd}`, label: 'Selected period' };
+}
+
 const MLAB = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 export function buildDashboardPayload(
@@ -43,7 +60,9 @@ export function buildDashboardPayload(
   const filterParams = { ...params, project: normalizedProject };
   const filtered = applyFilters(dataset, filterParams);
   const { executions, issues, uat } = filtered;
-  const execTotals = cycleAgg(executions);
+  const metricExecutions = authoritativeMetricExecutions(executions);
+  const cycleExecutions = executions.filter((row) => !row.summaryOnly);
+  const execTotals = cycleAgg(metricExecutions);
 
   const resultDefs = [
     { code: 'PASS', label: 'Passed', key: 'pass' as const },
@@ -62,25 +81,27 @@ export function buildDashboardPayload(
   }));
   const chartSeries = { resultMix: resultMix.map((r) => ({ name: r.label, value: r.count, color: r.color })) };
 
-  const monthBuckets: Record<string, { pass: number; blocked: number; fail: number }> = {};
-  for (const r of executions) {
-    const bucketDate = r.executedAt || r.updatedAt;
-    if (!bucketDate) continue;
-    const ym = bucketDate.slice(0, 7);
+  const monthBuckets: Record<string, { pass: number; blocked: number; fail: number; label?: string }> = {};
+  for (const r of metricExecutions) {
+    const period = monthBucket(r);
+    if (!period) continue;
+    const ym = period.key;
     if (!monthBuckets[ym]) monthBuckets[ym] = { pass: 0, blocked: 0, fail: 0 };
+    if (period.label) monthBuckets[ym].label = period.label;
     if (r.result === 'PASS') monthBuckets[ym].pass++;
     else if (r.result === 'BLOCKED') monthBuckets[ym].blocked++;
     else if (r.result === 'FAIL') monthBuckets[ym].fail++;
   }
   const byMonth = Object.keys(monthBuckets).sort().slice(-6).map((ym) => {
     const bucket = monthBuckets[ym];
-    const monthIndex = parseInt(ym.slice(5, 7), 10) - 1;
-    return { ym, label: `${MLAB[monthIndex]} '${ym.slice(2, 4)}`, pass: bucket.pass, blocked: bucket.blocked, fail: bucket.fail };
+    const monthIndex = /^\d{4}-\d{2}$/.test(ym) ? parseInt(ym.slice(5, 7), 10) - 1 : -1;
+    const label = bucket.label || (monthIndex >= 0 ? `${MLAB[monthIndex]} '${ym.slice(2, 4)}` : 'Selected period');
+    return { ym, label, pass: bucket.pass, blocked: bucket.blocked, fail: bucket.fail };
   }).filter((m) => m.pass + m.blocked + m.fail > 0);
 
-  const testerNames = [...new Set(executions.map((r) => r.tester).filter(Boolean))] as string[];
+  const testerNames = [...new Set(metricExecutions.map((r) => r.tester).filter(Boolean))] as string[];
   const testers = testerNames.map((name) => {
-    const testerRows = executions.filter((r) => r.tester === name);
+    const testerRows = metricExecutions.filter((r) => r.tester === name);
     const pass = testerRows.filter((r) => r.result === 'PASS').length;
     const fail = testerRows.filter((r) => r.result === 'FAIL').length;
     const blocked = testerRows.filter((r) => r.result === 'BLOCKED').length;
@@ -89,9 +110,9 @@ export function buildDashboardPayload(
     return { name, executed, pass, fail, blocked, na, passPct: executed ? Math.round((pass / executed) * 100) : 0 };
   }).filter((t) => t.executed > 0).sort((a, b) => b.executed - a.executed);
 
-  const cycleKeys = [...new Set(executions.map((r) => r.cycleKey))];
+  const cycleKeys = [...new Set(cycleExecutions.map((r) => r.cycleKey))];
   const cycles = cycleKeys.map((key) => {
-    const cycleRows = executions.filter((r) => r.cycleKey === key);
+    const cycleRows = cycleExecutions.filter((r) => r.cycleKey === key);
     const cycleTotals = cycleAgg(cycleRows);
     return { key, name: cycleRows[0]?.cycleName || key, total: cycleTotals.total, pass: cycleTotals.pass, fail: cycleTotals.fail, blocked: cycleTotals.blocked, ne: cycleTotals.ne, na: cycleTotals.na, passPct: cycleTotals.pr, coverage: cycleTotals.cov, status: cycleStatus(cycleTotals) };
   }).sort((a, b) => b.total - a.total);

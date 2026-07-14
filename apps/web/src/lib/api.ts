@@ -30,6 +30,11 @@ type RequestMeta = { requestId: string; startedAt: number };
 export interface ReportBranding { logoUrl?: string; logoAlt?: string; title?: string; subtitle?: string }
 export interface SyncInputResult { ok: boolean; rebuilt: boolean; rowCounts: { executions: number; issues: number; uat: number }; removed?: string[]; warnings?: string[]; projects?: string[]; error?: string }
 export interface DashboardSearchResult { ok: boolean; dashboard: DashboardPayload; rowCounts: { executions: number; issues: number; uat: number }; warnings?: string[]; projects?: string[]; error?: string }
+export interface GeneratedReportData {
+  dashboard: DashboardPayload;
+  markdown: string;
+  meta: { generatedAt?: string; params?: { startDate?: string; endDate?: string; reportType?: ReportType; project?: string }; toolCalls?: { toolName: string; rowCount: number }[]; [key: string]: unknown };
+}
 
 export const LLM_MODELS: Record<LlmProvider, string[]> = {
   anthropic: ['claude-haiku-4-5-20251001', 'claude-sonnet-4-6'],
@@ -112,7 +117,7 @@ export const batchApi = {
   generate: (params: GenerateParams) => { const llm = params.llm || getUserLlmSelection(); return api.post<GenerateResult>('/generate', normalizeGenerate({ ...params, llm }), { timeout: 300_000 }).then((r) => r.data).catch((err) => { throw new Error(apiErrorMessage(err, 'Report generation failed')); }); },
   getDashboard: (filter?: Partial<FilterParams>) => { const clean = normalizeFilter(filter); const params = clean ? { startDate: clean.startDate, endDate: clean.endDate, search: clean.search, result: clean.result, project: clean.project } : undefined; return api.get('/dashboard', { params }).then((r) => r.data as DashboardPayload).catch((err) => { if (axios.isAxiosError(err) && err.response?.status === 404) return null; throw err; }); },
   searchDashboardByDates: (filter: Partial<FilterParams>) => api.post('/dashboard/search', normalizeFilter(filter), { timeout: 240_000 }).then((r) => (r.data as DashboardSearchResult).dashboard).catch((err) => { throw new Error(apiErrorMessage(err, 'Dashboard API search failed')); }),
-  getReport: () => api.get('/report').then((r) => r.data).catch((err) => { if (axios.isAxiosError(err) && err.response?.status === 404) return null; throw err; }),
+  getReport: () => api.get('/report').then((r) => r.data as GeneratedReportData).catch((err) => { if (axios.isAxiosError(err) && err.response?.status === 404) return null; throw err; }),
   upload: (file: File) => { const form = new FormData(); form.append('file', file); return api.post('/upload', form, { headers: { 'Content-Type': 'multipart/form-data' } }).then((r) => r.data); },
   syncInputFiles: (filter?: Partial<FilterParams>) => api.post('/input/sync', normalizeFilter(filter) || {}, { timeout: 180_000 }).then((r) => r.data as SyncInputResult).catch((err) => { throw new Error(apiErrorMessage(err, 'Import sync failed')); }),
   syncLiveData: (filter?: Partial<FilterParams>) => api.post('/integrations/sync', normalizeFilter(filter) || {}, { timeout: 240_000 }).then((r) => r.data as SyncInputResult).catch((err) => { throw new Error(apiErrorMessage(err, 'JIRA/QMetry sync failed')); }),

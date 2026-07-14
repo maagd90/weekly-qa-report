@@ -648,7 +648,15 @@ Request body:
 }
 ```
 
-The application uses detailed testcase rows when available. Cycle-level progress is used only as a fallback; fallback rows do not invent tester names.
+For reports with both a start and end date, execution totals, result mix, and tester counts use QMetry's execution-level summary contract:
+
+```text
+POST /rest/qtm4j/ui/latest/gadgets/TESTCASE_EXECUTION_SUMMARY_BY_ASSIGNEE
+```
+
+The request filters `execution.executedon` inclusively, requests only the latest executions, and excludes archived testcases and cycles. This summary is authoritative for the exact requested report window. Detailed testcase rows remain the source for cycle-health breakdowns; cycle-level progress is used only as a fallback and never invents tester names or execution dates.
+
+The gadget response differs across on-prem QMetry versions. The application accepts recognized row-oriented and chart-oriented result/count shapes. If the response cannot be interpreted safely, it logs a warning and retains the detailed-cycle fallback instead of showing guessed counts.
 
 Tester attribution uses available execution-assignee data and resolves technical user identifiers to display names when the authenticated account has permission. A last-updated user is not used to attribute a Not Executed record.
 
@@ -744,9 +752,11 @@ Report types:
 
 The report can still display deterministic metrics and charts when AI is not configured.
 
+Every generated report stores its own project/date/type-scoped chart snapshot. The on-screen report and PDF use that same snapshot; changing the main dashboard cache cannot replace report charts with another scope.
+
 ### 6. Download PDF
 
-Click **Download PDF** after report data is available.
+Click **Download PDF** after report data is available. If the selected project, dates, or report type no longer match the saved report snapshot, generate the report again before downloading.
 
 ---
 

@@ -17,6 +17,8 @@ function dataDateBounds(dataset: Dataset): { min: string | null; max: string | n
   for (const e of dataset.executions) {
     if (e.executedAt) dates.push(e.executedAt);
     if (e.updatedAt) dates.push(e.updatedAt);
+    if (e.summaryScopeStart) dates.push(e.summaryScopeStart);
+    if (e.summaryScopeEnd) dates.push(e.summaryScopeEnd);
   }
   for (const i of dataset.issues) {
     if (i.createdAt) dates.push(i.createdAt);
@@ -50,9 +52,20 @@ function filterByProject<T extends { project: string }>(rows: T[], project?: str
 }
 
 function filterExecutions(rows: ExecutionRow[], filter: FilterParams, window: DateWindow): ExecutionRow[] {
-  let out = rows;
+  // A summary gadget row is valid only for the exact QQL window that produced
+  // it. Never leak a July summary into an all-time or differently scoped view.
+  let out = rows.filter((row) => {
+    if (!row.summaryOnly) return true;
+    return Boolean(
+      filter.startDate
+      && filter.endDate
+      && row.summaryScopeStart === filter.startDate
+      && row.summaryScopeEnd === filter.endDate,
+    );
+  });
   if (!window.allDates && window.start && window.end) {
     out = out.filter((r) =>
+      r.summaryOnly ||
       inRange(r.executedAt, window.start!, window.end!) ||
       inRange(r.updatedAt, window.start!, window.end!)
     );

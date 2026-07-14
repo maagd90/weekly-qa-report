@@ -177,6 +177,54 @@ function duplicateDataset(): Dataset {
   console.log('✓ monthly updatedAt fallback');
 }
 
+// Execution-level QMetry summary is authoritative for overview/tester metrics,
+// while detailed testcase rows remain available for cycle health.
+{
+  const summaryDataset = focusedDataset();
+  summaryDataset.executions.push(
+    ...Array.from({ length: 8 }, (_, index) => ({
+      project: 'DLM',
+      cycleKey: 'DLM-EXECUTION-SUMMARY-2026-07-01-2026-07-14',
+      cycleName: 'QMetry execution summary (2026-07-01 to 2026-07-14)',
+      caseKey: `DLM-SUMMARY-PASS-${index}`,
+      result: 'PASS' as const,
+      tester: 'Summary Tester',
+      executedAt: null,
+      updatedAt: null,
+      source: 'qmetry' as const,
+      summaryOnly: true,
+      summaryScopeStart: '2026-07-01',
+      summaryScopeEnd: '2026-07-14',
+    })),
+    ...Array.from({ length: 2 }, (_, index) => ({
+      project: 'DLM',
+      cycleKey: 'DLM-EXECUTION-SUMMARY-2026-07-01-2026-07-14',
+      cycleName: 'QMetry execution summary (2026-07-01 to 2026-07-14)',
+      caseKey: `DLM-SUMMARY-FAIL-${index}`,
+      result: 'FAIL' as const,
+      tester: 'Summary Tester',
+      executedAt: null,
+      updatedAt: null,
+      source: 'qmetry' as const,
+      summaryOnly: true,
+      summaryScopeStart: '2026-07-01',
+      summaryScopeEnd: '2026-07-14',
+    })),
+  );
+
+  const exact = buildDashboardPayload(summaryDataset, { project: 'DLM', startDate: '2026-07-01', endDate: '2026-07-14' });
+  assert.strictEqual(exact.overview.totalCases, 10, 'summary must replace incomplete detailed rows for overview counts');
+  assert.strictEqual(exact.overview.passRate, 80);
+  assert.strictEqual(exact.testers[0]?.name, 'Summary Tester');
+  assert.strictEqual(exact.testers[0]?.executed, 10);
+  assert.ok(exact.cycles.every((cycle) => !cycle.key.includes('EXECUTION-SUMMARY')), 'summary rows must not create a fake test cycle');
+  assert.strictEqual(exact.overview.byMonth.find((month) => month.ym === '2026-07')?.pass, 8);
+
+  const differentRange = buildDashboardPayload(summaryDataset, { project: 'DLM', startDate: '2026-07-01', endDate: '2026-07-31' });
+  assert.notStrictEqual(differentRange.overview.totalCases, 10, 'a scoped summary must not leak into another date window');
+  console.log('✓ QMetry execution summary is authoritative and scope-safe');
+}
+
 // JIRA updatedAt keeps traceability rows in date-scoped views
 {
   const p = buildDashboardPayload(focusedDataset(), { project: 'DLM', startDate: '2026-07-01', endDate: '2026-07-31' });

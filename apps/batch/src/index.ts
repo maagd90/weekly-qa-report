@@ -23,7 +23,8 @@ export { loadIntegrations, integrationsSummary, jiraConfigFromConnection, qmetry
 export { buildDataset, loadRawDataset, computeFingerprint, loadFingerprint, saveRawDataset } from './cache/datasetCache';
 export { canonicalProjectKey, canonicalProjectOrUndefined, sameProjectKey, uniqueCanonicalProjects } from './projects/projectKey';
 export { fetchJiraIssues } from './integrations/jiraClient';
-export { fetchQmetryExecutions, fetchProjectCycles, fetchProjectFolders } from './integrations/qmetryClient';
+export { fetchQmetryExecutions, fetchQmetryExecutionSummaryByAssignee, fetchProjectCycles, fetchProjectFolders } from './integrations/qmetryClient';
+export { parseQmetryExecutionSummary, executionSummaryQql, executionRowsFromSummary } from './integrations/qmetryExecutionSummary';
 export { fetchFolderCycleHealth } from './integrations/qmetryCycleHealth';
 export { searchQmetryTestCycles, searchQmetryFolders } from './integrations/qmetryClient';
 export type { QmetryCycleHealthSummary, QmetryFolderSummary } from './integrations/qmetryClient';
