@@ -12,7 +12,7 @@ function main() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'qa-dashboard-dev-cache-'));
   try {
     for (const name of GENERATED_DEV_CACHE_FILES) write(root, name);
-    write(root, 'report.md', 'keep report');
+    write(root, 'report.pdf', 'keep exported report');
     write(root, 'raw-dataset.import.json', 'keep imported cache');
     write(root, 'custom-output.json', 'keep custom output');
 
@@ -21,7 +21,7 @@ function main() {
     for (const name of GENERATED_DEV_CACHE_FILES) {
       assert.strictEqual(fs.existsSync(path.join(root, name)), false, `${name} should be deleted`);
     }
-    assert.strictEqual(fs.readFileSync(path.join(root, 'report.md'), 'utf8'), 'keep report');
+    assert.strictEqual(fs.readFileSync(path.join(root, 'report.pdf'), 'utf8'), 'keep exported report');
     assert.strictEqual(fs.readFileSync(path.join(root, 'raw-dataset.import.json'), 'utf8'), 'keep imported cache');
     assert.strictEqual(fs.readFileSync(path.join(root, 'custom-output.json'), 'utf8'), 'keep custom output');
 
