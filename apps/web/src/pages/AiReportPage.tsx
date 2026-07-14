@@ -19,20 +19,7 @@ const REPORT_TYPES: { value: ReportType; label: string; desc: string }[] = [
   { value: 'cycles', label: 'Cycles', desc: 'cycle focus' },
 ];
 
-// Keep this list browser-local. Importing the batch runtime into Vite dev mode can blank the UI
-// because that package is compiled for Node/CommonJS. The list mirrors apps/batch/src/ai/datasetTools.ts.
-const DATASET_TOOLS = [
-  'get_result_mix',
-  'get_tester_stats',
-  'get_cycle_health',
-  'get_story_bug_split',
-  'get_defect_backlog',
-  'get_traceability',
-  'get_uat_summary',
-] as const;
-
-type ToolCallMeta = { toolName: string; rowCount: number };
-type ReportMeta = { toolCalls?: ToolCallMeta[]; params?: { startDate?: string; endDate?: string; reportType?: ReportType; project?: string } };
+type ReportMeta = { params?: { startDate?: string; endDate?: string; reportType?: ReportType; project?: string } };
 
 interface AiReportPageProps {
   dashboard?: DashboardPayload | null;
@@ -105,7 +92,6 @@ export function AiReportPage({ dashboard, kpiStyle, project }: AiReportPageProps
   const [reportMarkdown, setReportMarkdown] = useState('');
   const [reportDashboard, setReportDashboard] = useState<DashboardPayload | null>(null);
   const [reportMeta, setReportMeta] = useState<ReportMeta | null>(null);
-  const [toolCalls, setToolCalls] = useState<ToolCallMeta[]>([]);
   const [downloading, setDownloading] = useState(false);
 
   const { data: reportData } = useQuery({ queryKey: ['report'], queryFn: () => batchApi.getReport(), retry: false });
@@ -145,7 +131,6 @@ export function AiReportPage({ dashboard, kpiStyle, project }: AiReportPageProps
     }
     setReportMeta(meta || null);
     setReportMarkdown(reportData.markdown || '');
-    setToolCalls(meta?.toolCalls || []);
     const params = meta?.params;
     if (params?.startDate) setStartDate(params.startDate);
     if (params?.endDate) setEndDate(params.endDate);
@@ -161,7 +146,6 @@ export function AiReportPage({ dashboard, kpiStyle, project }: AiReportPageProps
       setReportDashboard(null);
       setReportMeta(null);
       setReportMarkdown('');
-      setToolCalls([]);
     },
     onSuccess: (result) => {
       if (result.payload) setReportDashboard(result.payload);
@@ -173,7 +157,6 @@ export function AiReportPage({ dashboard, kpiStyle, project }: AiReportPageProps
         setReportDashboard(null);
         setReportMeta(null);
         setReportMarkdown('');
-        setToolCalls([]);
         setError(result.error || 'No metrics found for the selected report scope. Narrative was not generated.');
         setWarning(null);
         return;
@@ -189,17 +172,14 @@ export function AiReportPage({ dashboard, kpiStyle, project }: AiReportPageProps
       }
       if (result.report?.markdown) {
         setReportMarkdown(result.report.markdown);
-        setToolCalls(nextMeta?.toolCalls ?? []);
       } else {
         setReportMarkdown('');
-        setToolCalls([]);
       }
     },
     onError: (err: unknown) => {
       setReportDashboard(null);
       setReportMeta(null);
       setReportMarkdown('');
-      setToolCalls([]);
       setError(apiErrorMessage(err, 'Report generation failed'));
     },
   });
@@ -256,14 +236,13 @@ export function AiReportPage({ dashboard, kpiStyle, project }: AiReportPageProps
       <main className="flex-1 overflow-auto p-8 bg-[#f5f3ed]">
         <div className="max-w-qa mx-auto bg-white border border-qa-border shadow-sm min-h-[600px] print:border-0 print:shadow-none">
           <div className="p-8 border-b border-qa-border">
-            <div className="font-mono-qa text-[10px] uppercase tracking-wider text-qa-muted-light mb-2">AI report canvas · Tools: {DATASET_TOOLS.length}</div>
+            <div className="font-mono-qa text-[10px] uppercase tracking-wider text-qa-muted-light mb-2">AI report canvas</div>
             <h1 className="font-spectral text-3xl font-bold m-0">{REPORT_TYPES.find((t) => t.value === reportType)?.label} QA Report</h1>
             <p className="text-qa-muted mt-1 mb-0">{selectedProjectLabel} · {startDate} to {endDate}</p>
           </div>
           {hasReport ? (
             <div className="p-8 space-y-8">
               {chartData && <AiReportCharts dashboard={chartData} kpiStyle={kpiStyle} reportType={reportType} />}
-              {toolCalls.length > 0 && <div className="border border-qa-border bg-[#faf8f2] p-3"><div className="font-mono-qa text-[10px] uppercase tracking-wider text-qa-muted-light mb-2">Grounding tool calls</div><div className="flex flex-wrap gap-2">{toolCalls.map((t, idx) => <span key={`${t.toolName}-${idx}`} className="font-mono-qa text-[10px] border border-qa-border bg-white px-2 py-1">{t.toolName}: {t.rowCount}</span>)}</div></div>}
               {hasNarrative ? <article className="prose prose-sm max-w-none prose-headings:font-spectral prose-table:text-sm"><ReactMarkdown remarkPlugins={[remarkGfm]}>{reportMarkdown}</ReactMarkdown></article> : <div className="border border-qa-border bg-[#faf8f2] p-6 text-qa-muted">Charts are ready. Configure an LLM key and generate to add narrative.</div>}
             </div>
           ) : (
