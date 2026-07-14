@@ -45,7 +45,7 @@ function resultFromLabel(value: unknown): ExecutionResult | null {
   if (/^(pass|passed|success|successful)$/.test(label)) return 'PASS';
   if (/^(fail|failed|failure)$/.test(label)) return 'FAIL';
   if (/^(blocked|block)$/.test(label)) return 'BLOCKED';
-  if (/^(not executed|unexecuted|not run|pending|ne)$/.test(label)) return 'NE';
+  if (/^(not executed|unexecuted|not run|pending|work in progress|in progress|wip|ne)$/.test(label)) return 'NE';
   if (/^(not applicable|n\/a|na)$/.test(label)) return 'NA';
   return null;
 }
@@ -500,12 +500,37 @@ function parseResultColumnsAsSeries(
   return out;
 }
 
+function parsePivotTableRows(
+  rawColumns: unknown[],
+  rows: unknown[],
+  results: ResultLookup,
+  assignees: Map<string, string>,
+): QmetryExecutionSummaryCount[] {
+  const headers = rawColumns.map((column) => stringValue(column).toLowerCase().replace(/\s+/g, ' ').trim());
+  const assigneeIndex = headers.findIndex((header) => header === 'assignee' || header === 'tester' || header === 'executed by');
+  const resultIndex = headers.findIndex((header) => /execution result|execution status|^result$|^status$/.test(header));
+  const countIndex = headers.findIndex((header) => header === 'count' || header === 'total' || header === 'execution count');
+  if (assigneeIndex < 0 || resultIndex < 0 || countIndex < 0) return [];
+
+  const out: QmetryExecutionSummaryCount[] = [];
+  for (const rawRow of rows) {
+    if (!Array.isArray(rawRow)) continue;
+    const result = resultFromDefinition(rawRow[resultIndex], results);
+    const count = nonNegativeInteger(rawRow[countIndex]);
+    if (!result || count === null) continue;
+    const assignee = assigneeFromValue(rawRow[assigneeIndex], assignees) || 'Unassigned';
+    out.push({ assignee, result, count });
+  }
+  return out;
+}
+
 function parseQmetryTabularObject(row: Record<string, unknown>): QmetryExecutionSummaryCount[][] {
   if (!Array.isArray(row.rows) || !Array.isArray(row.column)) return [];
   const results = buildResultLookup(row.executionResults);
   const assignees = buildAssigneeLookup(row.userAccountIdDisplayNames);
   const columns = tabularColumns(row.column, results, assignees);
   const candidates = [
+    parsePivotTableRows(row.column, row.rows, results, assignees),
     parseAssigneesAsRows(row.rows, columns, results, assignees),
     parseAssigneesAsColumns(row.rows, columns, results, assignees),
     parseResultColumnsAsSeries(row.column, row.rows, results, assignees),
@@ -628,6 +653,7 @@ export function executionRowsFromSummary(
   }
   let ordinal = 0;
   for (const item of parsed.counts) {
+    const attributedAssignee = /^(unassigned|none|unknown|n\/a)$/i.test(item.assignee.trim()) ? null : (item.assignee || null);
     for (let index = 0; index < item.count; index++) {
       ordinal += 1;
       rows.push({
@@ -636,7 +662,7 @@ export function executionRowsFromSummary(
         cycleName,
         caseKey: `${project}-SUMMARY-${startDate}-${endDate}-${item.result}-${ordinal}`,
         result: item.result,
-        tester: item.result === 'NE' ? null : (item.assignee || 'Unassigned'),
+        tester: item.result === 'NE' ? null : attributedAssignee,
         executedAt: null,
         updatedAt: null,
         source: 'qmetry',

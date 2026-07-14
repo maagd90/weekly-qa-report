@@ -2,6 +2,8 @@ import assert from 'assert';
 import { fetchQmetryExecutionSummaryByAssignee, fetchQmetryExecutions } from '../qmetryClient';
 import { parseQmetryExecutionSummary } from '../qmetryExecutionSummary';
 import type { QmetryIntegrationConfig } from '../../config/loadIntegrations';
+import { emptyDataset } from '../../types/dataset';
+import { buildDashboardPayload } from '../../export/buildDashboardPayload';
 
 interface FetchCall { url: string; init: RequestInit }
 
@@ -41,27 +43,20 @@ async function testExecutionSummaryUsesActualExecutionDateQql(): Promise<void> {
     if (!url.includes('/gadgets/TESTCASE_EXECUTION_SUMMARY_BY_ASSIGNEE')) return jsonResponse({ errorMessage: `Unexpected URL ${url}` }, 404);
     return jsonResponse({
       data: {
-        column: [
-          { field: 'userAccountId', label: 'Assignee' },
-          { id: 176, label: 'Pass' },
-          { id: 173, label: 'Fail' },
-          { id: 172, label: 'Blocked' },
-          { id: 175, label: 'Not Executed' },
-        ],
+        column: ['Assignee', 'Testcase/Teststep Execution Result', 'Execution Result Color', 'Count'],
         rows: [
-          ['JIRAUSER31341', 100, 2, 3, 0],
-          ['JIRAUSER31789', 8, 1, 0, 0],
+          ['Muhammad Annus', 'BLOCKED', '#CCC', '106'],
+          ['Muhammad Annus', 'FAIL', '#D04437', '2'],
+          ['Muhammad Annus', 'PASS', '#14892C', '69'],
+          ['Unassigned', 'FAIL', '#D04437', '3'],
+          ['Unassigned', 'NOT APPLICABLE', '#f5a623', '5'],
+          ['Unassigned', 'PASS', '#14892C', '17'],
         ],
         userAccountIdDisplayNames: {
           JIRAUSER31341: 'Muhammad Annus',
-          JIRAUSER31789: 'Second Tester',
+          Unassigned: 'Unassigned',
         },
-        executionResults: [
-          { id: 172, name: 'Blocked' },
-          { id: 173, name: 'Fail' },
-          { id: 175, name: 'Not Executed' },
-          { id: 176, name: 'Pass' },
-        ],
+        executionResults: ['BLOCKED', 'FAIL', 'WORK IN PROGRESS', 'NOT EXECUTED', 'PASS', 'NOT APPLICABLE'],
       },
     });
   }) as typeof fetch;
@@ -73,12 +68,28 @@ async function testExecutionSummaryUsesActualExecutionDateQql(): Promise<void> {
   const result = await fetchQmetryExecutionSummaryByAssignee(cfg, { project: 'DLM', startDate: '2026-07-01', endDate: '2026-07-14' });
 
   assert.equal(result.error, undefined);
-  assert.equal(result.total, 114);
-  assert.equal(result.executions.length, 114);
-  assert.equal(result.executions.filter((row) => row.result === 'PASS').length, 108);
-  assert.equal(result.executions.filter((row) => row.tester === 'Muhammad Annus').length, 105);
+  assert.equal(result.total, 202);
+  assert.equal(result.executions.length, 202);
+  assert.equal(result.executions.filter((row) => row.result === 'PASS').length, 86);
+  assert.equal(result.executions.filter((row) => row.result === 'FAIL').length, 5);
+  assert.equal(result.executions.filter((row) => row.result === 'BLOCKED').length, 106);
+  assert.equal(result.executions.filter((row) => row.result === 'NA').length, 5);
+  assert.equal(result.executions.filter((row) => row.tester === 'Muhammad Annus').length, 177);
+  assert.equal(result.executions.filter((row) => row.tester === null).length, 25, 'Unassigned executions stay in overall metrics but not tester rankings');
   assert.ok(result.executions.every((row) => row.summaryOnly));
   assert.ok(result.executions.every((row) => row.executedAt === null && row.updatedAt === null), 'summary rows must not invent an execution date');
+
+  const dataset = emptyDataset();
+  dataset.executions = result.executions;
+  dataset.projects = ['DLM'];
+  const dashboard = buildDashboardPayload(dataset, { project: 'DLM', startDate: '2026-07-01', endDate: '2026-07-14' });
+  assert.deepEqual(
+    { ...dashboard.overview, resultMix: undefined, byMonth: undefined, chartSeries: undefined },
+    { totalCases: 202, executed: 202, passRate: 43, failed: 5, blocked: 106, resultMix: undefined, byMonth: undefined, chartSeries: undefined },
+    'overall KPIs must include Unassigned rows and use PASS / all executed statuses for pass rate',
+  );
+  assert.equal(dashboard.testers.length, 1, 'Unassigned must be excluded only from tester ranking');
+  assert.deepEqual(dashboard.testers[0], { name: 'Muhammad Annus', executed: 177, pass: 69, fail: 2, blocked: 106, na: 0, passPct: 39 });
 
   const call = calls[0];
   assert.equal(call.init.method, 'POST');
@@ -118,6 +129,17 @@ async function testExecutionSummaryUsesActualExecutionDateQql(): Promise<void> {
 
   const empty = parseQmetryExecutionSummary({ categories: ['Pass', 'Fail'], series: [{ name: 'Nobody', data: [0, 0] }] });
   assert.equal(empty?.total, 0, 'a recognized zero-result response must remain authoritative');
+
+  const workInProgress = parseQmetryExecutionSummary({
+    data: {
+      column: ['Assignee', 'Testcase/Teststep Execution Result', 'Execution Result Color', 'Count'],
+      rows: [['Muhammad Annus', 'WORK IN PROGRESS', '#123456', '4']],
+      userAccountIdDisplayNames: { JIRAUSER31341: 'Muhammad Annus' },
+      executionResults: ['WORK IN PROGRESS'],
+    },
+  });
+  assert.equal(workInProgress?.total, 4);
+  assert.equal(workInProgress?.counts[0]?.result, 'NE', 'work in progress is pending, not executed');
 
   const emiratesRows = parseQmetryExecutionSummary({
     data: {
