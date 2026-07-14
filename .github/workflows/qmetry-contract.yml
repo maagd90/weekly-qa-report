@@ -8,7 +8,9 @@ on:
     paths:
       - 'apps/batch/package.json'
       - 'apps/batch/scripts/qmetryLiveSmoke.ts'
+      - 'apps/batch/src/index.ts'
       - 'apps/batch/src/integrations/qmetryClient.ts'
+      - 'apps/batch/src/integrations/qmetryCycleHealth.ts'
       - 'apps/batch/src/integrations/__tests__/qmetryClient.test.ts'
       - 'apps/batch/src/config/loadIntegrations.ts'
       - 'apps/web/src/components/common/WarningDetails.tsx'
