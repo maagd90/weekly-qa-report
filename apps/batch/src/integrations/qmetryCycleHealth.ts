@@ -1,8 +1,8 @@
-import type { ApiFetchScope, ExecutionRow } from '../types/dataset';
+import type { ApiFetchScope, ExecutionResult } from '../types/dataset';
 import type { QmetryIntegrationConfig } from '../config/loadIntegrations';
+import { mapExecutionResult } from '../utils/excel';
 import {
   fetchFolderCycleHealth as fetchFolderCycleHealthBase,
-  fetchQmetryExecutions,
   searchQmetryTestCycles,
   type QmetryCycleHealthSummary,
   type QmetryCycleSummary,
@@ -40,23 +40,18 @@ function cycleInScope(cycle: QmetryCycleSummary, scope?: ApiFetchScope): boolean
   return true;
 }
 
-function isAggregateProgressRow(row: ExecutionRow): boolean {
-  return row.source === 'qmetry'
-    && row.executedAt === null
-    && /-PROGRESS-(PASS|FAIL|BLOCKED|NE|NA)-\d+$/i.test(row.caseKey);
-}
-
-function summarizeCycle(cycleKey: string, cycleName: string, executions: ExecutionRow[]): QmetryCycleHealthSummary {
-  const total = executions.length;
-  const pass = executions.filter((row) => row.result === 'PASS').length;
-  const fail = executions.filter((row) => row.result === 'FAIL').length;
-  const blocked = executions.filter((row) => row.result === 'BLOCKED').length;
-  const ne = executions.filter((row) => row.result === 'NE').length;
-  const na = executions.filter((row) => row.result === 'NA').length;
+function summarizeCycleProgress(cycle: QmetryCycleSummary): QmetryCycleHealthSummary {
+  const counts: Record<ExecutionResult, number> = { PASS: 0, FAIL: 0, BLOCKED: 0, NE: 0, NA: 0 };
+  for (const entry of cycle.progress || []) {
+    const count = Math.max(0, Math.floor(Number(entry.count) || 0));
+    counts[mapExecutionResult(entry.name)] += count;
+  }
+  const { PASS: pass, FAIL: fail, BLOCKED: blocked, NE: ne, NA: na } = counts;
+  const total = pass + fail + blocked + ne + na;
   const executed = pass + fail + blocked + na;
   return {
-    key: cycleKey,
-    name: cycleName,
+    key: cycle.key || cycle.id,
+    name: cycle.name || cycle.key || cycle.id,
     total,
     pass,
     fail,
@@ -65,32 +60,21 @@ function summarizeCycle(cycleKey: string, cycleName: string, executions: Executi
     na,
     passPct: executed ? Math.round((pass / executed) * 100) : 0,
     coverage: total ? Math.round((executed / total) * 100) : 0,
-    status: !total ? 'NOT STARTED' : fail || blocked ? 'AT RISK' : ne ? 'IN PROGRESS' : 'CLEAN',
+    status: !executed ? 'Not Started' : fail || blocked ? 'At Risk' : ne ? 'In Progress' : 'Healthy',
   };
 }
 
-function isGenericNoDetailWarning(error?: string): boolean {
-  return /QMetry cycles were found, but no testcase execution rows or cycle-level progress counts were available/i.test(error || '');
-}
-
-function compactWarnings(detailErrors: string[], excludedCycleNames: string[]): string {
-  const parts: string[] = [];
-  if (detailErrors.length) {
-    const first = detailErrors[0].replace(/\s+/g, ' ').slice(0, 220);
-    parts.push(`QMetry detail retrieval failed for ${detailErrors.length} cycle(s).${first ? ` First error: ${first}` : ''}`);
-  }
-  if (excludedCycleNames.length) {
-    const unique = [...new Set(excludedCycleNames)];
-    const named = unique.slice(0, 3).join(', ') + (unique.length > 3 ? `, +${unique.length - 3} more` : '');
-    parts.push(`Detailed execution dates were unavailable for: ${named}. Excluded from this period's totals rather than shown as an approximate all-time count.`);
-  }
-  return parts.join(' ');
-}
-
 /**
- * The folder drill-down is a separate path from the dashboard dataset. For a
- * selected date range, fetch only testcase-level rows with usable execution
- * dates and never substitute the cycle's all-time aggregate progress totals.
+ * The folder drill-down is a live cycle-health view, separate from the
+ * date-scoped report metrics. The cycle search response already contains
+ * QMetry's authoritative current result split for each cycle. Keep that split
+ * cycle-specific; the project-wide execution-summary gadget must never be
+ * applied to an individual cycle card or drawer.
+ *
+ * The selected period determines which cycles are shown (using their planned
+ * or updated dates). Once selected, each cycle displays its current QMetry
+ * progress snapshot. This intentionally does not feed the report dataset,
+ * where undated aggregate progress remains excluded from period totals.
  */
 export async function fetchFolderCycleHealth(
   cfg: QmetryIntegrationConfig,
@@ -102,22 +86,8 @@ export async function fetchFolderCycleHealth(
   const found = await searchQmetryTestCycles(cfg, { startAt: 0, maxResults: cfg.pageSize, folderId });
   if (found.error) return { cycles: [], error: found.error };
 
-  const cycles: QmetryCycleHealthSummary[] = [];
-  const detailErrors: string[] = [];
-  const excludedCycleNames: string[] = [];
-
-  for (const cycle of found.cycles.filter((candidate) => cycleInScope(candidate, scope))) {
-    const result = await fetchQmetryExecutions({ ...cfg, cycleIds: [cycle.id] }, scope);
-    const detailedRows = result.executions.filter((row) => !isAggregateProgressRow(row));
-
-    if (result.error && !isGenericNoDetailWarning(result.error)) {
-      detailErrors.push(`${cycle.name}: ${result.error}`);
-    }
-    if (!detailedRows.length) excludedCycleNames.push(cycle.name || cycle.key || cycle.id);
-
-    cycles.push(summarizeCycle(cycle.key || cycle.id, cycle.name || cycle.key || cycle.id, detailedRows));
-  }
-
-  const error = compactWarnings(detailErrors, excludedCycleNames);
-  return error ? { cycles, error } : { cycles };
+  const cycles = found.cycles
+    .filter((candidate) => cycleInScope(candidate, scope))
+    .map(summarizeCycleProgress);
+  return { cycles };
 }

@@ -542,7 +542,7 @@ function summarizeCycle(cycleKey: string, cycleName: string, executions: Executi
   const ne = executions.filter((e) => e.result === 'NE').length;
   const na = executions.filter((e) => e.result === 'NA').length;
   const executed = pass + fail + blocked + na;
-  return { key: cycleKey, name: cycleName, total, pass, fail, blocked, ne, na, passPct: executed ? Math.round((pass / executed) * 100) : 0, coverage: total ? Math.round((executed / total) * 100) : 0, status: !total ? 'NOT STARTED' : fail || blocked ? 'AT RISK' : ne ? 'IN PROGRESS' : 'CLEAN' };
+  return { key: cycleKey, name: cycleName, total, pass, fail, blocked, ne, na, passPct: executed ? Math.round((pass / executed) * 100) : 0, coverage: total ? Math.round((executed / total) * 100) : 0, status: !executed ? 'Not Started' : fail || blocked ? 'At Risk' : ne ? 'In Progress' : 'Healthy' };
 }
 
 export async function fetchFolderCycleHealth(cfg: QmetryIntegrationConfig, folderId?: string, scope?: ApiFetchScope): Promise<{ cycles: QmetryCycleHealthSummary[]; error?: string }> {

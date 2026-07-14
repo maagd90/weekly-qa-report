@@ -107,14 +107,14 @@ export function CyclesPage({ dashboard, kpiStyle, selectedCycle, onSelectCycle, 
   const executed = cycles.reduce((sum, c) => sum + c.pass + c.fail + c.blocked + c.na, 0);
   const coveragePct = totalCases ? Math.round((executed / totalCases) * 100) : (overview.totalCases ? Math.round((overview.executed / overview.totalCases) * 100) : 0);
   const shown = cycles.slice(0, selectedFolder ? 50 : 16);
-  const selected = dashboard.cycles.find((c) => c.key === selectedCycle) ?? null;
+  const selected = cycles.find((c) => c.key === selectedCycle) ?? null;
   const liveWarnings = liveCyclesQuery.data?.warnings || [];
 
-  function pickCycle(key: string): void { const imported = dashboard.cycles.find((c) => c.key === key); if (imported) onSelectCycle(imported.key); }
+  function pickCycle(key: string): void { onSelectCycle(key); }
 
   return (
     <>
-      <QaPageShell title="Test Cycle Health" subtitle="top Search and folder Search both apply the selected date period">
+      <QaPageShell title="Test Cycle Health" subtitle="selected dates choose the cycles; result splits show current live QMetry progress">
         <FolderPicker selectedFolder={selectedFolder} onSelectFolder={handleSelectFolder} connectionId={qmetryConnectionId} project={selectedProject} />
         <div className="mb-4 flex items-center gap-3 flex-wrap">
           <button type="button" onClick={() => liveCyclesQuery.refetch()} disabled={!selectedFolder || liveCyclesQuery.isFetching || Boolean(selectedProject && !qmetryConnectionId)} className="font-mono-qa text-[10px] px-3 py-1.5 border border-qa-border bg-white cursor-pointer disabled:opacity-50">
@@ -126,7 +126,7 @@ export function CyclesPage({ dashboard, kpiStyle, selectedCycle, onSelectCycle, 
         {selectedFolder && liveCyclesQuery.error && <div className="mb-4 text-[12px] text-[#a13d2c]">Could not load folder cycles: {(liveCyclesQuery.error as Error).message}</div>}
         {selectedFolder && liveCyclesQuery.data?.source === 'qmetry-live' && (
           <div className="mb-4 space-y-2">
-            <div className="text-[12px] text-qa-muted-light">Showing live QMetry execution results for folder <span className="font-mono-qa text-qa-ink">{selectedFolder}</span> and selected period.</div>
+            <div className="text-[12px] text-qa-muted-light">Showing cycles matching the selected period with their current live QMetry result split for folder <span className="font-mono-qa text-qa-ink">{selectedFolder}</span>.</div>
             <WarningDetails
               summary="QMetry returned partial cycle data. Aggregate counts may be shown and tester attribution may be incomplete."
               messages={liveWarnings}

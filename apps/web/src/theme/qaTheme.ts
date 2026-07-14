@@ -73,6 +73,7 @@ export interface BadgeStyle {
 export function cycleBadge(status: string): BadgeStyle {
   if (status === 'Not Started') return { label: status, fg: '#6b6660', bg: '#ececec' };
   if (status === 'Healthy') return { label: status, fg: '#2f6a48', bg: '#e7f0e9' };
+  if (status === 'In Progress') return { label: status, fg: '#9a6a12', bg: '#f6efd9' };
   if (status === 'Watch') return { label: status, fg: '#9a6a12', bg: '#f6efd9' };
   if (status === 'At Risk') return { label: status, fg: '#a13d2c', bg: '#f6e4df' };
   return { label: status, fg: QA.muted, bg: '#ececec' };
