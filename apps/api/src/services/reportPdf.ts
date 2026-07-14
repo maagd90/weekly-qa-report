@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import puppeteer, { type Browser, type Page } from 'puppeteer-core';
+import { toErrorMessage } from 'qa-dashboard-batch';
 
 const DEFAULT_PRINT_URL = 'http://dashboard-web/print/report';
 const LOCAL_PRINT_URL = 'http://localhost:3000/print/report';
@@ -26,12 +27,20 @@ interface InlineLogoAsset {
 }
 
 function pdfLog(message: string, data?: Record<string, unknown>): void { console.log(`[pdf] ${message}`, data || ''); }
-function pdfError(message: string, err: unknown, data?: Record<string, unknown>): void { console.error(`[pdf] ${message}`, { ...data, error: err instanceof Error ? err.message : String(err) }); }
+function pdfError(message: string, err: unknown, data?: Record<string, unknown>): void { console.error(`[pdf] ${message}`, { ...data, error: toErrorMessage(err) }); }
 function renderTimeoutMs(): number { const raw = Number(process.env.PDF_RENDER_TIMEOUT_MS || DEFAULT_RENDER_TIMEOUT_MS); return Number.isFinite(raw) && raw > 10_000 ? raw : DEFAULT_RENDER_TIMEOUT_MS; }
 function stripQuotes(value: string): string { const p = value.trim(); if ((p.startsWith('"') && p.endsWith('"')) || (p.startsWith("'") && p.endsWith("'"))) return p.slice(1, -1); return p; }
 function expandWindowsEnv(value: string): string { return value.replace(/%([^%]+)%/g, (_, name) => process.env[name] ?? `%${name}%`); }
 function normalizeExecutablePath(raw: string): string { let p = stripQuotes(raw); if (!p) return ''; if (process.platform === 'win32') { p = expandWindowsEnv(p); if (/^\/[a-z0-9_-]+\//i.test(p)) return p; } return path.normalize(p); }
 
+/**
+ * Lists supported browser executable locations in precedence order.
+ *
+ * A user-configured path is checked first, followed by platform conventions.
+ * Values are normalized and empty candidates are removed before probing.
+ *
+ * @returns Candidate Chromium, Chrome, or Edge executable paths.
+ */
 function candidateBrowserPaths(): string[] {
   const candidates = new Set<string>();
   const configured = process.env.PUPPETEER_EXECUTABLE_PATH;
@@ -48,9 +57,9 @@ function candidateBrowserPaths(): string[] {
     candidates.add(path.join(programFilesX86, edge));
     if (localAppData) candidates.add(path.join(localAppData, chrome));
   } else if (process.platform === 'darwin') {
-    candidates.add('/Applications/Google Chrome.app/Contents/MOS/Google Chrome'.replace('/MOS/', '/MacOS/'));
-    candidates.add('/Applications/Microsoft Edge.app/Contents/MOS/Microsoft Edge'.replace('/MOS/', '/MacOS/'));
-    candidates.add('/Applications/Chromium.app/Contents/MOS/Chromium'.replace('/MOS/', '/MacOS/'));
+    candidates.add('/Applications/Google Chrome.app/Contents/MacOS/Google Chrome');
+    candidates.add('/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge');
+    candidates.add('/Applications/Chromium.app/Contents/MacOS/Chromium');
   } else {
     candidates.add('/usr/bin/chromium');
     candidates.add('/usr/bin/chromium-browser');
@@ -141,7 +150,7 @@ function buildPrintUrl(baseUrl: string, startDate: string, endDate: string, repo
 }
 
 function shouldTryNextPrintUrl(err: unknown): boolean {
-  const msg = err instanceof Error ? err.message : String(err);
+  const msg = toErrorMessage(err);
   return /ERR_NAME_NOT_RESOLVED|ENOTFOUND|EAI_AGAIN|ERR_CONNECTION_REFUSED/i.test(msg);
 }
 

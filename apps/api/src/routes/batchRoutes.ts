@@ -25,6 +25,14 @@ import {
   emptyConnections,
   canonicalProjectKey,
   canonicalProjectOrUndefined,
+  ensureRuntimeDirectories,
+  executionMatchesApiScope,
+  issueMatchesApiScope,
+  readJsonFile,
+  resolveRuntimePaths,
+  toErrorMessage,
+  validIsoDate,
+  writeJsonFile,
 } from 'qa-dashboard-batch';
 import type {
   ApiFetchScope,
@@ -40,14 +48,9 @@ import { getEnvStatus } from '../loadRepoEnv';
 import { generateReportPdf, type ReportBrandingPayload } from '../services/reportPdf';
 
 const router = Router();
-const ROOT = process.env.PROJECT_ROOT || path.resolve(__dirname, '../../../..');
-const INPUT_DIR = process.env.INPUT_DIR || path.join(ROOT, 'input');
-const OUTPUT_DIR = process.env.OUTPUT_DIR || path.join(ROOT, 'output');
-const CONFIG_DIR = process.env.CONFIG_DIR || path.join(ROOT, 'config');
-
-fs.mkdirSync(INPUT_DIR, { recursive: true });
-fs.mkdirSync(OUTPUT_DIR, { recursive: true });
-fs.mkdirSync(CONFIG_DIR, { recursive: true });
+const RUNTIME_PATHS = resolveRuntimePaths({ fallbackRoot: path.resolve(__dirname, '../../../..') });
+const { rootDir: ROOT, inputDir: INPUT_DIR, outputDir: OUTPUT_DIR, configDir: CONFIG_DIR } = RUNTIME_PATHS;
+ensureRuntimeDirectories(RUNTIME_PATHS);
 
 const GENERATED_OUTPUT_FILES = ['raw-dataset.json', 'dataset-fingerprint.txt', 'dashboard-data.json', 'report-dashboard.json', 'report-raw-dataset.json', 'report-dataset-fingerprint.txt', 'report.md', 'report-meta.json'];
 const REPORT_OUTPUT_FILES = ['report-dashboard.json', 'report-raw-dataset.json', 'report-dataset-fingerprint.txt', 'report.md', 'report-meta.json'];
@@ -73,17 +76,22 @@ function log(req: Request, message: string, data?: Record<string, unknown>): voi
 }
 
 function logError(req: Request, message: string, err: unknown, data?: Record<string, unknown>): void {
-  console.error(`[api] [${requestId(req)}] ${message}`, { ...data, error: err instanceof Error ? err.message : String(err) });
+  console.error(`[api] [${requestId(req)}] ${message}`, { ...data, error: toErrorMessage(err) });
 }
 
 function outputPath(fileName: string): string {
   return path.join(OUTPUT_DIR, fileName);
 }
 
+/**
+ * Loads an optional JSON artifact from the shared output directory.
+ *
+ * @typeParam T Expected artifact shape.
+ * @param fileName Output-directory-relative file name.
+ * @returns Parsed artifact, or `null` when it is absent or malformed.
+ */
 function loadJsonFile<T>(fileName: string): T | null {
-  const filePath = outputPath(fileName);
-  if (!fs.existsSync(filePath)) return null;
-  try { return JSON.parse(fs.readFileSync(filePath, 'utf8')) as T; } catch { return null; }
+  return readJsonFile<T>(outputPath(fileName));
 }
 
 function reportArtifacts(): { dashboard: DashboardPayload; meta: ReportMetaFile; markdown: string } | null {
@@ -134,11 +142,6 @@ function totalRows(dataset: Dataset): number {
   return counts.executions + counts.issues + counts.uat;
 }
 
-function validDate(value?: string): string | undefined {
-  const v = (value || '').trim();
-  return /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : undefined;
-}
-
 function cleanProject(value?: string): string | undefined {
   return canonicalProjectOrUndefined(value);
 }
@@ -146,8 +149,8 @@ function cleanProject(value?: string): string | undefined {
 function cleanApiScope(scope?: ApiFetchScope): ApiFetchScope | undefined {
   if (!scope) return undefined;
   const next: ApiFetchScope = {};
-  const startDate = validDate(scope.startDate);
-  const endDate = validDate(scope.endDate);
+  const startDate = validIsoDate(scope.startDate);
+  const endDate = validIsoDate(scope.endDate);
   const project = cleanProject(scope.project);
   if (startDate) next.startDate = startDate;
   if (endDate) next.endDate = endDate;
@@ -178,38 +181,12 @@ function cacheFileForMode(mode: BuildMode): string | null {
 }
 
 function loadDatasetFile(fileName: string): Dataset | null {
-  const filePath = outputPath(fileName);
-  if (!fs.existsSync(filePath)) return null;
-  return JSON.parse(fs.readFileSync(filePath, 'utf8')) as Dataset;
+  return readJsonFile<Dataset>(outputPath(fileName));
 }
 
 function saveDatasetFile(fileName: string, dataset: Dataset): void {
   fs.mkdirSync(OUTPUT_DIR, { recursive: true });
-  fs.writeFileSync(outputPath(fileName), JSON.stringify(dataset, null, 2));
-}
-
-function projectMatchesScope(project: string | undefined, scope?: ApiFetchScope): boolean {
-  const selected = canonicalProjectOrUndefined(scope?.project);
-  if (!selected) return true;
-  return canonicalProjectKey(project || '') === selected;
-}
-
-function dateMatchesScope(dates: Array<string | null | undefined>, scope?: ApiFetchScope): boolean {
-  const startDate = validDate(scope?.startDate);
-  const endDate = validDate(scope?.endDate);
-  if (!startDate && !endDate) return true;
-  return dates.some((raw) => {
-    const date = validDate(raw || undefined);
-    return Boolean(date && (!startDate || date >= startDate) && (!endDate || date <= endDate));
-  });
-}
-
-function issueMatchesScope(row: Dataset['issues'][number], scope?: ApiFetchScope): boolean {
-  return projectMatchesScope(row.project, scope) && dateMatchesScope([row.createdAt, row.updatedAt, row.resolvedAt], scope);
-}
-
-function executionMatchesScope(row: Dataset['executions'][number], scope?: ApiFetchScope): boolean {
-  return projectMatchesScope(row.project, scope) && dateMatchesScope([row.executedAt, row.updatedAt], scope);
+  writeJsonFile(outputPath(fileName), dataset);
 }
 
 function liveDatasetSlice(dataset: Dataset, executions: Dataset['executions'], issues: Dataset['issues'], files: Dataset['files']): Dataset {
@@ -240,8 +217,8 @@ function preserveLiveCache(freshDataset: Dataset, apiScope?: ApiFetchScope): Dat
   const previousQmetry = previous.executions.filter((row) => row.source === 'qmetry');
   const warnings = [...freshDataset.meta.warnings];
 
-  const preservedIssues = freshJira ? previousJira.filter((row) => !issueMatchesScope(row, apiScope)) : previousJira;
-  const preservedExecutions = freshQmetry ? previousQmetry.filter((row) => !executionMatchesScope(row, apiScope)) : previousQmetry;
+  const preservedIssues = freshJira ? previousJira.filter((row) => !issueMatchesApiScope(row, apiScope)) : previousJira;
+  const preservedExecutions = freshQmetry ? previousQmetry.filter((row) => !executionMatchesApiScope(row, apiScope)) : previousQmetry;
   const preservedFiles = previous.files.filter((file) => {
     if (file.source === 'jira-api') return !freshJira;
     if (file.source === 'qmetry-api') return !freshQmetry;
@@ -290,7 +267,7 @@ async function refreshGeneratedOutputs(req: Request, connections: UserConnection
   }
   saveRawDataset(OUTPUT_DIR, dataset, fingerprint);
   const payload = refilterDashboard(dataset, { ...dashboardFilter, project: cleanProject(dashboardFilter.project) });
-  fs.writeFileSync(outputPath('dashboard-data.json'), JSON.stringify(payload, null, 2));
+  writeJsonFile(outputPath('dashboard-data.json'), payload);
   log(req, 'generated outputs refreshed', { mode, rowCounts: counts, warnings: dataset.meta.warnings, projects: dataset.projects, apiScope: options.apiScope });
   return { rebuilt: true, rowCounts: counts, removed, warnings: dataset.meta.warnings, files: dataset.files, projects: dataset.projects, dashboard: payload };
 }
@@ -395,7 +372,7 @@ router.post('/llm/test', async (req: Request, res: Response) => {
     res.json(result);
   } catch (err) {
     logError(req, 'POST /llm/test:failed', err);
-    res.status(500).json({ ok: false, route: 'direct', error: (err as Error).message || String(err), requestId: requestId(req) });
+    res.status(500).json({ ok: false, route: 'direct', error: toErrorMessage(err), requestId: requestId(req) });
   }
 });
 
@@ -408,7 +385,7 @@ router.get('/anthropic/test', async (req: Request, res: Response) => {
     res.json(result);
   } catch (err) {
     logError(req, 'GET /anthropic/test:failed', err);
-    res.status(500).json({ ok: false, route: 'direct', error: (err as Error).message || String(err), requestId: requestId(req) });
+    res.status(500).json({ ok: false, route: 'direct', error: toErrorMessage(err), requestId: requestId(req) });
   }
 });
 
@@ -439,7 +416,7 @@ router.post('/generate', async (req: Request, res: Response) => {
     return res.status(200).json({ ...resultPayload, requestId: requestId(req) });
   } catch (err) {
     logError(req, 'POST /generate:failed', err);
-    return res.status(500).json({ ok: false, error: (err as Error).message, requestId: requestId(req) });
+    return res.status(500).json({ ok: false, error: toErrorMessage(err), requestId: requestId(req) });
   }
 });
 
@@ -453,7 +430,9 @@ router.get('/dashboard', async (req: Request, res: Response) => {
   if (imported) return res.json(refilterDashboard(imported.dataset, filter));
   const file = path.join(OUTPUT_DIR, 'dashboard-data.json');
   if (!fs.existsSync(file)) return res.status(404).json({ error: 'No dashboard generated yet. Import files, then Sync imported data, or use Settings → Sync JIRA/QMetry. Dataset contains: no projects / 0 rows.', requestId: requestId(req) });
-  res.json(JSON.parse(fs.readFileSync(file, 'utf8')));
+  const dashboard = readJsonFile<DashboardPayload>(file);
+  if (!dashboard) return res.status(500).json({ error: 'The cached dashboard is not valid JSON. Sync data to rebuild it.', requestId: requestId(req) });
+  res.json(dashboard);
 });
 
 router.post('/dashboard/search', async (req: Request, res: Response) => {
@@ -471,7 +450,7 @@ router.post('/dashboard/search', async (req: Request, res: Response) => {
         const cached = await ensureDataset(req, connections, undefined, 'cached');
         if (cached) {
           const dashboard = refilterDashboard(cached.dataset, filter);
-          return res.json({ ok: true, dashboard, rowCounts: rowCounts(cached.dataset), warnings: [`Live search failed: ${(liveErr as Error).message}`, ...cached.dataset.meta.warnings], projects: cached.dataset.projects, source: 'cached-fallback', requestId: requestId(req) });
+          return res.json({ ok: true, dashboard, rowCounts: rowCounts(cached.dataset), warnings: [`Live search failed: ${toErrorMessage(liveErr)}`, ...cached.dataset.meta.warnings], projects: cached.dataset.projects, source: 'cached-fallback', requestId: requestId(req) });
         }
         throw liveErr;
       }
@@ -489,7 +468,7 @@ router.post('/dashboard/search', async (req: Request, res: Response) => {
     return res.status(404).json({ ok: false, error: 'No cached dashboard data. Sync imported files or JIRA/QMetry first.', requestId: requestId(req) });
   } catch (err) {
     logError(req, 'POST /dashboard/search:failed', err);
-    return res.status(500).json({ ok: false, error: (err as Error).message, requestId: requestId(req) });
+    return res.status(500).json({ ok: false, error: toErrorMessage(err), requestId: requestId(req) });
   }
 });
 
@@ -568,7 +547,7 @@ router.post('/report/pdf', async (req: Request, res: Response) => {
     res.send(pdfBuffer);
   } catch (err) {
     logError(req, 'POST /report/pdf:failed', err, { project: clean });
-    res.status(500).json({ error: `PDF generation failed: ${(err as Error).message}`, requestId: requestId(req) });
+    res.status(500).json({ error: `PDF generation failed: ${toErrorMessage(err)}`, requestId: requestId(req) });
   }
 });
 
@@ -598,7 +577,7 @@ router.post('/integrations/test', async (req: Request, res: Response) => {
     res.json({ ok: true, executions: dataset.executions.length, issues: dataset.issues.length, uat: dataset.uat.length, warnings: dataset.meta.warnings });
   } catch (err) {
     logError(req, 'POST /integrations/test:failed', err);
-    res.status(500).json({ ok: false, error: (err as Error).message, requestId: requestId(req) });
+    res.status(500).json({ ok: false, error: toErrorMessage(err), requestId: requestId(req) });
   }
 });
 
@@ -612,7 +591,7 @@ router.post('/integrations/sync', async (req: Request, res: Response) => {
     return res.json({ ok: true, ...sync, requestId: requestId(req) });
   } catch (err) {
     logError(req, 'POST /integrations/sync:failed', err);
-    return res.status(500).json({ ok: false, error: (err as Error).message, requestId: requestId(req) });
+    return res.status(500).json({ ok: false, error: toErrorMessage(err), requestId: requestId(req) });
   }
 });
 
@@ -630,7 +609,7 @@ router.post('/integrations/test-connection', async (req: Request, res: Response)
     if (cycles.error) return res.json({ ok: false, error: cycles.error });
     return res.json({ ok: true, count: cycles.total, sampleCycles: cycles.cycles });
   } catch (err) {
-    return res.status(500).json({ ok: false, error: (err as Error).message, requestId: requestId(req) });
+    return res.status(500).json({ ok: false, error: toErrorMessage(err), requestId: requestId(req) });
   }
 });
 
@@ -642,7 +621,7 @@ router.post('/input/sync', async (req: Request, res: Response) => {
     return res.json({ ok: true, ...sync, requestId: requestId(req) });
   } catch (err) {
     logError(req, 'POST /input/sync:failed', err);
-    return res.status(500).json({ ok: false, error: (err as Error).message, requestId: requestId(req) });
+    return res.status(500).json({ ok: false, error: toErrorMessage(err), requestId: requestId(req) });
   }
 });
 
@@ -675,7 +654,7 @@ router.delete('/input/:filename', async (req: Request, res: Response) => {
   } catch (err) {
     const removed = clearOutputFiles();
     logError(req, 'DELETE /input:refresh failed; cleared stale outputs', err, { filename, removed });
-    return res.json({ ok: true, filename, rebuilt: false, rowCounts: { executions: 0, issues: 0, uat: 0 }, removed, warnings: [`File removed, but imported data refresh failed: ${(err as Error).message}`] });
+    return res.json({ ok: true, filename, rebuilt: false, rowCounts: { executions: 0, issues: 0, uat: 0 }, removed, warnings: [`File removed, but imported data refresh failed: ${toErrorMessage(err)}`] });
   }
 });
 

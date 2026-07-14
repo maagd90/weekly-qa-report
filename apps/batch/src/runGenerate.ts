@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import type { ApiFetchScope, DashboardPayload, GenerateParams, GenerateResult } from './types/dataset';
+import type { ApiFetchScope, DashboardPayload, Dataset, GenerateParams, GenerateResult } from './types/dataset';
 import { buildDataset, computeFingerprint } from './cache/datasetCache';
 import { buildDashboardPayload } from './export/buildDashboardPayload';
 import { hasDashboardMetrics, noMetricsForScopeMessage } from './export/reportMetrics';
@@ -8,39 +8,83 @@ import { generateReportFromDataset, resolveReportLlmConfig } from './ai/reportWr
 import { LLM_PROVIDER_LABELS, envKeyForProvider } from './ai/llmProviders';
 import { discoverInputFiles } from './parse/dispatcher';
 import { canonicalProjectOrUndefined } from './projects/projectKey';
+import { validIsoDate } from './filters/scopeMatching';
+import { ensureRuntimeDirectories, resolveRuntimePaths } from './runtime/runtimePaths';
+import { readJsonFile, writeJsonFile } from './utils/jsonFile';
+import { toErrorMessage } from './utils/errors';
 
-function resolveRoot(): string { return path.resolve(__dirname, '../../..'); }
-
-function validDate(value?: string): string | undefined {
-  return /^\d{4}-\d{2}-\d{2}$/.test(value || '') ? value : undefined;
-}
-
+/**
+ * Reports whether generation received browser-supplied live integrations.
+ *
+ * Live credentials are intentionally treated as a cache-bypass signal because
+ * the remote source may have changed even when local input fingerprints have not.
+ *
+ * @param params Report generation request.
+ * @returns `true` when at least one JIRA or QMetry connection is present.
+ */
 function hasBrowserConnections(params: GenerateParams): boolean {
   return Boolean(params.connections?.jira?.length || params.connections?.qmetry?.length);
 }
 
+/**
+ * Removes an optional generated artifact.
+ *
+ * @param filePath Path to the artifact.
+ */
 function removeIfExists(filePath: string): void {
   if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
 }
 
+/**
+ * Removes report artifacts that would otherwise expose an obsolete snapshot.
+ *
+ * @param paths Artifact paths to remove when present.
+ */
 function clearStaleReportFiles(...paths: string[]): void {
   paths.forEach(removeIfExists);
 }
 
-function loadReportDataset(rawPath: string): import('./types/dataset').Dataset | null {
-  if (!fs.existsSync(rawPath)) return null;
-  try { return JSON.parse(fs.readFileSync(rawPath, 'utf8')) as import('./types/dataset').Dataset; } catch { return null; }
+/**
+ * Loads the optional report-scoped raw dataset cache.
+ *
+ * Missing or malformed cache files are recoverable and trigger a rebuild.
+ *
+ * @param rawPath Path to the report dataset JSON.
+ * @returns Parsed dataset, or `null` when no usable cache exists.
+ */
+function loadReportDataset(rawPath: string): Dataset | null {
+  return readJsonFile<Dataset>(rawPath);
 }
 
+/**
+ * Loads and trims the optional report dataset fingerprint.
+ *
+ * @param fingerprintPath Path to the fingerprint text file.
+ * @returns Stored fingerprint, or `null` when the file is absent.
+ */
 function loadReportFingerprint(fingerprintPath: string): string | null {
   return fs.existsSync(fingerprintPath) ? fs.readFileSync(fingerprintPath, 'utf8').trim() : null;
 }
 
-function saveReportDataset(rawPath: string, fingerprintPath: string, dataset: import('./types/dataset').Dataset, fingerprint: string): void {
-  fs.writeFileSync(rawPath, JSON.stringify(dataset, null, 2));
+/**
+ * Persists the report-scoped dataset and the fingerprint that produced it.
+ *
+ * @param rawPath Destination for the normalized dataset JSON.
+ * @param fingerprintPath Destination for the fingerprint text.
+ * @param dataset Dataset used to render the report.
+ * @param fingerprint Fingerprint for source files, configuration, and scope.
+ */
+function saveReportDataset(rawPath: string, fingerprintPath: string, dataset: Dataset, fingerprint: string): void {
+  writeJsonFile(rawPath, dataset);
   fs.writeFileSync(fingerprintPath, fingerprint);
 }
 
+/**
+ * Converts dashboard metrics into the compact row-count response contract.
+ *
+ * @param payload Filtered dashboard payload.
+ * @returns Counts surfaced by the generation endpoint.
+ */
 function reportRowCounts(payload: DashboardPayload): { executions: number; issues: number; uat: number } {
   return {
     executions: payload.overview.totalCases,
@@ -49,6 +93,12 @@ function reportRowCounts(payload: DashboardPayload): { executions: number; issue
   };
 }
 
+/**
+ * Removes credentials before request parameters are stored in report metadata.
+ *
+ * @param params Original generation request.
+ * @returns A copy safe to persist alongside generated artifacts.
+ */
 function sanitizeParamsForMeta(params: GenerateParams): GenerateParams {
   const safe: GenerateParams = { ...params };
   delete safe.apiKey;
@@ -62,25 +112,46 @@ function sanitizeParamsForMeta(params: GenerateParams): GenerateParams {
   return safe;
 }
 
+/**
+ * Builds the normalized live API scope implied by report parameters.
+ *
+ * Unsupported date representations are omitted instead of being sent to remote
+ * APIs. An empty selection returns `undefined`, which means no API restriction.
+ *
+ * @param params Report generation request.
+ * @returns Canonical project/date scope, or `undefined` when unrestricted.
+ */
 function apiScopeFromParams(params: GenerateParams): ApiFetchScope | undefined {
   const scope: ApiFetchScope = {};
   const project = canonicalProjectOrUndefined(params.project);
-  const startDate = validDate(params.startDate);
-  const endDate = validDate(params.endDate);
+  const startDate = validIsoDate(params.startDate);
+  const endDate = validIsoDate(params.endDate);
   if (project) scope.project = project;
   if (startDate) scope.startDate = startDate;
   if (endDate) scope.endDate = endDate;
   return scope.project || scope.startDate || scope.endDate ? scope : undefined;
 }
 
+/**
+ * Builds a report snapshot from live integrations and/or staged input files.
+ *
+ * The operation owns report-scoped cache validation, dataset construction,
+ * filtered dashboard generation, optional LLM narrative generation, and stale
+ * artifact cleanup. Failures before a valid dashboard exists return `ok: false`;
+ * narrative-only failures keep the metric report usable and return a warning.
+ *
+ * @param params Filters, report type, runtime directories, integrations, and LLM selection.
+ * @returns Generation result containing artifact paths and optional dashboard/report data.
+ */
 export async function runGenerate(params: GenerateParams): Promise<GenerateResult> {
-  const root = resolveRoot();
-  const inputDir = params.inputDir || path.join(root, 'input');
-  const outputDir = params.outputDir || path.join(root, 'output');
-  const configDir = params.configDir || path.join(root, 'config');
-
-  fs.mkdirSync(inputDir, { recursive: true });
-  fs.mkdirSync(outputDir, { recursive: true });
+  const runtimePaths = resolveRuntimePaths({
+    inputDir: params.inputDir,
+    outputDir: params.outputDir,
+    configDir: params.configDir,
+    fallbackRoot: path.resolve(__dirname, '../../..'),
+  });
+  ensureRuntimeDirectories(runtimePaths);
+  const { inputDir, outputDir, configDir } = runtimePaths;
 
   const dashboardPath = path.join(outputDir, 'report-dashboard.json');
   const reportPath = path.join(outputDir, 'report.md');
@@ -103,7 +174,7 @@ export async function runGenerate(params: GenerateParams): Promise<GenerateResul
     dataset = forceLiveBuild ? await buildDataset(inputDir, configDir, params.connections, buildOptions) : (cached || await buildDataset(inputDir, configDir, params.connections, buildOptions));
   } catch (err) {
     clearStaleReportFiles(dashboardPath, reportPath, metaPath, rawPath, fingerprintPath);
-    return { ok: false, filesParsed: 0, rowCounts: {}, warnings: [], paths: { dashboard: '', report: '', meta: '', raw: '' }, error: (err as Error).message };
+    return { ok: false, filesParsed: 0, rowCounts: {}, warnings: [], paths: { dashboard: '', report: '', meta: '', raw: '' }, error: toErrorMessage(err) };
   }
 
   const fileCount = discoverInputFiles(inputDir).length;
@@ -132,13 +203,13 @@ export async function runGenerate(params: GenerateParams): Promise<GenerateResul
     };
   }
 
-  fs.writeFileSync(dashboardPath, JSON.stringify(payload, null, 2));
+  writeJsonFile(dashboardPath, payload);
   const baseReportMeta = {
     generatedAt: payload.meta.generatedAt,
     params: sanitizeParamsForMeta({ ...params, project }),
     toolCalls: [] as { toolName: string; rowCount: number }[],
   };
-  fs.writeFileSync(metaPath, JSON.stringify(baseReportMeta, null, 2));
+  writeJsonFile(metaPath, baseReportMeta);
 
   const llmConfig = resolveReportLlmConfig(params, configDir, params.apiKey);
   if (!llmConfig.apiKey) {
@@ -150,19 +221,26 @@ export async function runGenerate(params: GenerateParams): Promise<GenerateResul
     const report = await generateReportFromDataset(dataset, { ...params, project }, llmConfig.apiKey, filterParams);
     const reportMeta = { ...baseReportMeta, toolCalls: report.toolCalls, llm: report.llm };
     fs.writeFileSync(reportPath, report.markdown);
-    fs.writeFileSync(metaPath, JSON.stringify(reportMeta, null, 2));
+    writeJsonFile(metaPath, reportMeta);
     return { ok: true, filesParsed: fileCount, rowCounts: counts, warnings: dataset.meta.warnings, paths: { dashboard: dashboardPath, report: reportPath, meta: metaPath, raw: rawPath }, payload, report: { markdown: report.markdown, meta: reportMeta } };
   } catch (err) {
     removeIfExists(reportPath);
-    const msg = (err as Error).message;
+    const msg = toErrorMessage(err);
     const isConn = /connection error|fetch failed|ECONNREFUSED|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|network|socket/i.test(msg);
     const hint = isConn ? ` — could not reach ${LLM_PROVIDER_LABELS[llmConfig.provider]}; verify network access and ${envKeyForProvider(llmConfig.provider)} in Settings or config/runtime.json.` : '';
     const reportMeta = { ...baseReportMeta, narrativeError: msg };
-    fs.writeFileSync(metaPath, JSON.stringify(reportMeta, null, 2));
+    writeJsonFile(metaPath, reportMeta);
     return { ok: true, filesParsed: fileCount, rowCounts: counts, warnings: [...dataset.meta.warnings, `Narrative generation failed: ${msg}${hint}`], paths: { dashboard: dashboardPath, report: '', meta: metaPath, raw: rawPath }, payload, report: { markdown: '', meta: reportMeta }, error: msg };
   }
 }
 
-export function refilterDashboard(dataset: import('./types/dataset').Dataset, filterParams: import('./types/dataset').FilterParams): DashboardPayload {
+/**
+ * Rebuilds dashboard metrics from an already-normalized dataset and new filters.
+ *
+ * @param dataset Cached or freshly built source dataset.
+ * @param filterParams Project, date, result, and search filters.
+ * @returns A new dashboard payload without refetching external data.
+ */
+export function refilterDashboard(dataset: Dataset, filterParams: import('./types/dataset').FilterParams): DashboardPayload {
   return buildDashboardPayload(dataset, filterParams);
 }

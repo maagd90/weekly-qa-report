@@ -14,6 +14,11 @@ export type { JiraConnectionInput, QmetryConnectionInput, UserConnections, JiraD
 export { emptyConnections } from './types/connections';
 export { resultColor } from './types/dataset';
 export { applyFilters, dataDateBounds } from './filters/applyFilters';
+export { validIsoDate, projectMatchesApiScope, datesMatchApiScope, issueMatchesApiScope, executionMatchesApiScope } from './filters/scopeMatching';
+export { resolveRuntimePaths, ensureRuntimeDirectories } from './runtime/runtimePaths';
+export type { RuntimePaths, ResolveRuntimePathsOptions } from './runtime/runtimePaths';
+export { readJsonFile, writeJsonFile } from './utils/jsonFile';
+export { toErrorMessage } from './utils/errors';
 export { executeTool, AI_TOOLS } from './ai/datasetTools';
 export { generateReportFromDataset } from './ai/reportWriter';
 export { testAnthropicConnection, testLlmConnection } from './ai/testConnection';
