@@ -13,7 +13,11 @@ export function TestersPage({ dashboard, kpiStyle }: TestersPageProps) {
   const { testers } = dashboard;
 
   return (
-    <QaPageShell title="Tester Performance" subtitle={`by Executed By · ${testers.length} testers`}>
+    <QaPageShell
+      title="Tester Performance"
+      subtitle={`by Executed By · ${testers.length} named tester${testers.length === 1 ? '' : 's'}`}
+      intro="Set this tab's date range, search text, and result filter, then click Search. Tester rankings use QMetry Executed By values returned for the selected period."
+    >
       <TestersPerformanceSection dashboard={dashboard} kpiStyle={kpiStyle} />
     </QaPageShell>
   );

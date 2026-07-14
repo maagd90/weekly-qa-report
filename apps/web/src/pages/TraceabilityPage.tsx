@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import type { DashboardPayload } from 'qa-dashboard-batch';
 import type { KpiStyle } from '../theme/qaTheme';
 import { QA, fmt, coverageColor } from '../theme/qaTheme';
@@ -26,9 +26,69 @@ type WorkItem = {
   updatedAt: string;
 };
 
+const PAGE_SIZE = 10;
+
+type WorkItemPager = {
+  page: number;
+  totalPages: number;
+  setPage: React.Dispatch<React.SetStateAction<number>>;
+};
+
+function Pager({ page, totalPages, setPage }: WorkItemPager) {
+  return totalPages > 1 ? (
+    <div className="flex items-center gap-2 font-mono-qa text-[10.5px] text-qa-muted-light">
+      <span>{page + 1}/{totalPages} · {PAGE_SIZE} rows/page</span>
+      <button type="button" onClick={() => setPage((p) => Math.max(0, p - 1))} disabled={page === 0} className="px-2 py-1 border border-qa-border bg-white text-qa-ink disabled:opacity-40">Prev</button>
+      <button type="button" onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))} disabled={page >= totalPages - 1} className="px-2 py-1 border border-qa-border bg-white text-qa-ink disabled:opacity-40">Next</button>
+    </div>
+  ) : <span className="font-mono-qa text-[10.5px] text-qa-muted-light">latest first</span>;
+}
+
+function WorkItemsTable({ rows, emptyText }: { rows: WorkItem[]; emptyText: string }) {
+  return (
+    <>
+      <QaTable>
+        <QaThead cols={[{ label: 'Key', className: 'pl-[22px]' }, { label: 'Sprint No.' }, { label: 'Summary' }, { label: 'Priority' }, { label: 'Status' }, { label: 'Updated' }, { label: 'Assignee', className: 'pr-[22px]' }]} />
+        <tbody>
+          {rows.map((w) => (
+            <tr key={w.key} className="border-t border-[#f0ede5]">
+              <td className="py-2.5 pl-[22px] font-mono-qa text-[11.5px]" style={{ color: w.issueType === 'Bug' ? QA.FAIL : QA.accent }}>{w.key}</td>
+              <td className="py-2.5 px-3 font-mono-qa text-[11px] text-qa-muted whitespace-nowrap">{w.sprint || 'Not mapped'}</td>
+              <td className="py-2.5 px-3 max-w-[420px]"><div className="truncate">{w.summary || w.area}</div></td>
+              <td className="py-2.5 px-3 text-[12px]">{w.priority}</td>
+              <td className="py-2.5 px-3 text-[12px]" style={{ color: w.status === 'done' ? QA.PASS : QA.BLOCKED }}>{w.status}</td>
+              <td className="py-2.5 px-3 font-mono-qa text-[11px] text-qa-muted whitespace-nowrap">{w.updatedAt || '-'}</td>
+              <td className="py-2.5 pr-[22px] text-qa-muted whitespace-nowrap">{w.assignee}</td>
+            </tr>
+          ))}
+        </tbody>
+      </QaTable>
+      {!rows.length && <div className="py-8 text-center text-[13px] text-qa-muted-light">{emptyText}</div>}
+    </>
+  );
+}
+
 export function TraceabilityPage({ dashboard, kpiStyle }: TraceabilityPageProps) {
   const { traceability, storyBug, defectBacklog } = dashboard;
-  const workItems = (((dashboard as unknown as { workItems?: WorkItem[] }).workItems) || []).slice(0, 80);
+  const [storyPage, setStoryPage] = useState(0);
+  const [bugPage, setBugPage] = useState(0);
+
+  const allWorkItems = useMemo(() => {
+    const rows = (((dashboard as unknown as { workItems?: WorkItem[] }).workItems) || []);
+    return [...rows].sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || '') || a.key.localeCompare(b.key));
+  }, [dashboard]);
+
+  const storyRows = useMemo(() => allWorkItems.filter((w) => w.issueType === 'Story'), [allWorkItems]);
+  const bugRows = useMemo(() => allWorkItems.filter((w) => w.issueType === 'Bug'), [allWorkItems]);
+  const storyTotalPages = Math.max(1, Math.ceil(storyRows.length / PAGE_SIZE));
+  const bugTotalPages = Math.max(1, Math.ceil(bugRows.length / PAGE_SIZE));
+  const safeStoryPage = Math.min(storyPage, storyTotalPages - 1);
+  const safeBugPage = Math.min(bugPage, bugTotalPages - 1);
+  const visibleStories = storyRows.slice(safeStoryPage * PAGE_SIZE, safeStoryPage * PAGE_SIZE + PAGE_SIZE);
+  const visibleBugs = bugRows.slice(safeBugPage * PAGE_SIZE, safeBugPage * PAGE_SIZE + PAGE_SIZE);
+
+  useEffect(() => { if (storyPage > storyTotalPages - 1) setStoryPage(Math.max(0, storyTotalPages - 1)); }, [storyPage, storyTotalPages]);
+  useEffect(() => { if (bugPage > bugTotalPages - 1) setBugPage(Math.max(0, bugTotalPages - 1)); }, [bugPage, bugTotalPages]);
 
   const traceKpis = useMemo(() => {
     const verified = traceability.filter((t) => t.status === 'Verified').length;
@@ -45,7 +105,7 @@ export function TraceabilityPage({ dashboard, kpiStyle }: TraceabilityPageProps)
   return (
     <QaPageShell
       title="Requirements Traceability Matrix"
-      subtitle="Story (Issue Type) → delivery & defect status"
+      subtitle="Story and Bug rows are shown separately with pagination"
       intro="Every Story and Bug work item from JIRA is shown with sprint information when available, so you can review requirement coverage, defect status, and sprint-level traceability together."
     >
       <QaKpiGrid cols={4}>
@@ -57,16 +117,7 @@ export function TraceabilityPage({ dashboard, kpiStyle }: TraceabilityPageProps)
 
       <QaSection title="Story Delivery by Feature Area" noPadding className="mb-[22px]" headerRight={<div className="flex gap-3.5 flex-wrap">{[{ label: 'Verified', border: '#2f6a48', bg: '#e7f0e9' }, { label: 'In Progress', border: '#9a6a12', bg: '#f6efd9' }, { label: 'At Risk', border: '#a13d2c', bg: '#f6e4df' }].map((l) => <span key={l.label} className="flex items-center gap-1 text-[10.5px] text-qa-muted"><span className="w-2.5 h-2.5 border" style={{ background: l.bg, borderColor: l.border }} />{l.label}</span>)}</div>}>
         <QaTable>
-          <QaThead cols={[
-            { label: 'Feature Area', className: 'pl-[22px]' },
-            { label: 'Status' },
-            { label: 'Completion', className: 'w-[150px]' },
-            { label: 'Stories', align: 'right' },
-            { label: 'Done', align: 'right' },
-            { label: 'Open', align: 'right' },
-            { label: 'Bugs', align: 'right' },
-            { label: 'Open Bugs', align: 'right', className: 'pr-[22px]' },
-          ]} />
+          <QaThead cols={[{ label: 'Feature Area', className: 'pl-[22px]' }, { label: 'Status' }, { label: 'Completion', className: 'w-[150px]' }, { label: 'Stories', align: 'right' }, { label: 'Done', align: 'right' }, { label: 'Open', align: 'right' }, { label: 'Bugs', align: 'right' }, { label: 'Open Bugs', align: 'right', className: 'pr-[22px]' }]} />
           <tbody>
             {traceability.map((r) => (
               <tr key={r.area} className="border-t border-[#f0ede5]">
@@ -85,32 +136,12 @@ export function TraceabilityPage({ dashboard, kpiStyle }: TraceabilityPageProps)
         {!traceability.length && <div className="py-8 text-center text-[13px] text-qa-muted-light">No Story requirements match the current filters.</div>}
       </QaSection>
 
-      <QaSection title="Bugs and Stories by Sprint" subtitle="JIRA Story/Bug rows with sprint mapping when available" noPadding className="mb-[22px]">
-        <QaTable>
-          <QaThead cols={[
-            { label: 'Key', className: 'pl-[22px]' },
-            { label: 'Type' },
-            { label: 'Sprint No.' },
-            { label: 'Summary' },
-            { label: 'Priority' },
-            { label: 'Status' },
-            { label: 'Assignee', className: 'pr-[22px]' },
-          ]} />
-          <tbody>
-            {workItems.map((w) => (
-              <tr key={w.key} className="border-t border-[#f0ede5]">
-                <td className="py-2.5 pl-[22px] font-mono-qa text-[11.5px]" style={{ color: QA.accent }}>{w.key}</td>
-                <td className="py-2.5 px-3"><span className="font-mono-qa text-[10px] px-2 py-0.5 text-white" style={{ background: w.issueType === 'Bug' ? QA.FAIL : QA.accent }}>{w.issueType}</span></td>
-                <td className="py-2.5 px-3 font-mono-qa text-[11px] text-qa-muted whitespace-nowrap">{w.sprint || 'Not mapped'}</td>
-                <td className="py-2.5 px-3 max-w-[360px]"><div className="truncate">{w.summary || w.area}</div></td>
-                <td className="py-2.5 px-3 text-[12px]">{w.priority}</td>
-                <td className="py-2.5 px-3 text-[12px]" style={{ color: w.status === 'done' ? QA.PASS : QA.BLOCKED }}>{w.status}</td>
-                <td className="py-2.5 pr-[22px] text-qa-muted whitespace-nowrap">{w.assignee}</td>
-              </tr>
-            ))}
-          </tbody>
-        </QaTable>
-        {!workItems.length && <div className="py-8 text-center text-[13px] text-qa-muted-light">No Story/Bug rows available for the current filters.</div>}
+      <QaSection title={`Stories by Sprint (${storyRows.length})`} subtitle="latest Story rows with sprint mapping when available" noPadding className="mb-[22px]" headerRight={<Pager page={safeStoryPage} totalPages={storyTotalPages} setPage={setStoryPage} />}>
+        <WorkItemsTable rows={visibleStories} emptyText="No Story rows available for the current filters." />
+      </QaSection>
+
+      <QaSection title={`Bugs by Sprint (${bugRows.length})`} subtitle="latest Bug rows with sprint mapping when available" noPadding className="mb-[22px]" headerRight={<Pager page={safeBugPage} totalPages={bugTotalPages} setPage={setBugPage} />}>
+        <WorkItemsTable rows={visibleBugs} emptyText="No Bug rows available for the current filters." />
       </QaSection>
 
       <QaSection>
@@ -126,7 +157,7 @@ export function TraceabilityPage({ dashboard, kpiStyle }: TraceabilityPageProps)
           <div className="flex-1 min-w-[230px] border-l border-[#efece4] pl-6">
             <div className="font-mono-qa text-[9.5px] tracking-wider uppercase text-qa-muted-light mb-3.5">Open bugs by owner</div>
             <div className="flex flex-col gap-3">{defectBacklog.byOwner.map((o) => <div key={o.name}><div className="flex justify-between items-baseline mb-1"><span className="text-[13px] font-semibold">{o.name}</span><span className="font-mono-qa text-xs text-qa-muted">{o.open}</span></div><HorizBar pct={(o.open / ownerMax) * 100} color={QA.FAIL} /></div>)}</div>
-            {defectBacklog.openTotal === 0 && <div className="py-4 text-[12.5px] text-qa-muted-light">—</div>}
+            {defectBacklog.openTotal === 0 && <div className="py-4 text-[12.5px] text-qa-muted-light">-</div>}
           </div>
         </div>
       </QaSection>

@@ -8,7 +8,7 @@ import type { KpiStyle } from '../theme/qaTheme';
 import { ReportPrintContent } from '../components/qa/ReportPrintContent';
 
 const KPI_STYLES: KpiStyle[] = ['editorial', 'framed', 'minimal'];
-const REPORT_TYPES: ReportType[] = ['executive', 'full', 'testers', 'cycles'];
+const REPORT_TYPES: ReportType[] = ['executive', 'full', 'testers', 'defects', 'cycles'];
 
 function clearPdfSignals() {
   document.documentElement.classList.remove('qa-pdf-ready', 'qa-pdf-error');
@@ -29,8 +29,11 @@ export function ReportPrintPage() {
   const startDate = params.get('startDate') ?? '';
   const endDate = params.get('endDate') ?? '';
   const project = params.get('project') || undefined;
+  const reportId = params.get('reportId') || '';
   const logoUrl = params.get('logoUrl') || '';
   const logoAlt = params.get('logoAlt') || 'Report logo';
+  const reportTitle = params.get('title') || '';
+  const reportSubtitle = params.get('subtitle') || '';
   const kpiParam = params.get('kpiStyle') ?? 'editorial';
   const typeParam = params.get('reportType') ?? 'executive';
   const kpiStyle: KpiStyle = KPI_STYLES.includes(kpiParam as KpiStyle)
@@ -40,22 +43,24 @@ export function ReportPrintPage() {
     ? (typeParam as ReportType)
     : 'executive';
 
-  const dashboardQuery = useQuery({
-    queryKey: ['print-dashboard', startDate, endDate, project || 'all'],
-    queryFn: () => batchApi.getDashboard({ startDate, endDate, project }),
-    enabled: Boolean(startDate && endDate),
-    retry: false,
-  });
-
   const reportQuery = useQuery({
-    queryKey: ['print-report'],
+    queryKey: ['print-report', reportId],
     queryFn: batchApi.getReport,
     retry: false,
   });
 
-  const dashboard = dashboardQuery.data;
-  const dashboardSettled = !dashboardQuery.isLoading && (dashboardQuery.isSuccess || dashboardQuery.isError);
+  const dashboard = reportQuery.data?.dashboard;
+  const reportMeta = reportQuery.data?.meta;
   const reportSettled = reportQuery.isSuccess || reportQuery.isError;
+  const actualProject = dashboard?.scope.project && dashboard.scope.project !== 'all' ? dashboard.scope.project : undefined;
+  const snapshotMatches = Boolean(
+    dashboard
+    && dashboard.scope.startDate === startDate
+    && dashboard.scope.endDate === endDate
+    && actualProject === project
+    && reportMeta?.params?.reportType === reportType
+    && (!reportId || reportMeta?.generatedAt === reportId),
+  );
 
   useEffect(() => {
     if (startDate && endDate) {
@@ -71,11 +76,11 @@ export function ReportPrintPage() {
       return undefined;
     }
 
-    if (!dashboardSettled || !reportSettled) {
+    if (!reportSettled) {
       return undefined;
     }
 
-    if (dashboardQuery.isError || !dashboard) {
+    if (reportQuery.isError || !snapshotMatches) {
       markPdfError();
       return undefined;
     }
@@ -97,9 +102,9 @@ export function ReportPrintPage() {
     endDate,
     project,
     dashboard,
-    dashboardSettled,
     reportSettled,
-    dashboardQuery.isError,
+    reportQuery.isError,
+    snapshotMatches,
     reportType,
   ]);
 
@@ -111,41 +116,30 @@ export function ReportPrintPage() {
     );
   }
 
-  if (dashboardQuery.isLoading || !reportSettled) {
+  if (reportQuery.isLoading || !reportSettled) {
     return <div className="qa-print-page p-8 text-sm text-qa-muted">Loading report data…</div>;
   }
 
-  if (dashboardQuery.isError || !dashboard) {
+  if (reportQuery.isError || !dashboard || !snapshotMatches) {
     return (
       <div className="qa-print-page qa-pdf-error p-8 text-sm text-qa-muted">
-        No dashboard data for {project ? `${project} · ` : ''}{startDate} → {endDate}. Generate a report first.
+        The saved report snapshot does not match {project ? `${project} · ` : ''}{startDate} → {endDate}. Generate the report again.
       </div>
     );
   }
 
   return (
-    <div className="qa-print-brand-wrapper">
-      {logoUrl && (
-        <div className="qa-print-brand-logo">
-          <img
-            src={logoUrl}
-            alt={logoAlt}
-            onError={(event) => {
-              const img = event.currentTarget;
-              img.style.display = 'none';
-              img.parentElement?.classList.add('qa-print-brand-logo-missing');
-            }}
-          />
-        </div>
-      )}
-      <ReportPrintContent
-        dashboard={dashboard}
-        kpiStyle={kpiStyle}
-        reportType={reportType}
-        narrative={reportQuery.data?.markdown ?? ''}
-        startDate={startDate}
-        endDate={endDate}
-      />
-    </div>
+    <ReportPrintContent
+      dashboard={dashboard}
+      kpiStyle={kpiStyle}
+      reportType={reportType}
+      narrative={reportQuery.data?.markdown ?? ''}
+      startDate={startDate}
+      endDate={endDate}
+      title={reportTitle}
+      subtitle={reportSubtitle}
+      logoUrl={logoUrl}
+      logoAlt={logoAlt}
+    />
   );
 }

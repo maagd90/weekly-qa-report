@@ -1,9 +1,12 @@
 import fs from 'fs';
 import path from 'path';
 import type { JiraConnectionInput, QmetryConnectionInput } from '../types/connections';
+import { canonicalProjectKey, uniqueCanonicalProjects } from '../projects/projectKey';
 
 const JIRA_SEARCH_PATH = '/rest/api/2/search';
 const QMETRY_TEST_CYCLES_SEARCH_PATH = '/testcycles/search';
+const QMETRY_TEST_CASE_FIELDS = 'seqNo,key,versionNo,summary,priority,status,environment,executionResult,executionAssignee,build,updated';
+const QMETRY_EXECUTION_SUMMARY_PATH = '/gadgets/TESTCASE_EXECUTION_SUMMARY_BY_ASSIGNEE';
 
 const DEFAULT_JIRA_FIELDS = [
   'summary', 'description', 'assignee', 'status', 'priority', 'issuetype',
@@ -55,12 +58,43 @@ export interface QmetryIntegrationConfig {
   cycleIds: string[];
   pageSize: number;
   maxPages: number;
+  executionSummaryEnabled?: boolean;
+  executionSummaryPath?: string;
 }
 
 export interface IntegrationsConfig {
   jira: JiraIntegrationConfig;
   jiraProfiles: JiraIntegrationConfig[];
   qmetry: QmetryIntegrationConfig;
+}
+
+interface RuntimeConfig {
+  jira?: {
+    enabled?: boolean;
+    deploymentType?: 'cloud' | 'on-prem';
+    baseUrl?: string;
+    searchPath?: string;
+    email?: string;
+    apiToken?: string;
+    onPremSecret?: string;
+    sessionHeader?: string;
+    sessionId?: string;
+    xsrfToken?: string;
+    projectKeys?: string[];
+    jql?: string;
+    applicationCiFieldId?: string;
+  };
+  qmetry?: {
+    enabled?: boolean;
+    baseUrl?: string;
+    apiPrefix?: string;
+    basicAuth?: string;
+    email?: string;
+    apiToken?: string;
+    projectKey?: string;
+    projectId?: string;
+    folderId?: string;
+  };
 }
 
 const DEFAULT_JIRA: JiraIntegrationConfig = {
@@ -92,44 +126,151 @@ const DEFAULTS: IntegrationsConfig = {
     testCyclesSearchPath: QMETRY_TEST_CYCLES_SEARCH_PATH,
     testCyclesSearchBody: null,
     testCasesSearchPath: '/testcycles/{cycleId}/testcases/search',
-    testCasesSearchBody: { filter: { filter: { folderId: -1 } } },
+    testCasesSearchBody: null,
     usePostSearch: true,
-    testCaseFields: 'seqNo,key,versionNo,summary,priority,status,environment,executionResult,executionAssignee,executedOn,executedBy,lastModified,build',
+    testCaseFields: QMETRY_TEST_CASE_FIELDS,
     cycleIds: [],
     pageSize: 50,
     maxPages: 200,
+    executionSummaryEnabled: true,
+    executionSummaryPath: QMETRY_EXECUTION_SUMMARY_PATH,
   },
 };
 
+function canonicalProjectKeys(values?: string[]): string[] {
+  const keys = uniqueCanonicalProjects(values || []);
+  return keys.length ? keys : [];
+}
+
+function jiraJqlForProjects(projectKeys: string[]): string {
+  return projectKeys.length ? `project in (${projectKeys.join(',')}) AND issuetype in (Story, Bug) ORDER BY updated DESC` : 'issuetype in (Story, Bug) ORDER BY updated DESC';
+}
+
 function mergeJira(raw: Partial<JiraIntegrationConfig> | undefined, idx = 0): JiraIntegrationConfig {
   const cfg = { ...DEFAULT_JIRA, ...(raw || {}) };
-  return { ...cfg, name: cfg.name || `JIRA ${idx + 1}`, searchPath: cfg.searchPath || JIRA_SEARCH_PATH, fields: cfg.fields?.length ? cfg.fields : DEFAULT_JIRA_FIELDS };
+  const projectKeys = canonicalProjectKeys(cfg.projectKeys);
+  const jql = cfg.jql || jiraJqlForProjects(projectKeys);
+  return { ...cfg, name: cfg.name || `JIRA ${idx + 1}`, searchPath: cfg.searchPath || JIRA_SEARCH_PATH, fields: cfg.fields?.length ? cfg.fields : DEFAULT_JIRA_FIELDS, projectKeys, jql };
+}
+
+function cleanQmetryTestCaseFields(fields?: string): string {
+  const values = (fields || QMETRY_TEST_CASE_FIELDS).split(',').map((f) => f.trim()).filter(Boolean);
+  const supported = values.filter((f) => !/^(executedOn|lastModified)$/i.test(f));
+  return supported.length ? [...new Set(supported)].join(',') : QMETRY_TEST_CASE_FIELDS;
 }
 
 function mergeQmetry(raw: Partial<QmetryIntegrationConfig> | undefined): QmetryIntegrationConfig {
   const cfg = { ...DEFAULTS.qmetry, ...(raw || {}) };
   return {
     ...cfg,
+    projectKey: canonicalProjectKey(cfg.projectKey) || 'DLM',
     testCyclesSearchPath: cfg.testCyclesSearchPath || QMETRY_TEST_CYCLES_SEARCH_PATH,
     testCasesSearchPath: cfg.testCasesSearchPath || DEFAULTS.qmetry.testCasesSearchPath,
+    testCaseFields: cleanQmetryTestCaseFields(cfg.testCaseFields),
     cycleIds: Array.isArray(cfg.cycleIds) ? cfg.cycleIds : [],
+    usePostSearch: true,
+    executionSummaryEnabled: cfg.executionSummaryEnabled !== false,
+    executionSummaryPath: cfg.executionSummaryPath || QMETRY_EXECUTION_SUMMARY_PATH,
+  };
+}
+
+function readRuntimeConfig(configDir: string): RuntimeConfig {
+  const file = path.join(configDir, 'runtime.json');
+  if (!fs.existsSync(file)) return {};
+  try {
+    return JSON.parse(fs.readFileSync(file, 'utf8')) as RuntimeConfig;
+  } catch {
+    return {};
+  }
+}
+
+function qmetryRuntimeSearchBody(projectId: string | null, folderId?: string): Record<string, unknown> | null {
+  if (!projectId && !folderId?.trim()) return null;
+  const filter: Record<string, unknown> = {};
+  if (projectId) filter.projectId = /^\d+$/.test(projectId) ? Number(projectId) : projectId;
+  if (folderId?.trim()) filter.folderId = folderId.trim();
+  return { filter };
+}
+
+function runtimeJiraOverride(runtime: RuntimeConfig): Partial<JiraIntegrationConfig> {
+  const jira = runtime.jira || {};
+  const secret = jira.onPremSecret || jira.apiToken;
+  const projectKeys = canonicalProjectKeys(jira.projectKeys);
+  return {
+    ...(jira.enabled !== undefined ? { enabled: jira.enabled } : {}),
+    ...(jira.deploymentType ? { deploymentType: jira.deploymentType } : {}),
+    ...(jira.baseUrl ? { baseUrl: jira.baseUrl } : {}),
+    ...(jira.searchPath ? { searchPath: jira.searchPath } : {}),
+    ...(projectKeys.length ? { projectKeys } : {}),
+    ...(jira.jql ? { jql: jira.jql } : {}),
+    ...(jira.sessionHeader ? { cookie: jira.sessionHeader } : {}),
+    ...(jira.sessionId ? { jiraSessionId: jira.sessionId } : {}),
+    ...(jira.xsrfToken ? { jiraXsrfToken: jira.xsrfToken } : {}),
+    ...(jira.applicationCiFieldId ? { applicationCiFieldId: jira.applicationCiFieldId } : {}),
+    ...(jira.email || secret ? { auth: { type: 'basic' as const, email: jira.email, token: secret } } : {}),
+  };
+}
+
+function runtimeQmetryOverride(runtime: RuntimeConfig): Partial<QmetryIntegrationConfig> {
+  const qmetry = runtime.qmetry || {};
+  const projectId = qmetry.projectId?.trim() || null;
+  return {
+    ...(qmetry.enabled !== undefined ? { enabled: qmetry.enabled } : {}),
+    ...(qmetry.baseUrl ? { baseUrl: qmetry.baseUrl } : {}),
+    ...(qmetry.apiPrefix ? { apiPrefix: qmetry.apiPrefix } : {}),
+    ...(qmetry.projectKey ? { projectKey: canonicalProjectKey(qmetry.projectKey) } : {}),
+    ...(projectId ? { projectId } : {}),
+    ...(qmetry.basicAuth || qmetry.email || qmetry.apiToken ? { auth: { type: 'basic' as const, email: qmetry.email, token: qmetry.basicAuth || qmetry.apiToken }, authEncodedEnv: '' } : {}),
+    ...(projectId || qmetry.folderId ? { testCyclesSearchBody: qmetryRuntimeSearchBody(projectId, qmetry.folderId) } : {}),
   };
 }
 
 export function loadIntegrations(configDir: string): IntegrationsConfig {
+  const runtime = readRuntimeConfig(configDir);
   const file = path.join(configDir, 'integrations.json');
-  if (!fs.existsSync(file)) return structuredClone(DEFAULTS);
+  if (!fs.existsSync(file)) {
+    return {
+      jira: mergeJira({ ...runtimeJiraOverride(runtime) }),
+      jiraProfiles: [],
+      qmetry: mergeQmetry({ ...runtimeQmetryOverride(runtime) }),
+    };
+  }
   try {
     const raw = JSON.parse(fs.readFileSync(file, 'utf8'));
     return {
-      jira: mergeJira(raw.jira),
+      jira: mergeJira({ ...raw.jira, ...runtimeJiraOverride(runtime) }),
       jiraProfiles: Array.isArray(raw.jiraProfiles) ? raw.jiraProfiles.map((p: Partial<JiraIntegrationConfig>, i: number) => mergeJira(p, i)) : [],
-      qmetry: mergeQmetry(raw.qmetry),
+      qmetry: mergeQmetry({ ...raw.qmetry, ...runtimeQmetryOverride(runtime) }),
     };
   } catch (err) {
     console.error('[integrations] Failed to parse integrations.json:', (err as Error).message);
     return structuredClone(DEFAULTS);
   }
+}
+
+export function integrationsSummary(configDir: string) {
+  const cfg = loadIntegrations(configDir);
+  const enabledProfiles = configuredJiraProfiles(cfg);
+  const jiraBaseUrl = enabledProfiles[0]?.baseUrl || cfg.jira.baseUrl || '';
+  return {
+    jira: {
+      enabled: enabledProfiles.length > 0,
+      baseUrl: jiraBaseUrl,
+      configured: Boolean(enabledProfiles.length && jiraBaseUrl),
+      profiles: enabledProfiles.map((profile) => ({
+        name: profile.name || 'JIRA',
+        enabled: profile.enabled,
+        baseUrl: profile.baseUrl,
+        projectKeys: profile.projectKeys,
+      })),
+    },
+    qmetry: {
+      enabled: cfg.qmetry.enabled,
+      baseUrl: cfg.qmetry.baseUrl,
+      configured: Boolean(cfg.qmetry.enabled && cfg.qmetry.baseUrl),
+      cycleIds: cfg.qmetry.cycleIds.length,
+    },
+  };
 }
 
 function configuredUser(cfg: BasicAuthConfig): string | undefined {
@@ -166,13 +307,11 @@ export function getAuthHeader(cfg: BasicAuthConfig): string | null {
   return basic ? `Basic ${basic}` : null;
 }
 
-function connectionSecret(conn: { apiToken?: string; credential?: string }): string {
-  return conn.apiToken || conn.credential || '';
-}
+function connectionSecret(conn: { apiToken?: string; credential?: string }): string { return conn.apiToken || conn.credential || ''; }
 
 export function jiraConfigFromConnection(conn: JiraConnectionInput): JiraIntegrationConfig {
-  const projectKeys = conn.projectKeys?.filter(Boolean) || [];
-  const jql = conn.jql?.trim() || (projectKeys.length ? `project in (${projectKeys.join(',')}) AND issuetype in (Story, Bug) ORDER BY updated DESC` : 'issuetype in (Story, Bug) ORDER BY updated DESC');
+  const projectKeys = canonicalProjectKeys(conn.projectKeys);
+  const jql = conn.jql?.trim() || jiraJqlForProjects(projectKeys);
   const deploymentType = conn.deploymentType || 'on-prem';
   return {
     ...DEFAULT_JIRA,
@@ -203,34 +342,26 @@ export function qmetryConfigFromConnection(conn: QmetryConnectionInput): QmetryI
   const projectId = conn.projectId?.trim() || null;
   return {
     ...DEFAULTS.qmetry,
+    ...(conn as unknown as Partial<QmetryIntegrationConfig>),
     enabled: true,
     baseUrl: conn.baseUrl.replace(/\/+$/, ''),
     auth: { type: 'basic', email: conn.email, token: connectionSecret(conn) },
     authEncodedEnv: '',
-    projectKey: conn.projectKey,
+    projectKey: canonicalProjectKey(conn.projectKey) || 'DLM',
     projectId,
     testCyclesSearchPath: QMETRY_TEST_CYCLES_SEARCH_PATH,
     testCyclesSearchBody: qmetryCycleSearchBody(projectId, conn.folderId),
     cycleIds: [],
-    testCasesSearchBody: DEFAULTS.qmetry.testCasesSearchBody,
+    testCasesSearchBody: null,
+    testCaseFields: cleanQmetryTestCaseFields((conn as unknown as Partial<QmetryIntegrationConfig>).testCaseFields || DEFAULTS.qmetry.testCaseFields),
+    usePostSearch: true,
+    executionSummaryEnabled: (conn as unknown as Partial<QmetryIntegrationConfig>).executionSummaryEnabled !== false,
+    executionSummaryPath: (conn as unknown as Partial<QmetryIntegrationConfig>).executionSummaryPath || QMETRY_EXECUTION_SUMMARY_PATH,
   };
 }
 
-export function getEncodedAuth(envKey: string): string | null {
-  const val = process.env[envKey];
-  return val ? val.trim() : null;
-}
+export function getEncodedAuth(envKey: string): string | null { const val = process.env[envKey]; return val ? val.trim() : null; }
 
 export function configuredJiraProfiles(cfg: IntegrationsConfig): JiraIntegrationConfig[] {
   return cfg.jiraProfiles.length ? cfg.jiraProfiles.filter((p) => p.enabled) : (cfg.jira.enabled ? [cfg.jira] : []);
-}
-
-export function integrationsSummary(configDir: string) {
-  const cfg = loadIntegrations(configDir);
-  const profiles = configuredJiraProfiles(cfg);
-  const hasAuth = !!getBasicAuth(cfg.qmetry.auth) || !!getEncodedAuth(cfg.qmetry.authEncodedEnv);
-  return {
-    jira: { enabled: profiles.length > 0, baseUrl: profiles.map((p) => p.baseUrl).filter(Boolean).join(', '), configured: profiles.some((p) => !!getAuthHeader(p.auth)), profiles: profiles.map((p) => ({ name: p.name, deploymentType: p.deploymentType, baseUrl: p.baseUrl, projectKeys: p.projectKeys })) },
-    qmetry: { enabled: cfg.qmetry.enabled, baseUrl: cfg.qmetry.baseUrl, configured: hasAuth, cycleIds: cfg.qmetry.cycleIds.length, projectId: cfg.qmetry.projectId },
-  };
 }

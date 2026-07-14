@@ -3,6 +3,9 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import type { DashboardPayload, ReportType } from 'qa-dashboard-batch';
 import type { KpiStyle } from '../../theme/qaTheme';
+import { projectDisplayName } from '../../lib/projectDisplay';
+import { ResultDonut } from './ResultDonut';
+import { StackedMonthChart } from './StackedMonthChart';
 
 interface ReportPrintContentProps {
   dashboard: DashboardPayload;
@@ -11,15 +14,30 @@ interface ReportPrintContentProps {
   narrative: string;
   startDate: string;
   endDate: string;
+  title?: string;
+  subtitle?: string;
+  logoUrl?: string;
+  logoAlt?: string;
 }
 
 function Section({ no, title, children }: { no: number; title: string; children: React.ReactNode }) {
   return (
     <section className="qa-business-section">
-      <h2 className="qa-business-section-title">{no}. {title}</h2>
+      <h2 className="qa-business-section-title" data-no={no}>{title}</h2>
       {children}
     </section>
   );
+}
+
+function reportTypeLabel(reportType: ReportType): string {
+  if (reportType === 'executive') return 'Executive';
+  if (reportType === 'cycles') return 'Cycle Health';
+  if (reportType === 'defects' || reportType === 'testers') return 'Defects';
+  return 'Full';
+}
+
+function isDefectReport(reportType: ReportType): boolean {
+  return reportType === 'defects' || reportType === 'testers';
 }
 
 function StatTable({ dashboard }: { dashboard: DashboardPayload }) {
@@ -29,158 +47,169 @@ function StatTable({ dashboard }: { dashboard: DashboardPayload }) {
   const inProgress = Math.max(0, totalDefects - closed - open);
   return (
     <table className="qa-business-table qa-business-stat">
-      <thead>
-        <tr>
-          <th>Closed / Done</th>
-          <th>Fix in Progress</th>
-          <th>Open / Unresolved</th>
-          <th>Total Defects</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td className="qa-business-green">{closed}</td>
-          <td className="qa-business-amber">{inProgress}</td>
-          <td className="qa-business-red">{open}</td>
-          <td className="qa-business-red">{totalDefects}</td>
-        </tr>
-      </tbody>
+      <thead><tr><th>Closed / Done</th><th>Fix in Progress</th><th>Open in Period</th><th>Total Defects</th></tr></thead>
+      <tbody><tr><td className="qa-business-green">{closed}</td><td className="qa-business-amber">{inProgress}</td><td className="qa-business-red">{open}</td><td className="qa-business-red">{totalDefects}</td></tr></tbody>
     </table>
   );
 }
 
 function StatusDot({ status }: { status: string }) {
-  const color = /complete|closed|done|healthy/i.test(status) ? '#00a651' : /risk|open|fail/i.test(status) ? '#d00000' : '#ff9d00';
-  return <span style={{ color, fontWeight: 800 }}>■ {status}</span>;
+  const color = /complete|closed|done|healthy/i.test(status) ? '#2f6a48' : /risk|open|fail/i.test(status) ? '#a13d2c' : '#9a6a12';
+  return <span style={{ color, fontWeight: 600 }}>■ {status}</span>;
 }
 
 function DefectRows({ dashboard, limit = 8 }: { dashboard: DashboardPayload; limit?: number }) {
   const rows = dashboard.defectBacklog.byOwner.slice(0, limit);
-  if (!rows.length) return <p>No open defect owner backlog is available for the selected scope.</p>;
-  return (
-    <table className="qa-business-table">
-      <thead><tr><th>Owner</th><th>Open Defects</th></tr></thead>
-      <tbody>{rows.map((r) => <tr key={r.name}><td>{r.name}</td><td>{r.open}</td></tr>)}</tbody>
-    </table>
-  );
+  if (!rows.length) return <p>No open defects with activity in the selected period.</p>;
+  return <table className="qa-business-table"><thead><tr><th>Owner</th><th>Open in Period</th></tr></thead><tbody>{rows.map((r) => <tr key={r.name}><td>{r.name}</td><td className="qa-business-number">{r.open}</td></tr>)}</tbody></table>;
 }
 
 function CycleRows({ dashboard, limit = 8 }: { dashboard: DashboardPayload; limit?: number }) {
   const rows = dashboard.cyclesByPassPctAsc.slice(0, limit);
   if (!rows.length) return <p>No cycle execution data is available for the selected scope.</p>;
-  return (
-    <table className="qa-business-table">
-      <thead><tr><th>Cycle</th><th>Status</th><th>Pass %</th><th>Coverage</th><th>Cases</th></tr></thead>
-      <tbody>
-        {rows.map((c) => <tr key={c.key}><td>{c.name}</td><td><StatusDot status={c.status} /></td><td>{c.passPct}%</td><td>{c.coverage}%</td><td>{c.total}</td></tr>)}
-      </tbody>
-    </table>
-  );
+  return <table className="qa-business-table"><thead><tr><th>Cycle</th><th>Status</th><th>Pass %</th><th>Coverage</th><th>Cases</th></tr></thead><tbody>{rows.map((c) => <tr key={c.key}><td>{c.name}</td><td><StatusDot status={c.status} /></td><td className="qa-business-number">{c.passPct}%</td><td className="qa-business-number">{c.coverage}%</td><td className="qa-business-number">{c.total}</td></tr>)}</tbody></table>;
 }
 
 function ProjectStatus({ dashboard }: { dashboard: DashboardPayload }) {
   const rows = dashboard.byProject?.length
-    ? dashboard.byProject.map((p) => ({ area: p.project, status: p.defectBacklog.openTotal > 0 ? 'In Progress' : 'Completed' }))
+    ? dashboard.byProject.map((p) => ({ area: projectDisplayName(p.project), status: p.defectBacklog.openTotal > 0 ? 'In Progress' : 'Completed' }))
     : [
       { area: 'Test Execution', status: dashboard.overview.failed || dashboard.overview.blocked ? 'In Progress' : 'Completed' },
-      { area: 'Defect Verification', status: dashboard.storyBug.bugOpen ? 'Open Issue Pending' : 'Completed' },
+      { area: 'Defect Verification', status: dashboard.storyBug.bugOpen ? 'Open Issue Active in Period' : 'Completed' },
       { area: 'Cycle Validation', status: dashboard.cycles.some((c) => c.status === 'At Risk') ? 'In Progress' : 'Mostly Completed' },
     ];
-  return (
-    <table className="qa-business-table">
-      <thead><tr><th>Area</th><th>Status</th></tr></thead>
-      <tbody>{rows.map((r) => <tr key={r.area}><td>{r.area}</td><td><StatusDot status={r.status} /></td></tr>)}</tbody>
-    </table>
-  );
+  return <table className="qa-business-table"><thead><tr><th>Area</th><th>Status</th></tr></thead><tbody>{rows.map((r) => <tr key={r.area}><td>{r.area}</td><td><StatusDot status={r.status} /></td></tr>)}</tbody></table>;
 }
 
-export function ReportPrintContent({ dashboard, reportType, narrative, startDate, endDate }: ReportPrintContentProps) {
-  const projectLabel = dashboard.scope.project && dashboard.scope.project !== 'all' ? dashboard.scope.project : 'All Projects';
-  const sprintLabel = `${startDate} - ${endDate}`;
+function formatReportDate(value: string): string {
+  const d = new Date(`${value}T00:00:00`);
+  if (Number.isNaN(d.getTime())) return value;
+  return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+}
+
+function formatGeneratedAt(value: string | undefined): string {
+  if (!value) return '';
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toLocaleString('en-GB', {
+    timeZone: 'UTC',
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZoneName: 'short',
+  });
+}
+
+export function ReportPrintContent({ dashboard, reportType, narrative, startDate, endDate, title, subtitle, logoUrl, logoAlt }: ReportPrintContentProps) {
+  const projectLabel = dashboard.scope.project && dashboard.scope.project !== 'all' ? projectDisplayName(dashboard.scope.project) : 'All Projects';
+  const sprintLabel = `${formatReportDate(startDate)} – ${formatReportDate(endDate)}`;
+  const generatedLabel = formatGeneratedAt(dashboard.meta.generatedAt);
   const failedOrBlocked = dashboard.overview.failed + dashboard.overview.blocked;
+  const defectReport = isDefectReport(reportType);
+  const cycleReport = reportType === 'cycles';
+  const executiveReport = reportType === 'executive';
+  const fullReport = reportType === 'full';
+  const showDefects = fullReport || executiveReport || defectReport;
+  const showExecution = fullReport || executiveReport || cycleReport;
+  const showCycles = fullReport || cycleReport;
+  const showStatus = fullReport || executiveReport;
+  const showPlan = fullReport || executiveReport;
+
+  let sectionNo = 1;
+  const nextNo = () => sectionNo++;
 
   return (
     <div className="qa-print-page qa-print-document qa-business-report bg-white">
+      <div className="qa-business-tearstrip" />
       <div className="qa-business-header">
-        <h1>QA Sprint Report</h1>
-        <p>{sprintLabel} &nbsp;|&nbsp; {projectLabel} &nbsp;|&nbsp; {reportType.charAt(0).toUpperCase() + reportType.slice(1)}</p>
+        <div className="qa-business-header-title">
+          <p className="qa-business-header-eyebrow">{subtitle || 'Weekly QA sprint report'}</p>
+          <h1>{title || 'QA Sprint Report'}</h1>
+        </div>
+        <div className="qa-business-header-meta">
+          <div><b>Project</b> &nbsp;{projectLabel}</div>
+          <div><b>Period</b> &nbsp;{sprintLabel}</div>
+          <div><b>Scope</b> &nbsp;{reportTypeLabel(reportType)}</div>
+          {generatedLabel && <div><b>Generated</b> &nbsp;{generatedLabel}</div>}
+        </div>
+        {logoUrl && (
+          <div className="qa-business-header-logo">
+            <img
+              src={logoUrl}
+              alt={logoAlt || 'Report logo'}
+              onError={(event) => {
+                const img = event.currentTarget;
+                img.style.display = 'none';
+              }}
+            />
+          </div>
+        )}
+      </div>
+
+      <div className="qa-business-manifest">
+        <div className="qa-business-stub">
+          <p className="qa-business-stub-label">Total cases</p>
+          <p className="qa-business-stub-value qa-mono">{dashboard.overview.totalCases}</p>
+          <p className="qa-business-stub-sub">across {dashboard.cycles.length} cycles</p>
+        </div>
+        <div className="qa-business-stub">
+          <p className="qa-business-stub-label">Pass rate</p>
+          <p className="qa-business-stub-value qa-mono qa-business-green">{dashboard.overview.passRate}%</p>
+          <p className="qa-business-stub-sub">of executed cases</p>
+        </div>
+        <div className="qa-business-stub">
+          <p className="qa-business-stub-label">Open defects</p>
+          <p className="qa-business-stub-value qa-mono qa-business-red">{dashboard.defectBacklog.openTotal}</p>
+          <p className="qa-business-stub-sub">active in period</p>
+        </div>
+        <div className="qa-business-stub">
+          <p className="qa-business-stub-label">At-risk cycles</p>
+          <p className="qa-business-stub-value qa-mono qa-business-red">{dashboard.cycles.filter((c) => c.status === 'At Risk').length}</p>
+          <p className="qa-business-stub-sub">of {dashboard.cycles.length} total</p>
+        </div>
       </div>
 
       <div className="px-6 pb-6">
-        <Section no={1} title="Objective">
+        <Section no={nextNo()} title="Objective">
           <p>The objective of this sprint report is to summarize QA validation progress, execution health, defect verification, open risks, and upcoming validation focus for the selected reporting window.</p>
           <p>The report is generated from verified dashboard data only and is intended for business and delivery stakeholders.</p>
           <div className="qa-business-subtitle">Validation Focused On:</div>
-          <div className="qa-business-panel">
-            <ul>
-              <li>Test execution and pass/fail validation</li>
-              <li>JIRA defect and story status review</li>
-              <li>Open defect backlog and priority analysis</li>
-              <li>Cycle health, coverage, and at-risk areas</li>
-              <li>UAT summary and closure tracking</li>
-            </ul>
-          </div>
+          <div className="qa-business-panel"><ul><li>Test execution and pass/fail validation</li><li>JIRA defect and story status review</li><li>Period defect activity and priority analysis</li><li>Cycle health, coverage, and at-risk areas</li><li>UAT summary and closure tracking</li></ul></div>
         </Section>
 
-        <Section no={2} title="UAT Defect Verification Summary">
+        {showDefects && <Section no={nextNo()} title="UAT Defect Verification Summary">
           <StatTable dashboard={dashboard} />
           <p><em>Most defects verified in this sprint directly impact delivery readiness, execution stability, user validation, or production sign-off confidence.</em></p>
-        </Section>
+        </Section>}
 
-        <Section no={3} title="Test Execution Summary">
-          <table className="qa-business-table">
-            <thead><tr><th>Total Test Cases</th><th>Executed</th><th>Pass Rate</th><th>Failed</th><th>Blocked</th></tr></thead>
-            <tbody><tr><td>{dashboard.overview.totalCases}</td><td>{dashboard.overview.executed}</td><td>{dashboard.overview.passRate}%</td><td>{dashboard.overview.failed}</td><td>{dashboard.overview.blocked}</td></tr></tbody>
-          </table>
-        </Section>
+        {showExecution && <Section no={nextNo()} title="Test Execution Summary">
+          <table className="qa-business-table"><thead><tr><th>Total Test Cases</th><th>Executed</th><th>Pass Rate</th><th>Failed</th><th>Blocked</th></tr></thead><tbody><tr><td className="qa-business-number">{dashboard.overview.totalCases}</td><td className="qa-business-number">{dashboard.overview.executed}</td><td className="qa-business-number">{dashboard.overview.passRate}%</td><td className="qa-business-number">{dashboard.overview.failed}</td><td className="qa-business-number">{dashboard.overview.blocked}</td></tr></tbody></table>
+          {dashboard.overview.resultMix.length > 0 && <div className="mt-3 qa-business-chart"><ResultDonut items={dashboard.overview.resultMix} total={dashboard.overview.totalCases} /></div>}
+        </Section>}
 
-        <Section no={4} title="Test Cycle Health">
-          <CycleRows dashboard={dashboard} />
-        </Section>
+        {showExecution && dashboard.overview.byMonth.length > 0 && <Section no={nextNo()} title="Executions by Month">
+          <div className="qa-business-chart"><StackedMonthChart data={dashboard.overview.byMonth} showTitle={false} /></div>
+        </Section>}
 
-        <Section no={5} title="Defects Still Open / Under Fix">
-          <DefectRows dashboard={dashboard} />
-        </Section>
+        {showCycles && <Section no={nextNo()} title="Test Cycle Health"><CycleRows dashboard={dashboard} /></Section>}
+        {showDefects && <Section no={nextNo()} title="Defects Active in Period"><DefectRows dashboard={dashboard} /></Section>}
 
-        <Section no={6} title="Overall Sprint Status">
+        {showStatus && <Section no={nextNo()} title="Overall Sprint Status">
           <ProjectStatus dashboard={dashboard} />
           <p><strong>Overall:</strong> Sprint validation is progressing based on the selected scope. {failedOrBlocked > 0 ? 'Failed or blocked cases require continued tracking before sign-off.' : 'No failed or blocked execution items are currently visible in this scope.'}</p>
-        </Section>
+        </Section>}
 
-        <Section no={7} title="Risks / Attention Required">
-          <div className="qa-business-panel">
-            <p><strong>Open Defect Risk</strong> - {dashboard.defectBacklog.openTotal} open defects remain in scope.</p>
-            <p><strong>Execution Risk</strong> - {failedOrBlocked} failed or blocked test cases require follow-up.</p>
-            <p><strong>Cycle Risk</strong> - {dashboard.cycles.filter((c) => c.status === 'At Risk').length} test cycles are currently marked at risk.</p>
-          </div>
-        </Section>
+        <Section no={nextNo()} title="Risks / Attention Required"><div className="qa-business-panel"><p><strong>Period Open Defect Risk</strong> - {dashboard.defectBacklog.openTotal} open defects had activity in the selected period.</p><p><strong>Execution Risk</strong> - {failedOrBlocked} failed or blocked test cases require follow-up.</p><p><strong>Cycle Risk</strong> - {dashboard.cycles.filter((c) => c.status === 'At Risk').length} test cycles are currently marked at risk.</p></div></Section>
 
-        <Section no={8} title="Upcoming Sprint Plan">
-          <div className="qa-business-panel">
-            <ul>
-              <li>Re-test all fixes currently in progress.</li>
-              <li>Continue regression coverage for impacted business flows.</li>
-              <li>Prioritize validation of open high-impact defects.</li>
-              <li>Prepare final sign-off evidence for closed defects.</li>
-              <li>Strengthen automation coverage for repeated UAT scenarios.</li>
-            </ul>
-          </div>
-        </Section>
+        {showPlan && <Section no={nextNo()} title="Upcoming Sprint Plan"><div className="qa-business-panel"><ul><li>Re-test all fixes currently in progress.</li><li>Continue regression coverage for impacted business flows.</li><li>Prioritize validation of high-impact defects active in the selected period.</li><li>Prepare final sign-off evidence for closed defects.</li><li>Strengthen automation coverage for repeated UAT scenarios.</li></ul></div></Section>}
 
-        {narrative && (
-          <Section no={9} title="AI Narrative Summary">
-            <div className="prose prose-slate max-w-none prose-sm">
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>{narrative}</ReactMarkdown>
-            </div>
-          </Section>
-        )}
+        {narrative && <Section no={nextNo()} title="Narrative Summary"><div className="prose prose-slate max-w-none prose-sm"><ReactMarkdown remarkPlugins={[remarkGfm]}>{narrative}</ReactMarkdown></div></Section>}
 
-        <Section no={10} title="Final Summary">
-          <table className="qa-business-table qa-business-stat">
-            <thead><tr><th>Total Defects Verified</th><th>Closed / Done</th><th>Open</th><th>Pass Rate</th></tr></thead>
-            <tbody><tr><td>{dashboard.storyBug.bug}</td><td className="qa-business-green">{dashboard.storyBug.bugDone}</td><td className="qa-business-red">{dashboard.storyBug.bugOpen}</td><td>{dashboard.overview.passRate}%</td></tr></tbody>
-          </table>
-          <p>Sprint validation should continue until open defects, failed test cases, and at-risk cycles are resolved or formally accepted by the business and technical stakeholders.</p>
+        <Section no={nextNo()} title="Final Summary">
+          <table className="qa-business-table qa-business-stat"><thead><tr><th>Total Defects Verified</th><th>Closed / Done</th><th>Open in Period</th><th>Pass Rate</th></tr></thead><tbody><tr><td>{dashboard.storyBug.bug}</td><td className="qa-business-green">{dashboard.storyBug.bugDone}</td><td className="qa-business-red">{dashboard.storyBug.bugOpen}</td><td>{dashboard.overview.passRate}%</td></tr></tbody></table>
+          <p>Sprint validation should continue for period-active open defects, failed test cases, and at-risk cycles until they are resolved or formally accepted by the business and technical stakeholders.</p>
         </Section>
 
         <div className="qa-business-footer">BUSINESS DOCUMENT - This document is intended for business use and should be distributed to intended recipients only.</div>

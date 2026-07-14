@@ -1,0 +1,51 @@
+name: QMetry Contract Quality Gate
+
+on:
+  push:
+    branches:
+      - fix/qmetry-detail-contract
+  pull_request:
+    paths:
+      - 'apps/batch/package.json'
+      - 'apps/batch/scripts/qmetryLiveSmoke.ts'
+      - 'apps/batch/src/index.ts'
+      - 'apps/batch/src/integrations/qmetryClient.ts'
+      - 'apps/batch/src/integrations/qmetryCycleHealth.ts'
+      - 'apps/batch/src/integrations/__tests__/qmetryClient.test.ts'
+      - 'apps/batch/src/config/loadIntegrations.ts'
+      - 'apps/web/src/components/common/WarningDetails.tsx'
+      - 'apps/web/src/pages/CyclesPage.tsx'
+      - 'scripts/dev-runner.cjs'
+      - 'scripts/dev-cache.cjs'
+      - 'scripts/__tests__/dev-cache.test.cjs'
+      - 'run.sh'
+      - 'package.json'
+      - '.github/workflows/qmetry-contract.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    name: Build and QMetry contract tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Use Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build all workspaces
+        run: npm run build
+
+      - name: Run batch regression suite
+        run: npm test

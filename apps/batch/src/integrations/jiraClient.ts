@@ -43,19 +43,25 @@ function quoteJqlDate(date: string, endOfDay = false): string | null {
   return endOfDay ? `"${clean} 23:59"` : `"${clean}"`;
 }
 
-function scopedJql(originalJql: string, scope?: ApiFetchScope): string {
+function fieldDateCondition(field: 'created' | 'updated' | 'resolutiondate', start: string | null, end: string | null): string | null {
+  if (start && end) return `(${field} >= ${start} AND ${field} <= ${end})`;
+  if (start) return `(${field} >= ${start})`;
+  if (end) return `(${field} <= ${end})`;
+  return null;
+}
+
+export function buildScopedJql(originalJql: string, scope?: ApiFetchScope): string {
   const start = quoteJqlDate(scope?.startDate || '');
   const end = quoteJqlDate(scope?.endDate || '', true);
-  const conditions: string[] = [];
-
-  // Keep the configured/project-specific JQL as the source of truth. Date fields from
-  // the Overview filter only narrow the API search window.
-  if (start) conditions.push(`(created >= ${start} OR updated >= ${start} OR resolutiondate >= ${start})`);
-  if (end) conditions.push(`(created <= ${end} OR updated <= ${end} OR resolutiondate <= ${end})`);
-  if (!conditions.length) return originalJql;
+  const dateConditions = (['created', 'updated', 'resolutiondate'] as const)
+    .map((field) => fieldDateCondition(field, start, end))
+    .filter((condition): condition is string => Boolean(condition));
+  if (!dateConditions.length) return originalJql;
 
   const { base, orderBy } = splitOrderBy(originalJql || 'ORDER BY updated DESC');
-  const scoped = `${base ? `(${base}) AND ` : ''}${conditions.join(' AND ')}`;
+  // A2 strict date semantics: an issue is included when the SAME field is in the selected
+  // range. Do not combine a created lower bound with an unrelated updated upper bound.
+  const scoped = `${base ? `(${base}) AND ` : ''}(${dateConditions.join(' OR ')})`;
   return orderBy ? `${scoped} ${orderBy}` : `${scoped} ORDER BY updated DESC`;
 }
 
@@ -78,7 +84,7 @@ export async function fetchJiraIssues(cfg: IntegrationsConfig['jira'], scope?: A
   const authHeader = getAuthHeader(cfg.auth);
   if (!authHeader) return { issues: [], error: 'JIRA credentials not configured' };
   const sessionHeader = jiraSessionHeader(cfg);
-  const jql = scopedJql(cfg.jql, scope);
+  const jql = buildScopedJql(cfg.jql, scope);
 
   const issues: IssueRow[] = [];
   let startAt = 0;

@@ -31,6 +31,9 @@ export interface QmetryConnectionInput {
   email: string;
   apiToken?: string;
   credential?: string;
+  sessionHeader?: string;
+  sessionId?: string;
+  xsrfToken?: string;
   projectKey: string;
   projectId?: string;
   cycleIds?: string[];

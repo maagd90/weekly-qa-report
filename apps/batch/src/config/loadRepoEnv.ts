@@ -1,4 +1,3 @@
-import dotenv from 'dotenv';
 import fs from 'fs';
 import path from 'path';
 
@@ -8,7 +7,61 @@ const PATH_ENV_KEYS = [
   'INPUT_DIR',
   'OUTPUT_DIR',
   'CONFIG_DIR',
+  'PROJECT_ROOT',
 ];
+
+type RuntimeConfigValue = string | number | boolean | null | undefined;
+
+interface RuntimeConfig {
+  env?: Record<string, RuntimeConfigValue>;
+  paths?: {
+    projectRoot?: RuntimeConfigValue;
+    inputDir?: RuntimeConfigValue;
+    outputDir?: RuntimeConfigValue;
+    configDir?: RuntimeConfigValue;
+    puppeteerExecutablePath?: RuntimeConfigValue;
+    pdfPrintUrl?: RuntimeConfigValue;
+  };
+  network?: {
+    officeProxyUrl?: RuntimeConfigValue;
+    httpsProxy?: RuntimeConfigValue;
+    httpProxy?: RuntimeConfigValue;
+    anthropicProxyUrl?: RuntimeConfigValue;
+    nodeExtraCaCerts?: RuntimeConfigValue;
+    integrationAllowSelfSignedCerts?: RuntimeConfigValue;
+    jiraAllowSelfSigned?: RuntimeConfigValue;
+  };
+  llm?: {
+    provider?: RuntimeConfigValue;
+    model?: RuntimeConfigValue;
+    anthropicModel?: RuntimeConfigValue;
+    openaiModel?: RuntimeConfigValue;
+    geminiModel?: RuntimeConfigValue;
+    customLlmModel?: RuntimeConfigValue;
+    customLlmBaseUrl?: RuntimeConfigValue;
+    anthropicApiKey?: RuntimeConfigValue;
+    openaiApiKey?: RuntimeConfigValue;
+    geminiApiKey?: RuntimeConfigValue;
+    customLlmApiKey?: RuntimeConfigValue;
+  };
+  jira?: {
+    email?: RuntimeConfigValue;
+    apiToken?: RuntimeConfigValue;
+    cloudEmail?: RuntimeConfigValue;
+    cloudSecret?: RuntimeConfigValue;
+    onPremSecret?: RuntimeConfigValue;
+    sessionHeader?: RuntimeConfigValue;
+    sessionId?: RuntimeConfigValue;
+    xsrfToken?: RuntimeConfigValue;
+  };
+  qmetry?: {
+    basicAuth?: RuntimeConfigValue;
+  };
+}
+
+interface PackageJson {
+  workspaces?: unknown;
+}
 
 function stripQuotes(value: string): string {
   const v = value.trim();
@@ -18,53 +71,177 @@ function stripQuotes(value: string): string {
   return v;
 }
 
-function normalizeEnvPath(value: string): string {
+function normalizeEnvPath(value: string, baseDir?: string): string {
   let p = stripQuotes(value);
   if (process.platform === 'win32') {
     p = p.replace(/%([^%]+)%/g, (_, name) => process.env[name] || `%${name}%`);
   }
-  return path.normalize(p);
+  const normalized = path.normalize(p);
+  return baseDir && !path.isAbsolute(normalized) ? path.resolve(baseDir, normalized) : normalized;
 }
 
-function applyPathNormalizations(parsed: Record<string, string>): void {
+function applyPathNormalizations(baseDir?: string): void {
+  const root = baseDir || process.env.PROJECT_ROOT || process.cwd();
   for (const key of PATH_ENV_KEYS) {
-    const raw = parsed[key];
-    if (raw?.trim()) {
-      const normalized = normalizeEnvPath(raw);
-      parsed[key] = normalized;
-      process.env[key] = normalized;
-    }
+    const raw = process.env[key];
+    if (!raw?.trim()) continue;
+    process.env[key] = normalizeEnvPath(raw, key === 'PROJECT_ROOT' ? undefined : root);
   }
 }
 
-(function loadRepoEnv() {
-  let dir = __dirname;
-  for (let i = 0; i < 8; i++) {
-    const candidate = path.join(dir, '.env');
-    if (fs.existsSync(candidate)) {
-      try {
-        let content = fs.readFileSync(candidate, 'utf8');
-        if (content.charCodeAt(0) === 0xfeff) content = content.slice(1);
-        const parsed = dotenv.parse(content);
-        for (const [k, v] of Object.entries(parsed)) {
-          if (process.env[k] === undefined) process.env[k] = v;
-        }
-        applyPathNormalizations(parsed);
-        process.env.PROJECT_ROOT = process.env.PROJECT_ROOT || dir;
-        const keyOk = Boolean((parsed.ANTHROPIC_API_KEY || process.env.ANTHROPIC_API_KEY || '').trim());
-        console.log(`[env] loaded ${candidate} (ANTHROPIC_API_KEY=${keyOk ? 'set' : 'missing'})`);
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        console.warn(`[env] failed to load ${candidate}: ${msg}`);
-      }
-      return;
+function asEnvString(value: RuntimeConfigValue): string | undefined {
+  if (value === undefined || value === null) return undefined;
+  const rendered = String(value).trim();
+  return rendered ? rendered : undefined;
+}
+
+function setEnv(key: string, value: RuntimeConfigValue): void {
+  const rendered = asEnvString(value);
+  if (rendered !== undefined && !process.env[key]?.trim()) process.env[key] = rendered;
+}
+
+function applyMap(values: Record<string, RuntimeConfigValue> | undefined): void {
+  if (!values) return;
+  for (const [key, value] of Object.entries(values)) setEnv(key, value);
+}
+
+function readPackageJson(dir: string): PackageJson | undefined {
+  const file = path.join(dir, 'package.json');
+  if (!fs.existsSync(file)) return undefined;
+  try {
+    return JSON.parse(fs.readFileSync(file, 'utf8')) as PackageJson;
+  } catch {
+    return undefined;
+  }
+}
+
+function hasDirectory(dir: string, name: string): boolean {
+  try {
+    return fs.statSync(path.join(dir, name)).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+function isRepoRootCandidate(dir: string, pkg: PackageJson): boolean {
+  const hasApps = hasDirectory(dir, 'apps');
+  const hasConfig = hasDirectory(dir, 'config');
+  return Boolean(
+    pkg.workspaces ||
+    (hasApps && hasConfig)
+  );
+}
+
+function findRootFrom(start: string): string | undefined {
+  let dir = path.resolve(start);
+  try {
+    if (fs.existsSync(dir) && fs.statSync(dir).isFile()) dir = path.dirname(dir);
+  } catch {
+    // Keep the resolved start path and walk upward; this is only a best-effort root probe.
+  }
+
+  let firstPackageDir: string | undefined;
+  for (let i = 0; i < 20; i++) {
+    const pkg = readPackageJson(dir);
+    if (pkg) {
+      firstPackageDir = firstPackageDir || dir;
+      if (isRepoRootCandidate(dir, pkg)) return dir;
     }
     const parent = path.dirname(dir);
     if (parent === dir) break;
     dir = parent;
   }
+  return firstPackageDir;
+}
 
-  const result = dotenv.config();
-  applyPathNormalizations(result.parsed || {});
-  console.warn('[env] no repo-root .env found — using process environment only');
+function configuredProjectRoot(): string | undefined {
+  const configured = process.env.PROJECT_ROOT?.trim();
+  return configured ? path.resolve(normalizeEnvPath(configured)) : undefined;
+}
+
+function findRepoRoot(): string {
+  return configuredProjectRoot()
+    || findRootFrom(process.cwd())
+    || findRootFrom(__dirname)
+    || process.cwd();
+}
+
+function resolveRuntimeConfigPath(value: string, root: string): string {
+  const normalized = normalizeEnvPath(value);
+  return path.isAbsolute(normalized) ? normalized : path.resolve(root, normalized);
+}
+
+function candidateRuntimeConfigPaths(root: string): string[] {
+  const configured = process.env.RUNTIME_CONFIG_PATH?.trim();
+  const configDir = process.env.CONFIG_DIR?.trim() || path.join(root, 'config');
+  return [...new Set([
+    ...(configured ? [resolveRuntimeConfigPath(configured, root)] : []),
+    path.join(resolveRuntimeConfigPath(configDir, root), 'runtime.json'),
+    path.join(root, 'config', 'runtime.json'),
+  ].map((p) => path.resolve(p)))];
+}
+
+function applyRuntimeConfig(config: RuntimeConfig): void {
+  applyMap(config.env);
+
+  setEnv('PROJECT_ROOT', config.paths?.projectRoot);
+  setEnv('INPUT_DIR', config.paths?.inputDir);
+  setEnv('OUTPUT_DIR', config.paths?.outputDir);
+  setEnv('CONFIG_DIR', config.paths?.configDir);
+  setEnv('PUPPETEER_EXECUTABLE_PATH', config.paths?.puppeteerExecutablePath);
+  setEnv('PDF_PRINT_URL', config.paths?.pdfPrintUrl);
+
+  const officeProxyUrl = config.network?.officeProxyUrl;
+  setEnv('HTTPS_PROXY', config.network?.httpsProxy || officeProxyUrl);
+  setEnv('HTTP_PROXY', config.network?.httpProxy || officeProxyUrl);
+  setEnv('ANTHROPIC_PROXY_URL', config.network?.anthropicProxyUrl || officeProxyUrl);
+  setEnv('NODE_EXTRA_CA_CERTS', config.network?.nodeExtraCaCerts);
+  setEnv('INTEGRATION_ALLOW_SELF_SIGNED_CERTS', config.network?.integrationAllowSelfSignedCerts);
+  setEnv('JIRA_ALLOW_SELF_SIGNED', config.network?.jiraAllowSelfSigned);
+
+  setEnv('LLM_PROVIDER', config.llm?.provider);
+  setEnv('LLM_MODEL', config.llm?.model);
+  setEnv('ANTHROPIC_MODEL', config.llm?.anthropicModel);
+  setEnv('OPENAI_MODEL', config.llm?.openaiModel);
+  setEnv('GEMINI_MODEL', config.llm?.geminiModel);
+  setEnv('CUSTOM_LLM_MODEL', config.llm?.customLlmModel);
+  setEnv('CUSTOM_LLM_BASE_URL', config.llm?.customLlmBaseUrl);
+  setEnv('ANTHROPIC_API_KEY', config.llm?.anthropicApiKey);
+  setEnv('OPENAI_API_KEY', config.llm?.openaiApiKey);
+  setEnv('GEMINI_API_KEY', config.llm?.geminiApiKey);
+  setEnv('CUSTOM_LLM_API_KEY', config.llm?.customLlmApiKey);
+
+  setEnv('JIRA_EMAIL', config.jira?.email);
+  setEnv('JIRA_API_TOKEN', config.jira?.apiToken);
+  setEnv('JIRA_CLOUD_EMAIL', config.jira?.cloudEmail);
+  setEnv('JIRA_CLOUD_SECRET', config.jira?.cloudSecret);
+  setEnv('JIRA_ONPREM_SECRET', config.jira?.onPremSecret);
+  setEnv('JIRA_SESSION_HEADER', config.jira?.sessionHeader);
+  setEnv('JIRA_SESSION_ID', config.jira?.sessionId);
+  setEnv('JIRA_XSRF_TOKEN', config.jira?.xsrfToken);
+
+  setEnv('QMETRY_BASIC_AUTH', config.qmetry?.basicAuth);
+}
+
+(function loadRuntimeConfig() {
+  const root = findRepoRoot();
+  process.env.PROJECT_ROOT = process.env.PROJECT_ROOT || root;
+  process.env.CONFIG_DIR = process.env.CONFIG_DIR || path.join(root, 'config');
+
+  for (const candidate of candidateRuntimeConfigPaths(root)) {
+    if (!fs.existsSync(candidate)) continue;
+    try {
+      const config = JSON.parse(fs.readFileSync(candidate, 'utf8')) as RuntimeConfig;
+      applyRuntimeConfig(config);
+      applyPathNormalizations(root);
+      console.log(`[runtime-config] root=${process.env.PROJECT_ROOT || root} loaded=${candidate}`);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.warn(`[runtime-config] root=${root} failed to load ${candidate}: ${msg}`);
+    }
+    return;
+  }
+
+  applyPathNormalizations(root);
+  console.log(`[runtime-config] root=${process.env.PROJECT_ROOT || root} no config/runtime.json found — using built-in defaults and browser Settings only`);
 })();

@@ -13,6 +13,18 @@ export interface ExecutionRow {
   executedAt: string | null;
   updatedAt: string | null;
   source: DataSource;
+  /**
+   * True when this row represents one counted execution from QMetry's
+   * execution-level summary gadget rather than a testcase/cycle detail row.
+   * Summary rows are authoritative for overview/result/tester metrics, but are
+   * deliberately excluded from cycle-health breakdowns.
+   */
+  summaryOnly?: boolean;
+  /** Zero-count sentinel used to suppress unsafe detailed fallbacks. */
+  summaryMarker?: boolean;
+  /** Exact date window used by QMetry when producing a summary-only row. */
+  summaryScopeStart?: string;
+  summaryScopeEnd?: string;
 }
 
 export interface IssueRow {
@@ -56,12 +68,15 @@ export interface FileMeta {
   source: 'file' | 'jira-api' | 'qmetry-api';
 }
 
+export interface DedupeStats { executions: number; issues: number; uat: number }
+
 export interface DatasetMeta {
   parsedAt: string;
   fetchedAt: string | null;
   sourceFiles: string[];
   warnings: string[];
   integrations: { jira: boolean; qmetry: boolean };
+  deduped?: DedupeStats;
 }
 
 export interface Dataset {
@@ -86,11 +101,12 @@ export function emptyDataset(): Dataset {
       sourceFiles: [],
       warnings: [],
       integrations: { jira: false, qmetry: false },
+      deduped: { executions: 0, issues: 0, uat: 0 },
     },
   };
 }
 
-export type ReportType = 'full' | 'executive' | 'testers' | 'cycles';
+export type ReportType = 'full' | 'executive' | 'defects' | 'cycles' | 'testers';
 
 export interface FilterParams {
   startDate?: string;
@@ -180,7 +196,7 @@ export interface DashboardPayload {
   uat: DashboardUatPayload | null;
   byProject?: DashboardByProject[];
   files: FileMeta[];
-  meta: { generatedAt: string; parsedAt: string; fetchedAt: string | null; warnings: string[]; dataMin?: string | null; dataMax?: string | null };
+  meta: { generatedAt: string; parsedAt: string; fetchedAt: string | null; warnings: string[]; dataMin?: string | null; dataMax?: string | null; deduped?: DedupeStats };
 }
 
 export interface GenerateResult {
