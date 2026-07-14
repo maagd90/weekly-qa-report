@@ -3,7 +3,7 @@
 # Usage:
 #   ./run.sh              # show help
 #   ./run.sh setup        # first-time setup (dirs, runtime config, npm install)
-#   ./run.sh dev          # clear generated cache, then local dev (API :3001 + UI :3000)
+#   ./run.sh dev          # clear generated dashboard/report cache, then local dev (API :3001 + UI :3000)
 #   ./run.sh build        # production build
 #   ./run.sh test         # parser regression tests
 #   ./run.sh generate     # CLI report generation
@@ -47,7 +47,7 @@ cmd_dev() {
   require_cmd npm
   [[ -d node_modules ]] || cmd_setup
   ensure_runtime_files
-  info "Preparing clean generated dashboard cache and starting dev servers (API http://localhost:3001, UI http://localhost:3000)"
+  info "Preparing clean generated dashboard/report cache and starting dev servers (API http://localhost:3001, UI http://localhost:3000)"
   node "$ROOT/scripts/dev-runner.cjs"
 }
 
@@ -121,8 +121,8 @@ Usage: ./run.sh <command>
 
 Commands:
   setup       First-time setup (runtime config, folders, npm install)
-  dev         Clear generated dashboard cache, then run locally (API :3001, Vite UI :3000)
-              Keeps imported files, reports, credentials, and configuration.
+  dev         Clear generated dashboard/report cache, then run locally (API :3001, Vite UI :3000)
+              Keeps imported files, exported reports, credentials, and configuration.
               Emergency opt-out: PRESERVE_DEV_CACHE=1 ./run.sh dev
   build       Production build (batch + api + web)
   test        Run parser regression tests
