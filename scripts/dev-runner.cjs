@@ -96,11 +96,11 @@ fs.mkdirSync(configDir, { recursive: true });
 const preserveDevCache = envFlag(process.env.PRESERVE_DEV_CACHE);
 const cacheResult = clearGeneratedDevCache(outputDir, { preserve: preserveDevCache });
 if (cacheResult.preserved) {
-  console.log('[dev-runner] Generated dashboard cache preserved because PRESERVE_DEV_CACHE is enabled.');
+  console.log('[dev-runner] Generated dashboard/report cache preserved because PRESERVE_DEV_CACHE is enabled.');
 } else if (cacheResult.deleted.length) {
-  console.log(`[dev-runner] Cleared generated dashboard cache: ${cacheResult.deleted.join(', ')}`);
+  console.log(`[dev-runner] Cleared generated dashboard/report cache: ${cacheResult.deleted.join(', ')}`);
 } else {
-  console.log('[dev-runner] Generated dashboard cache already clean.');
+  console.log('[dev-runner] Generated dashboard/report cache already clean.');
 }
 
 env.NODE_ENV = env.NODE_ENV || 'development';
@@ -119,7 +119,7 @@ describeOverride('PDF_PRINT_URL', pdfConfigured, pdfPrintUrl);
 if (browserPath) describeOverride('PUPPETEER_EXECUTABLE_PATH', browserConfigured, browserPath);
 else if (browserConfigured) console.warn(`[dev-runner] PUPPETEER_EXECUTABLE_PATH ignored because it does not exist locally: ${browserConfigured}`);
 
-const child = spawnNpm(['run', 'dev'], {
+const child = spawnNpm(['run', 'dev:servers'], {
   cwd: ROOT,
   env,
   stdio: 'inherit',
