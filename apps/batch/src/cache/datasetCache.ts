@@ -17,6 +17,12 @@ export interface BuildDatasetOptions {
   includeFiles?: boolean;
 }
 
+export interface QmetryDateScopeResult {
+  executions: ExecutionRow[];
+  excludedCount: number;
+  excludedCycles: string[];
+}
+
 function cleanApiScope(scope?: ApiFetchScope): ApiFetchScope | undefined {
   if (!scope) return undefined;
   const next: ApiFetchScope = {};
@@ -43,11 +49,8 @@ function qmetryProjectMatches(key: string | undefined, scope?: ApiFetchScope): b
   return canonicalProjectKey(key) === selected;
 }
 
-function qmetryScopeAnchorDate(scope?: ApiFetchScope): string | null {
-  const endDate = scope?.endDate || '';
-  if (/^\d{4}-\d{2}-\d{2}$/.test(endDate)) return endDate;
-  const startDate = scope?.startDate || '';
-  return /^\d{4}-\d{2}-\d{2}$/.test(startDate) ? startDate : null;
+function hasDateScope(scope?: ApiFetchScope): boolean {
+  return Boolean(scope?.startDate || scope?.endDate);
 }
 
 function isQmetryProgressFallback(row: ExecutionRow): boolean {
@@ -57,15 +60,30 @@ function isQmetryProgressFallback(row: ExecutionRow): boolean {
 }
 
 /**
- * QMetry aggregate progress rows have no testcase-level execution timestamp. The
- * QMetry client has already selected the cycle using the requested API scope, so
- * keep those synthetic rows inside the same window for downstream dashboard/PDF
- * filtering instead of dropping the entire cycle by its unrelated last-updated date.
+ * Aggregate cycle progress contains all-time status totals but no testcase-level
+ * execution date. It must never be made to look date-specific. Keep it for
+ * all-time reports, and exclude it from reports with a selected date window.
  */
-export function anchorQmetryProgressRowsToScope(rows: ExecutionRow[], scope?: ApiFetchScope): ExecutionRow[] {
-  const anchorDate = qmetryScopeAnchorDate(scope);
-  if (!anchorDate) return rows;
-  return rows.map((row) => isQmetryProgressFallback(row) ? { ...row, updatedAt: anchorDate } : row);
+export function excludeApproximateQmetryProgressFromDateScope(rows: ExecutionRow[], scope?: ApiFetchScope): QmetryDateScopeResult {
+  if (!hasDateScope(scope)) return { executions: rows, excludedCount: 0, excludedCycles: [] };
+  const excluded = rows.filter(isQmetryProgressFallback);
+  const executions = rows.filter((row) => !isQmetryProgressFallback(row));
+  const excludedCycles = [...new Set(excluded.map((row) => row.cycleName || row.cycleKey).filter(Boolean))];
+  return { executions, excludedCount: excluded.length, excludedCycles };
+}
+
+function stripAggregateFallbackNotice(error?: string): string {
+  return (error || '')
+    .replace(/One or more cycles used aggregate QMetry execution progress because detailed testcase rows were unavailable\. Aggregate rows do not include Executed By and are excluded from tester rankings\./gi, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function aggregateExclusionWarning(result: QmetryDateScopeResult): string {
+  if (!result.excludedCount) return '';
+  const named = result.excludedCycles.slice(0, 3).join(', ')
+    + (result.excludedCycles.length > 3 ? `, +${result.excludedCycles.length - 3} more` : '');
+  return `Excluded ${result.excludedCount} aggregate QMetry progress row(s) from this date-scoped report${named ? ` for: ${named}` : ''}. Detailed execution dates were unavailable, so activity in the selected period is unknown rather than an approximate all-time count.`;
 }
 
 function projectListLabel(keys?: string[]): string {
@@ -136,16 +154,19 @@ async function buildQmetryConnectionDataset(configDir: string, connections?: Use
       }
       const qmetryCfg = qmetryConfigFromConnection(conn);
       const { executions, error } = await fetchQmetryExecutions(qmetryCfg, apiScope);
-      const scopedExecutions = anchorQmetryProgressRowsToScope(executions, apiScope);
+      const scoped = excludeApproximateQmetryProgressFromDateScope(executions, apiScope);
       const ds = emptyDataset();
-      ds.executions = scopedExecutions;
+      ds.executions = scoped.executions;
       ds.meta.integrations.qmetry = true;
       ds.meta.fetchedAt = new Date().toISOString();
-      if (error) ds.meta.warnings.push(`[${conn.name}] ${error}`);
+      const detailError = stripAggregateFallbackNotice(error);
+      if (detailError) ds.meta.warnings.push(`[${conn.name}] ${detailError}`);
+      const exclusionWarning = aggregateExclusionWarning(scoped);
+      if (exclusionWarning) ds.meta.warnings.push(`[${conn.name}] ${exclusionWarning}`);
       if (apiScope?.startDate || apiScope?.endDate) ds.meta.sourceFiles.push(`qmetry-api:${conn.name}:overview-date-search:${apiScope.startDate || 'any'}:${apiScope.endDate || 'any'}`);
-      if (scopedExecutions.length) {
-        ds.files.push({ name: `qmetry-api:${conn.name}`, ext: 'API', project: scopedExecutions[0]?.project || conn.projectKey, rows: scopedExecutions.length, status: 'parsed', detectedType: 'test-execution', source: 'qmetry-api' });
-        ds.projects = [...new Set(scopedExecutions.map((e) => canonicalProjectKey(e.project)))];
+      if (scoped.executions.length) {
+        ds.files.push({ name: `qmetry-api:${conn.name}`, ext: 'API', project: scoped.executions[0]?.project || conn.projectKey, rows: scoped.executions.length, status: 'parsed', detectedType: 'test-execution', source: 'qmetry-api' });
+        ds.projects = [...new Set(scoped.executions.map((e) => canonicalProjectKey(e.project)))];
       }
       parts.push(ds);
     }
@@ -156,7 +177,12 @@ async function buildQmetryConnectionDataset(configDir: string, connections?: Use
         parts.push(skippedLiveDataset('qmetry', `QMetry ${cfg.qmetry.projectKey}`, `QMetry connection skipped because selected project ${selected} does not match configured project ${canonicalProjectKey(cfg.qmetry.projectKey) || cfg.qmetry.projectKey || 'none'}.`));
       } else {
         const ds = await fetchQmetryDataset(cfg, apiScope);
-        ds.executions = anchorQmetryProgressRowsToScope(ds.executions, apiScope);
+        const scoped = excludeApproximateQmetryProgressFromDateScope(ds.executions, apiScope);
+        ds.executions = scoped.executions;
+        ds.meta.warnings = ds.meta.warnings.map(stripAggregateFallbackNotice).filter(Boolean);
+        const exclusionWarning = aggregateExclusionWarning(scoped);
+        if (exclusionWarning) ds.meta.warnings.push(exclusionWarning);
+        ds.files = ds.files.map((file) => file.source === 'qmetry-api' ? { ...file, rows: scoped.executions.length } : file);
         parts.push(ds);
       }
     }
