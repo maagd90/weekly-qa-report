@@ -6,6 +6,9 @@ const GENERATED_DEV_CACHE_FILES = Object.freeze([
   'raw-dataset.json',
   'dataset-fingerprint.txt',
   'dashboard-data.json',
+  'report-dashboard.json',
+  'report-raw-dataset.json',
+  'report-dataset-fingerprint.txt',
   'report.md',
   'report-meta.json',
 ]);

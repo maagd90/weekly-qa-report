@@ -1,5 +1,6 @@
 const assert = require('assert');
 const { buildNpmSpawnSpec, spawnNpm } = require('../npm-spawn.cjs');
+const rootPackage = require('../../package.json');
 
 function runNpmVersionSmokeTest() {
   return new Promise((resolve, reject) => {
@@ -33,6 +34,12 @@ function runNpmVersionSmokeTest() {
 }
 
 async function main() {
+  assert.match(
+    rootPackage.scripts['dev:servers'],
+    /^npm run build --workspace=apps\/batch && /,
+    'development startup must compile the batch workspace before the API imports its dist output',
+  );
+
   const windows = buildNpmSpawnSpec(['run', 'dev'], 'win32', { ComSpec: 'C:\\Windows\\System32\\cmd.exe' });
   assert.equal(windows.command, 'C:\\Windows\\System32\\cmd.exe');
   assert.deepEqual(windows.args, ['/d', '/s', '/c', 'npm run dev']);

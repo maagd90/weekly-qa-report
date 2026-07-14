@@ -9,6 +9,9 @@ function write(dir, name, content = name) {
 }
 
 function main() {
+  for (const required of ['report-dashboard.json', 'report-raw-dataset.json', 'report-dataset-fingerprint.txt']) {
+    assert.ok(GENERATED_DEV_CACHE_FILES.includes(required), `${required} must be cleared before development startup`);
+  }
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'qa-dashboard-dev-cache-'));
   try {
     for (const name of GENERATED_DEV_CACHE_FILES) write(root, name);
