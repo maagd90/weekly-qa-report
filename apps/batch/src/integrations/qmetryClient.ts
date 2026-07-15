@@ -323,7 +323,7 @@ function compactWarnings(warnings: string[]): string {
   const parts: string[] = [];
   if (detailFailures.length) {
     const first = detailFailures[0].replace(/^.*?:\s*/, '').replace(/\s+/g, ' ').slice(0, 180);
-    parts.push(`QMetry detail retrieval failed for ${detailFailures.length} cycle(s). Aggregate execution progress was used where available; tester attribution may be incomplete.${first ? ` First error: ${first}` : ''}`);
+    parts.push(`QMetry detail retrieval failed for ${detailFailures.length} cycle(s). Aggregate execution progress was used where available; Quality Assurance attribution may be incomplete.${first ? ` First error: ${first}` : ''}`);
   }
   parts.push(...notices.slice(0, 2));
   if (notices.length > 2) parts.push(`${notices.length - 2} more QMetry notice(s)`);
@@ -618,7 +618,7 @@ export async function fetchQmetryExecutions(cfg: QmetryIntegrationConfig, scope?
   if (!hydrated.length && !warnings.length) {
     warnings.push(`QMetry cycles were found, but no testcase execution rows or cycle-level progress counts were available for ${cfg.projectKey || cfg.projectId || 'the configured project'}. Check the testcase search path, selected date range, and session permissions.`);
   } else if (usedProgressFallback) {
-    warnings.push('One or more cycles used aggregate QMetry execution progress because detailed testcase rows were unavailable. Aggregate rows do not include Executed By and are excluded from tester rankings.');
+    warnings.push('One or more cycles used aggregate QMetry execution progress because detailed testcase rows were unavailable. Aggregate rows do not include Executed By and are excluded from Quality Assurance rankings.');
   }
   const executions = [...hydrated, ...summary.executions];
   const error = compactWarnings(warnings);

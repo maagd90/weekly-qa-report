@@ -5,6 +5,7 @@ import { describeFetchError } from '../utils/fetchWithTimeout';
 import { getOptionalAnthropicProxyUrl, maskProxyUrl, anthropicProxySource } from './optionalProxy';
 import { loadReportConfig } from '../config/loadReportConfig';
 import {
+  defaultModelForProvider,
   generateLlmText,
   resolveProviderApiKey,
   LLM_PROVIDER_LABELS,
@@ -126,11 +127,17 @@ export async function testLlmConnection(selection: LlmSelectionInput, configDir:
   const started = Date.now();
   const cfg = loadReportConfig(configDir);
   const provider = selection.provider || cfg.provider;
-  const model = (selection.model || cfg.model).trim();
-  const apiKey = resolveProviderApiKey(provider, selection.apiKey, process.env.ANTHROPIC_API_KEY);
-  const baseUrl = selection.baseUrl || cfg.baseUrl;
+  const model = (selection.model || (provider === cfg.provider ? cfg.model : defaultModelForProvider(provider))).trim();
+  const baseUrl = selection.baseUrl || (provider === cfg.provider ? cfg.baseUrl : undefined);
   const providerLabel = LLM_PROVIDER_LABELS[provider];
   const logs = [`[llm] provider=${providerLabel}`, `[llm] model=${model}`, `[llm] endpoint=${baseUrl || 'official'}`];
+
+  if (provider === 'template') {
+    logs.push('[llm] deterministic template is ready; no API key or network call is required');
+    return { ok: true, provider, providerLabel, model, route: 'direct', elapsedMs: Date.now() - started, logs };
+  }
+
+  const apiKey = resolveProviderApiKey(provider, selection.apiKey, process.env.ANTHROPIC_API_KEY);
 
   if (provider === 'anthropic') {
     const result = await testAnthropicConnection(apiKey, configDir, { baseUrl, model });

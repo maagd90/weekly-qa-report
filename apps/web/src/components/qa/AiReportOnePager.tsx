@@ -128,7 +128,7 @@ export function AiReportOnePager({
 
       {topTesters.length > 0 && (
         <div className="px-5 py-3 border-b border-qa-border">
-          <div className="font-mono-qa text-[9px] tracking-wider uppercase text-qa-muted-light mb-2">Top Testers</div>
+          <div className="font-mono-qa text-[9px] tracking-wider uppercase text-qa-muted-light mb-2">Top Quality Assurance Members</div>
           <div className="flex flex-col gap-2">
             {topTesters.map((t) => (
               <div key={t.name} className="flex items-center gap-2">

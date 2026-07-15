@@ -29,6 +29,7 @@ function providerModelEnv(provider: LlmProvider): string | undefined {
     case 'openai': return process.env.OPENAI_MODEL;
     case 'gemini': return process.env.GEMINI_MODEL;
     case 'openai-compatible': return process.env.CUSTOM_LLM_MODEL;
+    case 'template': return undefined;
     case 'anthropic':
     default:
       return process.env.ANTHROPIC_MODEL;
@@ -54,16 +55,19 @@ export function loadReportConfig(configDir: string): ReportConfig {
   }
 
   const provider = normalizeLlmProvider(process.env.LLM_PROVIDER || fromFile.provider || DEFAULTS.provider);
+  const fileProvider = fromFile.provider ? normalizeLlmProvider(fromFile.provider) : DEFAULTS.provider;
+  const fileModel = fileProvider === provider ? fromFile.model : undefined;
+  const fileBaseUrl = fileProvider === provider ? fromFile.baseUrl : undefined;
   const model = (
     process.env.LLM_MODEL ||
     providerModelEnv(provider) ||
-    fromFile.model ||
+    fileModel ||
     defaultModelForProvider(provider)
   ).trim();
   const baseUrl = (
     process.env.LLM_BASE_URL ||
     (provider === 'openai-compatible' ? process.env.CUSTOM_LLM_BASE_URL : undefined) ||
-    fromFile.baseUrl ||
+    fileBaseUrl ||
     undefined
   )?.trim();
   const maxTokens = positiveNumber(process.env.LLM_MAX_TOKENS) ||

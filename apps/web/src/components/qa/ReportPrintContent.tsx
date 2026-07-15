@@ -32,12 +32,18 @@ function Section({ no, title, children }: { no: number; title: string; children:
 function reportTypeLabel(reportType: ReportType): string {
   if (reportType === 'executive') return 'Executive';
   if (reportType === 'cycles') return 'Cycle Health';
-  if (reportType === 'defects' || reportType === 'testers') return 'Defects';
+  if (reportType === 'defects') return 'Defects';
+  if (reportType === 'testers') return 'Quality Assurance Performance';
   return 'Full';
 }
 
 function isDefectReport(reportType: ReportType): boolean {
-  return reportType === 'defects' || reportType === 'testers';
+  return reportType === 'defects';
+}
+
+function QualityAssuranceRows({ dashboard }: { dashboard: DashboardPayload }) {
+  if (!dashboard.testers.length) return <p>No named Quality Assurance executions are available for this reporting scope.</p>;
+  return <table className="qa-business-table"><thead><tr><th>Quality Assurance member</th><th>Executed</th><th>Passed</th><th>Failed</th><th>Blocked</th><th>Pass %</th></tr></thead><tbody>{dashboard.testers.map((member) => <tr key={member.name}><td>{member.name}</td><td className="qa-business-number">{member.executed}</td><td className="qa-business-number">{member.pass}</td><td className="qa-business-number">{member.fail}</td><td className="qa-business-number">{member.blocked}</td><td className="qa-business-number">{member.passPct}%</td></tr>)}</tbody></table>;
 }
 
 function StatTable({ dashboard }: { dashboard: DashboardPayload }) {
@@ -111,8 +117,9 @@ export function ReportPrintContent({ dashboard, reportType, narrative, startDate
   const cycleReport = reportType === 'cycles';
   const executiveReport = reportType === 'executive';
   const fullReport = reportType === 'full';
+  const qualityAssuranceReport = reportType === 'testers';
   const showDefects = fullReport || executiveReport || defectReport;
-  const showExecution = fullReport || executiveReport || cycleReport;
+  const showExecution = fullReport || executiveReport || cycleReport || qualityAssuranceReport;
   const showCycles = fullReport || cycleReport;
   const showStatus = fullReport || executiveReport;
   const showPlan = fullReport || executiveReport;
@@ -194,6 +201,7 @@ export function ReportPrintContent({ dashboard, reportType, narrative, startDate
         </Section>}
 
         {showCycles && <Section no={nextNo()} title="Test Cycle Health"><CycleRows dashboard={dashboard} /></Section>}
+        {qualityAssuranceReport && <Section no={nextNo()} title="Execution by Quality Assurance"><QualityAssuranceRows dashboard={dashboard} /></Section>}
         {showDefects && <Section no={nextNo()} title="Defects Active in Period"><DefectRows dashboard={dashboard} /></Section>}
 
         {showStatus && <Section no={nextNo()} title="Overall Sprint Status">

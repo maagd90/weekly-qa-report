@@ -357,6 +357,7 @@ router.get('/status', (_req: Request, res: Response) => res.json({
     openai: Boolean(process.env.OPENAI_API_KEY),
     gemini: Boolean(process.env.GEMINI_API_KEY),
     custom: Boolean(process.env.CUSTOM_LLM_API_KEY),
+    template: true,
   },
   jiraConfigured: Boolean(process.env.JIRA_EMAIL && process.env.JIRA_API_TOKEN),
   projectRoot: process.env.PROJECT_ROOT || ROOT,

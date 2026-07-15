@@ -16,7 +16,7 @@ interface AiReportChartsProps {
 }
 
 function isDefectReport(reportType: ReportType): boolean {
-  return reportType === 'defects' || reportType === 'testers';
+  return reportType === 'defects';
 }
 
 export function AiReportCharts({ dashboard, kpiStyle, reportType }: AiReportChartsProps) {
@@ -25,7 +25,7 @@ export function AiReportCharts({ dashboard, kpiStyle, reportType }: AiReportChar
   const defectReport = isDefectReport(reportType);
   const showOverview = reportType === 'full' || reportType === 'executive';
   const showTestersCompact = reportType === 'full';
-  const showTestersFull = false;
+  const showTestersFull = reportType === 'testers';
   const showCycles = reportType === 'full' || reportType === 'cycles';
   const showDefects = reportType === 'full' || defectReport;
   const showUat = reportType === 'full' || reportType === 'executive' || defectReport;
@@ -72,7 +72,7 @@ export function AiReportCharts({ dashboard, kpiStyle, reportType }: AiReportChar
 
       {showTestersCompact && topTesters.length > 0 && (
         <div className="pdf-section border border-qa-border p-5 bg-white">
-          <div className="font-mono-qa text-[10px] tracking-wider uppercase text-qa-muted-light mb-3">Top Testers by Volume</div>
+          <div className="font-mono-qa text-[10px] tracking-wider uppercase text-qa-muted-light mb-3">Top Quality Assurance Members by Volume</div>
           <div className="flex flex-col gap-3">
             {topTesters.map((t) => (
               <div key={t.name}>

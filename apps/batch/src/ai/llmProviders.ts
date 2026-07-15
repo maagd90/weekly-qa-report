@@ -1,7 +1,7 @@
 import { fetchWithTimeout, safeApiError } from '../utils/fetchWithTimeout';
 import { createAnthropicClient } from './anthropicClient';
 
-export type LlmProvider = 'anthropic' | 'openai' | 'gemini' | 'openai-compatible';
+export type LlmProvider = 'anthropic' | 'openai' | 'gemini' | 'openai-compatible' | 'template';
 
 export interface LlmModelOption {
   provider: LlmProvider;
@@ -36,6 +36,7 @@ export const LLM_PROVIDER_LABELS: Record<LlmProvider, string> = {
   openai: 'OpenAI',
   gemini: 'Google Gemini',
   'openai-compatible': 'Other OpenAI-compatible',
+  template: 'Template (No AI)',
 };
 
 export const DEFAULT_LLM_PROVIDER: LlmProvider = 'anthropic';
@@ -49,10 +50,11 @@ export const LLM_MODEL_OPTIONS: LlmModelOption[] = [
   { provider: 'gemini', model: 'gemini-3.5-flash', label: 'Gemini 3.5 Flash', description: 'Google Gemini fast report model' },
   { provider: 'gemini', model: 'gemini-3.5-pro', label: 'Gemini 3.5 Pro', description: 'Google Gemini higher-quality option' },
   { provider: 'openai-compatible', model: 'custom-model', label: 'Custom OpenAI-compatible', description: 'Groq/OpenRouter/local gateway/etc.' },
+  { provider: 'template', model: 'template-v1', label: 'Rule-based narrative', description: 'Deterministic narrative from verified metrics; no key or network call' },
 ];
 
 export function normalizeLlmProvider(value?: string): LlmProvider {
-  if (value === 'openai' || value === 'gemini' || value === 'openai-compatible' || value === 'anthropic') return value;
+  if (value === 'openai' || value === 'gemini' || value === 'openai-compatible' || value === 'anthropic' || value === 'template') return value;
   return DEFAULT_LLM_PROVIDER;
 }
 
@@ -65,13 +67,20 @@ export function envKeyForProvider(provider: LlmProvider): string {
     case 'openai': return 'OPENAI_API_KEY';
     case 'gemini': return 'GEMINI_API_KEY';
     case 'openai-compatible': return 'CUSTOM_LLM_API_KEY';
+    case 'template': return 'NO_API_KEY_REQUIRED';
     case 'anthropic':
     default:
       return 'ANTHROPIC_API_KEY';
   }
 }
 
+/** Returns whether a provider requires a secret before report generation. */
+export function providerRequiresApiKey(provider: LlmProvider): boolean {
+  return provider !== 'template';
+}
+
 export function resolveProviderApiKey(provider: LlmProvider, userKey?: string, legacyAnthropicKey?: string): string {
+  if (!providerRequiresApiKey(provider)) return '';
   const direct = userKey?.trim();
   if (direct) return direct;
   if (provider === 'anthropic' && legacyAnthropicKey?.trim()) return legacyAnthropicKey.trim();
@@ -131,6 +140,9 @@ async function parseJsonResponse(res: Response, prefix: string): Promise<any> {
 }
 
 export async function generateLlmText(request: LlmTextRequest): Promise<string> {
+  if (request.provider === 'template') {
+    throw new Error("generateLlmText() cannot call provider 'template'; route it through generateTemplateNarrative() instead because the template provider never makes network calls.");
+  }
   requireKey(request);
   const timeoutMs = request.timeoutMs ?? 120_000;
 

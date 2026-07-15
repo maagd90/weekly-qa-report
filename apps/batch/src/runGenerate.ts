@@ -5,7 +5,7 @@ import { buildDataset, computeFingerprint } from './cache/datasetCache';
 import { buildDashboardPayload } from './export/buildDashboardPayload';
 import { hasDashboardMetrics, noMetricsForScopeMessage } from './export/reportMetrics';
 import { generateReportFromDataset, resolveReportLlmConfig } from './ai/reportWriter';
-import { LLM_PROVIDER_LABELS, envKeyForProvider } from './ai/llmProviders';
+import { LLM_PROVIDER_LABELS, envKeyForProvider, providerRequiresApiKey } from './ai/llmProviders';
 import { discoverInputFiles } from './parse/dispatcher';
 import { canonicalProjectOrUndefined } from './projects/projectKey';
 import { validIsoDate } from './filters/scopeMatching';
@@ -212,7 +212,7 @@ export async function runGenerate(params: GenerateParams): Promise<GenerateResul
   writeJsonFile(metaPath, baseReportMeta);
 
   const llmConfig = resolveReportLlmConfig(params, configDir, params.apiKey);
-  if (!llmConfig.apiKey) {
+  if (providerRequiresApiKey(llmConfig.provider) && !llmConfig.apiKey) {
     removeIfExists(reportPath);
     return { ok: true, filesParsed: fileCount, rowCounts: counts, warnings: [...dataset.meta.warnings, `${envKeyForProvider(llmConfig.provider)} not set — narrative skipped for ${LLM_PROVIDER_LABELS[llmConfig.provider]}`], paths: { dashboard: dashboardPath, report: '', meta: metaPath, raw: rawPath }, payload, report: { markdown: '', meta: baseReportMeta } };
   }

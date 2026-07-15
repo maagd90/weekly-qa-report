@@ -1,7 +1,8 @@
 import type { Dataset, FilterParams, GenerateParams, ReportType } from '../types/dataset';
 import { AI_TOOLS, executeTool } from './datasetTools';
 import { loadReportConfig } from '../config/loadReportConfig';
-import { generateLlmText, resolveProviderApiKey, type LlmResolvedConfig } from './llmProviders';
+import { defaultModelForProvider, generateLlmText, resolveProviderApiKey, type LlmResolvedConfig } from './llmProviders';
+import { generateTemplateNarrative, type TemplateNarrativeMetrics } from './templateNarrative';
 
 const SYSTEM = [
   'You are a senior QA manager writing a business-ready QA sprint report narrative.',
@@ -26,7 +27,8 @@ function projectDisplayName(project?: string): string {
 function reportTypeLabel(reportType: ReportType): string {
   if (reportType === 'executive') return 'Executive';
   if (reportType === 'cycles') return 'Cycle Health';
-  if (reportType === 'defects' || reportType === 'testers') return 'Defects';
+  if (reportType === 'defects') return 'Defects';
+  if (reportType === 'testers') return 'Quality Assurance Performance';
   return 'Full';
 }
 
@@ -72,16 +74,20 @@ function collectToolMetrics(dataset: Dataset, filter: FilterParams) {
     metrics[tool.name] = result;
     toolCalls.push({ toolName: tool.name, rowCount: Array.isArray(result) ? result.length : 1 });
   }
-  return { metrics, toolCalls };
+  return { metrics: metrics as TemplateNarrativeMetrics, toolCalls };
 }
 
 export function resolveReportLlmConfig(params: GenerateParams, configDir: string, legacyApiKey?: string): LlmResolvedConfig {
   const reportCfg = loadReportConfig(configDir);
   const provider = params.llm?.provider || reportCfg.provider;
-  const model = (params.llm?.model || reportCfg.model).trim();
+  const model = (
+    params.llm?.model ||
+    (provider === reportCfg.provider ? reportCfg.model : defaultModelForProvider(provider))
+  ).trim();
   const userOrLegacyKey = provider === 'anthropic' ? (params.llm?.apiKey || legacyApiKey) : params.llm?.apiKey;
   const apiKey = resolveProviderApiKey(provider, userOrLegacyKey, process.env.ANTHROPIC_API_KEY);
-  return { provider, model, apiKey, baseUrl: params.llm?.baseUrl || reportCfg.baseUrl, maxTokens: reportCfg.maxTokens };
+  const baseUrl = params.llm?.baseUrl || (provider === reportCfg.provider ? reportCfg.baseUrl : undefined);
+  return { provider, model, apiKey, baseUrl, maxTokens: reportCfg.maxTokens };
 }
 
 export async function generateReportFromDataset(
@@ -93,6 +99,13 @@ export async function generateReportFromDataset(
   const configDir = params.configDir || process.env.CONFIG_DIR || 'config';
   const llm = resolveReportLlmConfig(params, configDir, apiKey);
   const { metrics, toolCalls } = collectToolMetrics(dataset, filter);
+  if (llm.provider === 'template') {
+    return {
+      markdown: generateTemplateNarrative(metrics, filter, params.reportType),
+      toolCalls,
+      llm: { provider: llm.provider, model: llm.model, baseUrl: llm.baseUrl, maxTokens: llm.maxTokens },
+    };
+  }
   const markdown = await generateLlmText({
     ...llm,
     system: SYSTEM,

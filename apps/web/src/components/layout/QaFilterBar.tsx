@@ -73,7 +73,7 @@ export function QaFilterBar(props: QaFilterBarProps) {
 
       <div className="flex items-center gap-2 border border-qa-border-mid bg-white px-2.5">
         <span className="text-[13px] text-qa-muted-pale">⚲</span>
-        <input type="text" value={search} onChange={(e) => onSearchChange(e.target.value)} placeholder="Search cycles, testers, keys..." className="border-none outline-none bg-transparent font-sans text-[13px] text-qa-ink py-2 px-1 w-[180px]" />
+        <input type="text" value={search} onChange={(e) => onSearchChange(e.target.value)} placeholder="Search cycles, Quality Assurance, keys..." className="border-none outline-none bg-transparent font-sans text-[13px] text-qa-ink py-2 px-1 w-[180px]" />
         {search && <button type="button" onClick={() => onSearchChange('')} className="border-none bg-transparent cursor-pointer text-qa-muted-pale text-[15px] leading-none p-0.5">×</button>}
       </div>
 

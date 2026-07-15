@@ -404,7 +404,7 @@ async function testAggregateFallbackIsExplicitAndConcise(): Promise<void> {
   assert.equal(fallback.executions.filter((row) => row.result === 'NE').length, 3);
   assert.equal(fallback.executions.filter((row) => row.tester).length, 0, 'aggregate progress cannot invent tester names');
   assert.match(fallback.error || '', /detail retrieval failed for 1 cycle/i);
-  assert.match(fallback.error || '', /tester attribution may be incomplete/i);
+  assert.match(fallback.error || '', /Quality Assurance attribution may be incomplete/i);
   assert.ok((fallback.error || '').length < 500, 'stakeholder warning must remain concise');
   assert.equal(calls.some((call) => call.url.includes('/testcases/search') && call.init.method === 'GET'), false);
 }

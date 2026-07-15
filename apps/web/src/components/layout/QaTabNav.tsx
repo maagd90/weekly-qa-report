@@ -52,7 +52,7 @@ export function QaTabNav({ tabs, activeTab, onTabChange }: QaTabNavProps) {
 export function buildTabs(showVendorPortalBugs: boolean): TabDef[] {
   const tabs: TabDef[] = [
     { id: 'overview', label: 'Overview', num: '01' },
-    { id: 'testers', label: 'Testers', num: '02' },
+    { id: 'testers', label: 'Quality Assurance', num: '02' },
     { id: 'cycles', label: 'Test Cycles', num: '03' },
     { id: 'trace', label: 'Traceability', num: '04' },
   ];

@@ -128,7 +128,7 @@ export function CyclesPage({ dashboard, kpiStyle, selectedCycle, onSelectCycle, 
           <div className="mb-4 space-y-2">
             <div className="text-[12px] text-qa-muted-light">Showing cycles matching the selected period with their current live QMetry result split for folder <span className="font-mono-qa text-qa-ink">{selectedFolder}</span>.</div>
             <WarningDetails
-              summary="QMetry returned partial cycle data. Aggregate counts may be shown and tester attribution may be incomplete."
+              summary="QMetry returned partial cycle data. Aggregate counts may be shown and Quality Assurance attribution may be incomplete."
               messages={liveWarnings}
             />
           </div>

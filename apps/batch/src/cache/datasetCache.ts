@@ -74,7 +74,7 @@ export function excludeApproximateQmetryProgressFromDateScope(rows: ExecutionRow
 
 function stripAggregateFallbackNotice(error?: string): string {
   return (error || '')
-    .replace(/One or more cycles used aggregate QMetry execution progress because detailed testcase rows were unavailable\. Aggregate rows do not include Executed By and are excluded from tester rankings\./gi, '')
+    .replace(/One or more cycles used aggregate QMetry execution progress because detailed testcase rows were unavailable\. Aggregate rows do not include Executed By and are excluded from (?:tester|Quality Assurance) rankings\./gi, '')
     .replace(/\s+/g, ' ')
     .trim();
 }

@@ -60,18 +60,18 @@ function TesterList({ testers, neCount, unattributedCount }: { testers: Dashboar
       {unattributedCount > 0 && (
         <div className="flex items-start gap-2.5 pt-3.5 text-xs text-[#8a5a00]">
           <span className="w-2.5 h-2.5 bg-[#B9861A] shrink-0 mt-0.5" />
-          <span>{fmt(unattributedCount)} executed cases were returned without an <strong>Executed By</strong> value. They are included in total execution metrics but excluded from tester rankings.</span>
+          <span>{fmt(unattributedCount)} executed cases were returned without an <strong>Executed By</strong> value. They are included in total execution metrics but excluded from Quality Assurance rankings.</span>
         </div>
       )}
       {neCount > 0 && (
         <div className="flex items-center gap-2.5 pt-3.5 text-xs text-qa-muted-light">
           <span className="w-2.5 h-2.5 bg-[#B3AEA3] shrink-0" />
-          <span>{fmt(neCount)} cases Not Executed are excluded from tester totals above.</span>
+          <span>{fmt(neCount)} cases Not Executed are excluded from Quality Assurance totals above.</span>
         </div>
       )}
       {!testers.length && (
         <div className="py-6 text-center text-[13px] text-qa-muted-light">
-          No named tester executions match the current filters. Check the QMetry Executed By data and selected period.
+          No named Quality Assurance executions match the current filters. Check the QMetry Executed By data and selected period.
         </div>
       )}
     </div>
@@ -98,7 +98,7 @@ export function TestersPerformanceSection({ dashboard, kpiStyle, embedded = fals
   return (
     <div className="flex flex-col gap-6">
       <QaKpiGrid cols={5}>
-        <QaKpiCard kpiStyle={kpiStyle} label="Named Testers" value={testers.length}
+        <QaKpiCard kpiStyle={kpiStyle} label="Named QA Members" value={testers.length}
           sub={stats.topPerf.executed ? `top: ${stats.topPerf.name}` : 'no attributed executions'} color={QA.accent} />
         <QaKpiCard kpiStyle={kpiStyle} label="Total Executions" value={fmt(overview.executed)}
           sub="PASS + FAIL + BLOCKED + N/A" color="#2F7D5A" />
@@ -107,21 +107,21 @@ export function TestersPerformanceSection({ dashboard, kpiStyle, embedded = fals
         <QaKpiCard kpiStyle={kpiStyle} label="Unassigned" value={fmt(stats.unattributedExec)}
           sub="missing Executed By" color={QA.BLOCKED} />
         <QaKpiCard kpiStyle={kpiStyle} label="Avg Pass Rate" value={`${stats.wAvg}%`}
-          sub="named testers only" color={QA.NA} />
+          sub="named QA members only" color={QA.NA} />
       </QaKpiGrid>
 
       {embedded ? (
         <div className="pdf-section border border-qa-border bg-white">
           <div className="flex items-center justify-between gap-4 px-5 py-4 border-b border-qa-border flex-wrap">
             <div className="font-mono-qa text-[10px] tracking-wider uppercase text-qa-muted-light">
-              Execution by Tester · {testers.length} named testers
+              Execution by Quality Assurance · {testers.length} named QA members
             </div>
             <TesterLegend />
           </div>
           {list}
         </div>
       ) : (
-        <QaSection title="Execution by Tester" noPadding headerRight={<TesterLegend />}>
+        <QaSection title="Execution by Quality Assurance" noPadding headerRight={<TesterLegend />}>
           {list}
         </QaSection>
       )}

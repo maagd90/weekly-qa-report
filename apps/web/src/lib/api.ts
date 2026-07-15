@@ -41,6 +41,7 @@ export const LLM_MODELS: Record<LlmProvider, string[]> = {
   openai: ['gpt-5.2', 'gpt-5.2-mini'],
   gemini: ['gemini-3.5-flash', 'gemini-3.5-pro'],
   'openai-compatible': ['custom-model'],
+  template: ['template-v1'],
 };
 
 export const LLM_PROVIDER_LABELS: Record<LlmProvider, string> = {
@@ -48,6 +49,7 @@ export const LLM_PROVIDER_LABELS: Record<LlmProvider, string> = {
   openai: 'OpenAI',
   gemini: 'Google Gemini',
   'openai-compatible': 'Custom OpenAI-compatible',
+  template: 'Template (No AI)',
 };
 
 export const LLM_OFFICIAL_BASE_URLS: Partial<Record<LlmProvider, string>> = {
@@ -60,7 +62,7 @@ function nextRequestId(): string { return `web-${Date.now()}-${Math.random().toS
 function shouldRedactField(key: string): boolean { const lower = key.toLowerCase(); return lower.includes('key') || lower.includes('token') || lower.includes('credential') || lower.includes('password') || lower.includes('cookie') || lower.includes('session') || lower.includes('xsrf') || lower.includes('jsession'); }
 function safeJson(value: unknown): unknown { if (!value || typeof value !== 'object') return value; if (Array.isArray(value)) return value.map(safeJson); const copy: Record<string, unknown> = {}; for (const [key, raw] of Object.entries(value as Record<string, unknown>)) { if (typeof raw === 'string' && raw.startsWith('data:image/')) copy[key] = '***image-data-url-redacted***'; else if (shouldRedactField(key)) copy[key] = raw ? '***redacted***' : raw; else copy[key] = safeJson(raw); } return copy; }
 function logApi(event: string, data: Record<string, unknown>): void { console.log(`[web-api] ${event}`, data); }
-function normalizeProvider(value: unknown): LlmProvider { return value === 'openai' || value === 'gemini' || value === 'openai-compatible' || value === 'anthropic' ? value : 'anthropic'; }
+function normalizeProvider(value: unknown): LlmProvider { return value === 'openai' || value === 'gemini' || value === 'openai-compatible' || value === 'anthropic' || value === 'template' ? value : 'anthropic'; }
 function readStoredObject<T>(key: string, fallback: T): T { try { const raw = window.localStorage.getItem(key); return raw ? (JSON.parse(raw) as T) : fallback; } catch { return fallback; } }
 function writeStoredObject<T>(key: string, value: T): void { try { window.localStorage.setItem(key, JSON.stringify(value)); } catch { /* storage unavailable */ } }
 function projectJql(keys: string[]): string { return keys.length ? `project in (${keys.join(',')}) AND issuetype in (Story, Bug) ORDER BY updated DESC` : ''; }

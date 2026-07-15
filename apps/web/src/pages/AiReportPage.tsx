@@ -17,6 +17,7 @@ const REPORT_TYPES: { value: ReportType; label: string; desc: string }[] = [
   { value: 'executive', label: 'Executive', desc: 'summary only' },
   { value: 'defects', label: 'Defects', desc: 'defect focus' },
   { value: 'cycles', label: 'Cycles', desc: 'cycle focus' },
+  { value: 'testers', label: 'Quality Assurance', desc: 'people performance' },
 ];
 
 type ReportMeta = { params?: { startDate?: string; endDate?: string; reportType?: ReportType; project?: string } };

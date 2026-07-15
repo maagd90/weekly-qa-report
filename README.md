@@ -43,8 +43,8 @@ The dashboard combines supported Excel imports with optional live Jira and QMetr
 - Optionally retrieve live QMetry/QTM4J cycles and testcase executions.
 - Support Excel-only, Jira-only, QMetry-only, and mixed-data projects.
 - Apply project, date, text-search, and execution-result filters.
-- Show execution totals, pass rate, result mix, tester contribution, cycle health, story/bug split, defect backlog, traceability, and UAT status.
-- Resolve tester identifiers to display names when the source system permits it.
+- Show execution totals, pass rate, result mix, Quality Assurance contribution, cycle health, story/bug split, defect backlog, traceability, and UAT status.
+- Resolve Quality Assurance identifiers to display names when the source system permits it.
 - Generate Full, Executive, Defects, and Cycles reports.
 - Generate an optional AI-written narrative grounded only in calculated metrics.
 - Export print-ready PDF reports through headless Chromium.
@@ -472,7 +472,7 @@ Do not store real secrets in example files.
 |---|---|---|
 | Excel only | Upload supported Excel files | Depends on uploaded file types |
 | Jira only | Configure Jira | Stories, bugs, defects, backlog, and traceability |
-| QMetry only | Configure QMetry/QTM4J | Test cycles, executions, testers, result mix, and coverage |
+| QMetry only | Configure QMetry/QTM4J | Test cycles, executions, Quality Assurance attribution, result mix, and coverage |
 | Mixed | Configure live sources and/or upload files | Merged and deduplicated reporting data |
 
 A project does not need both Jira and QMetry. Missing source types are shown as unavailable or zero rather than treated as a connection failure.
@@ -505,7 +505,7 @@ Executed By
 Updated
 ```
 
-Enables Overview execution metrics, result mix, pass rate, tester metrics, cycle health, and Cycles reports.
+Enables Overview execution metrics, result mix, pass rate, Quality Assurance metrics, cycle health, and Cycles reports.
 
 ### Jira issue file
 
@@ -648,30 +648,30 @@ Request body:
 }
 ```
 
-For reports with both a start and end date, execution totals, result mix, and tester counts use QMetry's execution-level summary contract:
+For reports with both a start and end date, execution totals, result mix, and Quality Assurance attribution use QMetry's execution-level summary contract:
 
 ```text
 POST /rest/qtm4j/ui/latest/gadgets/TESTCASE_EXECUTION_SUMMARY_BY_ASSIGNEE
 ```
 
-The request filters `execution.executedon` inclusively, requests only the latest executions, and excludes archived testcases and cycles. This summary is authoritative for the exact requested report window. Detailed testcase rows remain the source for cycle-health breakdowns; cycle-level progress is used only as a fallback and never invents tester names or execution dates.
+The request filters `execution.executedon` inclusively, requests only the latest executions, and excludes archived testcases and cycles. This summary is authoritative for the exact requested report window. Detailed testcase rows remain the source for cycle-health breakdowns; cycle-level progress is used only as a fallback and never invents Quality Assurance names or execution dates.
 
 The gadget response differs across on-prem QMetry versions. The application accepts recognized row-oriented and chart-oriented result/count shapes. If the response cannot be interpreted safely, it logs a warning and retains the detailed-cycle fallback instead of showing guessed counts.
 
-Tester attribution uses available execution-assignee data and resolves technical user identifiers to display names when the authenticated account has permission. A last-updated user is not used to attribute a Not Executed record.
+Quality Assurance attribution uses available execution-assignee data and resolves technical user identifiers to display names when the authenticated account has permission. A last-updated user is not used to attribute a Not Executed record.
 
 Test the connection and load folders before searching cycle details.
 
 ---
 
-## AI provider setup
+## Narrative provider setup
 
-AI is optional. All KPIs, charts, counts, filters, and report data are calculated without AI.
+AI is optional. All KPIs, charts, counts, filters, and report data are calculated without AI. The deterministic template provider can also produce the Narrative Summary without an API key or network request.
 
 Open:
 
 ```text
-Settings -> Global LLM Provider
+Settings -> Narrative Provider
 ```
 
 Supported modes:
@@ -681,6 +681,7 @@ Supported modes:
 - OpenAI
 - Gemini
 - OpenAI-compatible custom endpoint
+- Template (No AI)
 
 Configure:
 
@@ -689,12 +690,12 @@ Configure:
 | Provider | Protocol used by the endpoint |
 | Endpoint | Official API or custom URL, when supported |
 | Model | Provider model name or custom model identifier |
-| API key | Secret used by the selected provider |
+| API key | Secret used by network-backed providers; not required for Template |
 | Custom base URL | Required only for a custom endpoint |
 
-Use **Save & Test LLM** before generating a narrative.
+Use **Save & Test LLM** for network-backed providers or **Save & Validate** for the deterministic template.
 
-The AI receives verified report metrics and is instructed not to invent counts, tickets, dates, owners, or conclusions.
+Network-backed providers receive verified report metrics and are instructed not to invent counts, tickets, dates, owners, or conclusions. The Template provider applies deterministic rules to the same metrics and varies its content by report type.
 
 Do not commit AI keys or custom endpoint details.
 
@@ -719,7 +720,7 @@ Changing a filter does not apply it until **Search** is clicked.
 Filterable areas:
 
 - Overview
-- Testers
+- Quality Assurance
 - Test Cycles
 - Traceability
 - UAT/vendor issues
@@ -729,7 +730,7 @@ Filterable areas:
 | Area | Primary information |
 |---|---|
 | Overview | KPIs, result mix, pass rate, defects, execution, and cycle summary |
-| Testers | Named testers, attributed executions, unassigned executions, and pass rate |
+| Quality Assurance | Named members, attributed executions, unassigned executions, and pass rate |
 | Test Cycles | Cycle totals, execution split, coverage, and cycle status |
 | Traceability | Story, bug, and test evidence |
 | UAT/vendor issues | UAT totals, status, priority, and ownership |
@@ -794,7 +795,7 @@ Windows:
 .\run.bat test
 ```
 
-The automated suite covers parsing, date filters, dashboard calculations, Jira date scoping, QMetry request contracts, tester attribution, AI endpoints, cache cleanup, and Windows npm startup behavior.
+The automated suite covers parsing, date filters, dashboard calculations, Jira date scoping, QMetry request contracts, Quality Assurance attribution, narrative providers, cache cleanup, and Windows npm startup behavior.
 
 Do not merge changes when the build or regression suite fails.
 
@@ -939,17 +940,17 @@ Check:
 5. whether the uploaded file was classified correctly;
 6. connection warnings in Settings and API logs.
 
-### Tester names are missing
+### Quality Assurance names are missing
 
 Check:
 
 1. detailed QMetry testcase rows are being returned;
-2. execution fields contain tester information;
+2. execution fields contain Executed By information;
 3. the authenticated user can read display names;
 4. the selected period contains executed testcases;
-5. the Testers tab does not show all executions as unassigned.
+5. the Quality Assurance tab does not show all executions as unassigned.
 
-Cycle-level fallback counts do not contain tester identity and are intentionally excluded from tester ranking.
+Cycle-level fallback counts do not contain a Quality Assurance identity and are intentionally excluded from the ranking.
 
 ### QMetry request validation errors
 
@@ -975,7 +976,7 @@ Check:
 4. the print route is reachable;
 5. the API and web containers are healthy in Docker.
 
-### AI connection test fails
+### Narrative provider connection test fails
 
 Check:
 
@@ -1001,7 +1002,7 @@ Check:
 | `GET` | `/api/integrations` | Read integration summary |
 | `POST` | `/api/integrations/test` | Test configured integrations |
 | `POST` | `/api/integrations/test-connection` | Test a Settings connection |
-| `POST` | `/api/llm/test` | Test the selected AI provider |
+| `POST` | `/api/llm/test` | Validate the selected narrative provider |
 | `POST` | `/api/upload` | Upload an Excel file |
 | `GET` | `/api/input/files` | List staged files |
 | `DELETE` | `/api/input/:filename` | Delete a staged file and refresh data |
