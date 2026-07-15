@@ -202,15 +202,37 @@ export async function fetchWithTimeout(url: string, init: RequestInit = {}, time
   return fetchAttempt(url, init, timeoutMs, nextIntegrationRequestId(), 1);
 }
 
+/**
+ * Converts an unsuccessful API response into a concise, user-facing message.
+ *
+ * Supported payloads include the flat JIRA/QMetry forms (`errorMessage`,
+ * `message`, or string `error`) and the OpenAI/LiteLLM-compatible nested form
+ * (`error.message`). Unknown JSON shapes fall back to a normalized body preview.
+ * The preview is capped to keep logs and UI warnings readable.
+ *
+ * @param prefix Integration label included in the returned message.
+ * @param status HTTP response status.
+ * @param body Optional raw response body.
+ * @returns A stable error message that never exposes object-coercion failures.
+ */
 export function safeApiError(prefix: string, status: number, body?: string): string {
   console.error(`[${prefix}] HTTP ${status}:`, body?.slice(0, 1_000) || '(empty)');
   let snippet = '';
   if (body) {
     try {
-      const parsed = JSON.parse(body) as { errorMessage?: string; message?: string; error?: string };
-      snippet = parsed.errorMessage || parsed.message || parsed.error || '';
+      const parsed = JSON.parse(body) as {
+        errorMessage?: unknown;
+        message?: unknown;
+        error?: unknown;
+      };
+      const nestedMessage = parsed.error && typeof parsed.error === 'object'
+        ? (parsed.error as { message?: unknown }).message
+        : undefined;
+      const candidates = [parsed.errorMessage, parsed.message, nestedMessage, parsed.error];
+      const providerMessage = candidates.find((value) => typeof value === 'string' && value.trim());
+      snippet = typeof providerMessage === 'string' ? providerMessage : body.replace(/\s+/g, ' ');
     } catch { snippet = body.replace(/\s+/g, ' '); }
   }
-  snippet = snippet.slice(0, 250);
+  snippet = String(snippet || '').slice(0, 250);
   return snippet ? `${prefix} error ${status}: ${snippet}` : `${prefix} error ${status}`;
 }
