@@ -27,8 +27,8 @@ function focusedDataset(): Dataset {
     { project: 'DP', cycleKey: 'DP-TR-1', cycleName: 'Excel cycle', caseKey: 'DP-TC-1', result: 'BLOCKED', tester: 'Tester Three', executedAt: '2026-06-15', updatedAt: '2026-06-15', source: 'test-execution-file' },
   ];
   dataset.issues = [
-    { project: 'DLM', key: 'DLM-101', area: 'Login', issueType: 'Story', status: 'open', priority: 'High', assignee: 'Owner One', createdAt: '2026-01-10', resolvedAt: null, updatedAt: '2026-07-03', source: 'jira-api' },
-    { project: 'DLM', key: 'DLM-102', area: 'Login', issueType: 'Bug', status: 'open', priority: 'Highest', assignee: 'Owner Two', createdAt: '2026-02-10', resolvedAt: null, updatedAt: '2026-07-04', source: 'jira-api' },
+    { project: 'DLM', key: 'DLM-101', summary: 'Global DMC complete story summary shown without fallback', area: 'Login', issueType: 'Story', status: 'open', priority: 'High', assignee: 'Owner One', createdAt: '2026-01-10', resolvedAt: null, updatedAt: '2026-07-03', source: 'jira-api' },
+    { project: 'DLM', key: 'DLM-102', summary: 'Reactive Maintenance complete bug summary shown without fallback', area: 'Login', issueType: 'Bug', status: 'open', priority: 'Highest', assignee: 'Owner Two', createdAt: '2026-02-10', resolvedAt: null, updatedAt: '2026-07-04', source: 'jira-api' },
   ];
   dataset.projects = ['DLM', 'DP'];
   return dataset;
@@ -232,6 +232,8 @@ function duplicateDataset(): Dataset {
   assert.strictEqual(p.storyBug.bug, 1);
   assert.strictEqual(p.traceability.length, 1);
   assert.strictEqual(p.traceability[0].area, 'Login');
+  assert.strictEqual(p.workItems?.find((item) => item.key === 'DLM-101')?.summary, 'Global DMC complete story summary shown without fallback');
+  assert.strictEqual(p.workItems?.find((item) => item.key === 'DLM-102')?.summary, 'Reactive Maintenance complete bug summary shown without fallback');
   console.log('✓ traceability updatedAt filter');
 }
 

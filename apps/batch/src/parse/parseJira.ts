@@ -68,7 +68,7 @@ export function parseJiraFromRows(
     const updatedAt = excelSerialToIso(obj['Updated']) || createdAt;
     const sprint = firstText(obj, ['Sprint', 'Sprint Name', 'Sprint No', 'Sprint Number', 'Sprint ID', 'Sprint Id']);
 
-    (issues as any[]).push({
+    issues.push({
       project: projectFromKey(key),
       key,
       area: deriveArea(summary),

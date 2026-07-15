@@ -99,7 +99,7 @@ function filterIssues(rows: IssueRow[], filter: FilterParams, window: DateWindow
   const q = (filter.search || '').trim().toLowerCase();
   if (q) {
     out = out.filter((r) =>
-      `${r.area} ${r.assignee} ${r.key} ${r.issueType} ${r.priority}`.toLowerCase().includes(q)
+      `${r.summary || ''} ${r.area} ${r.assignee} ${r.key} ${r.issueType} ${r.priority}`.toLowerCase().includes(q)
     );
   }
   return out;

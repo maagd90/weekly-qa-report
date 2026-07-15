@@ -125,6 +125,7 @@ export async function fetchJiraIssues(cfg: IntegrationsConfig['jira'], scope?: A
       issues.push({
         project: projectFromKey(key),
         key,
+        summary,
         area: deriveArea(summary),
         issueType,
         status: mapJiraStatus(sanitizeText((fields.status as { name?: string })?.name), cfg.statusDone),

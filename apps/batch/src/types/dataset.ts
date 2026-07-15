@@ -30,6 +30,8 @@ export interface ExecutionRow {
 export interface IssueRow {
   project: string;
   key: string;
+  /** Complete JIRA issue title used by the sprint traceability tables. */
+  summary?: string;
   area: string;
   issueType: IssueType;
   status: IssueStatus;
@@ -38,6 +40,9 @@ export interface IssueRow {
   createdAt: string | null;
   resolvedAt: string | null;
   updatedAt: string;
+  /** Optional sprint metadata supplied by JIRA exports or integrations. */
+  sprint?: string;
+  sprintId?: unknown;
   applicationCi?: string;
   source: DataSource;
 }

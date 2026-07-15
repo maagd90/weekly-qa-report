@@ -54,7 +54,7 @@ function WorkItemsTable({ rows, emptyText }: { rows: WorkItem[]; emptyText: stri
             <tr key={w.key} className="border-t border-[#f0ede5]">
               <td className="py-2.5 pl-[22px] font-mono-qa text-[11.5px]" style={{ color: w.issueType === 'Bug' ? QA.FAIL : QA.accent }}>{w.key}</td>
               <td className="py-2.5 px-3 font-mono-qa text-[11px] text-qa-muted whitespace-nowrap">{w.sprint || 'Not mapped'}</td>
-              <td className="py-2.5 px-3 max-w-[420px]"><div className="truncate">{w.summary || w.area}</div></td>
+              <td className="py-2.5 px-3 max-w-[420px]"><div className="whitespace-normal break-words leading-relaxed">{w.summary || w.area}</div></td>
               <td className="py-2.5 px-3 text-[12px]">{w.priority}</td>
               <td className="py-2.5 px-3 text-[12px]" style={{ color: w.status === 'done' ? QA.PASS : QA.BLOCKED }}>{w.status}</td>
               <td className="py-2.5 px-3 font-mono-qa text-[11px] text-qa-muted whitespace-nowrap">{w.updatedAt || '-'}</td>

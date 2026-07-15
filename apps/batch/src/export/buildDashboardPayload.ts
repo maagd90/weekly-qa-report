@@ -125,13 +125,13 @@ export function buildDashboardPayload(
 
   const workItems = issues.map((r) => ({
     key: r.key,
-    summary: (r as any).summary || r.area,
+    summary: r.summary || r.area,
     issueType: r.issueType,
     status: r.status,
     priority: r.priority,
     assignee: r.assignee,
-    sprint: (r as any).sprint || 'Not mapped',
-    sprintId: (r as any).sprintId,
+    sprint: r.sprint || 'Not mapped',
+    sprintId: r.sprintId,
     area: r.area,
     project: canonicalProjectKey(r.project),
     updatedAt: r.updatedAt,
