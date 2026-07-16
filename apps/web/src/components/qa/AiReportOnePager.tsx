@@ -135,7 +135,10 @@ export function AiReportOnePager({
                 <div className="w-5 h-5 rounded-full bg-qa-ink text-[#F5F3ED] flex items-center justify-center font-spectral text-[9px] shrink-0">
                   {initials(t.name)}
                 </div>
-                <div className="flex-1 min-w-0 text-[11px] font-semibold truncate">{t.name}</div>
+                <div className="flex-1 min-w-0">
+                  <div className="text-[11px] font-semibold truncate">{t.name}</div>
+                  <div className="font-mono-qa text-[8.5px] text-qa-muted-light">{fmt(t.executed)} exec · {fmt(t.na)} N/A</div>
+                </div>
                 <div className="font-spectral font-bold text-sm shrink-0" style={{ color: passRateColor(t.passPct) }}>
                   {t.passPct}%
                 </div>
