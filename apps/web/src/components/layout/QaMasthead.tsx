@@ -17,23 +17,23 @@ export function QaMasthead({ dashboard, project, projects, onProjectChange }: Qa
   return (
     <>
       <div className="h-1.5 bg-qa-ink" />
-      <header className="max-w-qa mx-auto px-8 pt-[18px] print:hidden">
-        <div className="flex items-end justify-between gap-6 pb-3.5 border-b-2 border-qa-ink">
-          <div className="flex items-baseline gap-3.5">
-            <div className="font-spectral font-extrabold text-[30px] tracking-tight leading-none">
+      <header className="max-w-qa mx-auto px-4 pt-4 sm:px-6 sm:pt-[18px] lg:px-8 print:hidden">
+        <div className="flex flex-col items-stretch gap-3 pb-3.5 border-b-2 border-qa-ink sm:flex-row sm:items-end sm:justify-between sm:gap-6">
+          <div className="flex min-w-0 flex-col items-start gap-1 sm:flex-row sm:items-baseline sm:gap-3.5">
+            <div className="font-spectral font-extrabold text-[26px] sm:text-[30px] tracking-tight leading-none">
               QA Weekly
             </div>
             <div className="font-mono-qa text-[11px] tracking-widest uppercase text-qa-muted-light pb-0.5">
               Test Execution Report
             </div>
           </div>
-          <div className="text-right pb-0.5">
+          <div className="min-w-0 text-left pb-0.5 sm:text-right">
             <div className="font-mono-qa text-[10px] tracking-wider uppercase text-qa-muted-light">Project</div>
-            <div className="relative inline-flex items-center mt-1">
+            <div className="relative flex w-full min-w-0 items-center mt-1 sm:inline-flex sm:w-auto">
               <select
                 value={project}
                 onChange={(e) => onProjectChange(e.target.value)}
-                className="appearance-none font-spectral font-semibold text-[15px] py-1 pl-2 pr-7 border border-qa-ink bg-white text-qa-ink cursor-pointer"
+                className="appearance-none w-full min-w-0 max-w-full font-spectral font-semibold text-[15px] py-1 pl-2 pr-7 border border-qa-ink bg-white text-qa-ink cursor-pointer sm:w-auto"
               >
                 {projects.map((p) => <option key={p} value={p}>{projectDisplayName(p)}</option>)}
               </select>
@@ -42,7 +42,7 @@ export function QaMasthead({ dashboard, project, projects, onProjectChange }: Qa
           </div>
         </div>
         <div className="flex items-center justify-between py-1.5 border-b border-qa-ink">
-          <div className="font-mono-qa text-[10.5px] tracking-wide uppercase text-qa-muted-light">
+          <div className="min-w-0 font-mono-qa text-[10px] sm:text-[10.5px] tracking-wide uppercase text-qa-muted-light break-words">
             {dashboard
               ? `Test execution data · ${fmt(totalCases)} records · ${cycleCount} cycles`
               : 'Awaiting data — stage files or sync report'}

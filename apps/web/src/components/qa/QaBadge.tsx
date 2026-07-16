@@ -25,7 +25,9 @@ const thClass = 'py-2.5 font-mono-qa text-[9.5px] tracking-wider uppercase text-
 
 export function QaTable({ children }: { children: React.ReactNode }) {
   return (
-    <table className="w-full border-collapse text-[13px]">{children}</table>
+    <div className="qa-scroll max-w-full overflow-x-auto overscroll-x-contain">
+      <table className="w-full min-w-max border-collapse text-[13px]">{children}</table>
+    </div>
   );
 }
 

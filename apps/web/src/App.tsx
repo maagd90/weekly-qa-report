@@ -96,7 +96,7 @@ function AppContent() {
   const goGenerate = () => setActiveTab('ai');
 
   return (
-    <div className="min-h-screen bg-qa-bg text-qa-ink flex flex-col qa-scroll">
+    <div className="min-h-screen w-full min-w-0 overflow-x-hidden bg-qa-bg text-qa-ink flex flex-col qa-scroll">
       <QaMasthead dashboard={display} project={filters.project} projects={filters.projects} onProjectChange={handleProjectChange} />
       <QaTabNav tabs={tabs} activeTab={activeTab} onTabChange={handleTabChange} />
 
@@ -121,14 +121,14 @@ function AppContent() {
       )}
 
       {searchDashboardData.isError && showFilters && (
-        <div className="max-w-qa mx-auto w-full px-8 pt-3 print:hidden">
+        <div className="max-w-qa mx-auto w-full px-4 pt-3 sm:px-6 lg:px-8 print:hidden">
           <div className="p-3 border border-[#ecccc2] bg-[#f8ece8] text-[#a13d2c] text-sm">
             {(searchDashboardData.error as Error).message}
           </div>
         </div>
       )}
 
-      <div className={clsx('flex-1', activeTab === 'ai' ? 'flex flex-col overflow-hidden min-h-0' : 'overflow-auto')}>
+      <div className={clsx('flex-1 min-w-0', activeTab === 'ai' ? 'flex flex-col overflow-hidden min-h-0' : 'overflow-x-hidden overflow-y-auto')}>
         {(isLoading || isProjectLoading) && showFilters && <div className="flex items-center justify-center h-64 font-mono-qa text-sm text-qa-muted-light">Loading dashboard…</div>}
         {!isLoading && !isProjectLoading && !hasDashboard && showFilters && <EmptyDashboard onGenerate={goGenerate} />}
         {display && activeTab === 'overview' && <OverviewPage dashboard={display} kpiStyle={ui.kpiStyle} />}

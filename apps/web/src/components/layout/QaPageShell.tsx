@@ -9,9 +9,9 @@ interface QaPageShellProps {
 
 export function QaPageShell({ title, subtitle, intro, children }: QaPageShellProps) {
   return (
-    <main className="max-w-qa mx-auto px-8 pt-[26px] pb-[60px]">
-      <div className="flex items-baseline justify-between mb-1.5 gap-4 flex-wrap">
-        <h2 className="font-spectral font-bold text-[26px] m-0 tracking-tight">{title}</h2>
+    <main className="max-w-qa mx-auto w-full min-w-0 px-4 pt-5 pb-10 sm:px-6 sm:pt-[26px] sm:pb-[60px] lg:px-8">
+      <div className="flex items-start justify-between mb-1.5 gap-2 flex-col sm:flex-row sm:items-baseline sm:gap-4 sm:flex-wrap">
+        <h2 className="font-spectral font-bold text-[23px] sm:text-[26px] m-0 tracking-tight break-words">{title}</h2>
         {subtitle && (
           <div className="font-mono-qa text-[11px] text-qa-muted-light">{subtitle}</div>
         )}
@@ -37,15 +37,15 @@ export function QaSection({ title, subtitle, headerRight, children, className = 
   return (
     <section className={`bg-white border border-qa-border ${className}`}>
       {(title || headerRight) && (
-        <div className={`flex items-baseline justify-between gap-4 ${noPadding ? 'px-[22px] pt-[18px] pb-3.5 border-b border-qa-ink' : 'px-[22px] pt-[18px] pb-3.5 border-b border-qa-ink'}`}>
-          <div>
+        <div className={`flex flex-col items-start justify-between gap-3 px-4 pt-4 pb-3.5 border-b border-qa-ink sm:flex-row sm:items-baseline sm:gap-4 sm:px-[22px] sm:pt-[18px]`}>
+          <div className="min-w-0">
             {title && <h3 className="font-spectral font-semibold text-base m-0">{title}</h3>}
             {subtitle && <p className="m-0 mt-1 text-[11.5px] text-qa-muted-light">{subtitle}</p>}
           </div>
-          {headerRight}
+          {headerRight && <div className="min-w-0 max-w-full">{headerRight}</div>}
         </div>
       )}
-      <div className={noPadding ? '' : 'p-[20px_22px]'}>{children}</div>
+      <div className={noPadding ? '' : 'p-4 sm:p-[20px_22px]'}>{children}</div>
     </section>
   );
 }

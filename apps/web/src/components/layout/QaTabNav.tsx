@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import clsx from 'clsx';
 import type { QaTab } from '../../theme/qaTheme';
 import { QA } from '../../theme/qaTheme';
@@ -17,33 +17,43 @@ interface QaTabNavProps {
 }
 
 export function QaTabNav({ tabs, activeTab, onTabChange }: QaTabNavProps) {
+  const activeTabRef = useRef<HTMLButtonElement | null>(null);
+
+  useEffect(() => {
+    activeTabRef.current?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  }, [activeTab]);
+
   return (
-    <nav className="max-w-qa mx-auto px-8 print:hidden">
-      <div className="flex gap-0 border-b border-qa-border-mid flex-wrap">
-        {tabs.map((tab) => {
-          const active = activeTab === tab.id;
-          return (
-            <button
-              key={tab.id}
-              type="button"
-              onClick={() => onTabChange(tab.id)}
-              className={clsx(
-                'flex items-center gap-2 px-[18px] py-3.5 border-none bg-transparent cursor-pointer',
-                'text-[13.5px] font-semibold tracking-wide whitespace-nowrap -mb-px',
-                active ? 'text-qa-ink border-b-2' : 'text-qa-muted-light border-b-2 border-transparent hover:text-qa-muted'
-              )}
-              style={active ? { borderBottomColor: QA.accent } : undefined}
-            >
-              <span
-                className="font-mono-qa text-[10px] font-medium"
-                style={{ color: active ? QA.accent : '#c4bfb3' }}
+    <nav aria-label="Dashboard sections" className="max-w-qa mx-auto px-4 sm:px-6 lg:px-8 print:hidden">
+      <div className="qa-scroll overflow-x-auto overscroll-x-contain border-b border-qa-border-mid">
+        <div className="flex min-w-max gap-0">
+          {tabs.map((tab) => {
+            const active = activeTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                ref={active ? activeTabRef : undefined}
+                type="button"
+                aria-current={active ? 'page' : undefined}
+                onClick={() => onTabChange(tab.id)}
+                className={clsx(
+                  'flex shrink-0 items-center gap-2 px-3 py-3 sm:px-[18px] sm:py-3.5 border-none bg-transparent cursor-pointer',
+                  'text-[13px] sm:text-[13.5px] font-semibold tracking-wide whitespace-nowrap -mb-px',
+                  active ? 'text-qa-ink border-b-2' : 'text-qa-muted-light border-b-2 border-transparent hover:text-qa-muted'
+                )}
+                style={active ? { borderBottomColor: QA.accent } : undefined}
               >
-                {tab.num}
-              </span>
-              <span>{tab.label}</span>
-            </button>
-          );
-        })}
+                <span
+                  className="font-mono-qa text-[10px] font-medium"
+                  style={{ color: active ? QA.accent : '#c4bfb3' }}
+                >
+                  {tab.num}
+                </span>
+                <span>{tab.label}</span>
+              </button>
+            );
+          })}
+        </div>
       </div>
     </nav>
   );

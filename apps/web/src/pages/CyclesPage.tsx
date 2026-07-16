@@ -44,7 +44,7 @@ function FolderPicker({ selectedFolder, onSelectFolder, connectionId, project }:
   return (
     <div className="flex items-center gap-2.5 mb-4 flex-wrap">
       <span className="font-mono-qa text-[10px] tracking-wider uppercase text-qa-muted-light">QMetry folder</span>
-      <select aria-label="QMetry folder" value={selectedFolder} onChange={(e) => onSelectFolder(e.target.value)} disabled={isLoading || folders.length === 0 || missingProjectConnection} className="appearance-none font-sans text-[13px] py-1.5 pl-3 pr-6 border border-qa-ink bg-white text-qa-ink cursor-pointer disabled:opacity-50 min-w-[260px]">
+      <select aria-label="QMetry folder" value={selectedFolder} onChange={(e) => onSelectFolder(e.target.value)} disabled={isLoading || folders.length === 0 || missingProjectConnection} className="appearance-none w-full min-w-0 max-w-full font-sans text-[13px] py-1.5 pl-3 pr-6 border border-qa-ink bg-white text-qa-ink cursor-pointer disabled:opacity-50 sm:w-auto sm:min-w-[260px]">
         <option value="">{missingProjectConnection ? `No QMetry connection for ${selectedProject}` : isFetching ? 'Loading folders...' : folders.length ? 'Select folder to load cycles...' : isFetched ? 'No folders found' : 'Click Load folders first'}</option>
         {folders.map((f) => <option key={f.id} value={f.id}>{f.path || f.name}</option>)}
       </select>

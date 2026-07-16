@@ -146,7 +146,7 @@ export function TraceabilityPage({ dashboard, kpiStyle }: TraceabilityPageProps)
 
       <QaSection>
         <div className="flex flex-wrap gap-6">
-          <div className="flex-1 min-w-[280px]">
+          <div className="flex-1 min-w-0 sm:min-w-[280px]">
             <div className="flex items-baseline gap-2 mb-1"><h3 className="font-spectral font-semibold text-base m-0">Open Defect Backlog</h3><span className="font-mono-qa text-[10px] text-qa-muted-light">Bug issues · not Done</span></div>
             <p className="m-0 mb-4 text-[11.5px] text-qa-muted-light">{defectBacklog.openTotal} bugs open in scope · {defectBacklog.byPriority.find((p) => p.priority === 'Highest')?.open ?? 0} at Highest priority</p>
             <div className="flex flex-col gap-3">
@@ -154,7 +154,7 @@ export function TraceabilityPage({ dashboard, kpiStyle }: TraceabilityPageProps)
             </div>
             {defectBacklog.openTotal === 0 && <div className="py-4 text-[12.5px] text-qa-muted-light">No open defects in the current scope.</div>}
           </div>
-          <div className="flex-1 min-w-[230px] border-l border-[#efece4] pl-6">
+          <div className="flex-1 min-w-0 border-t border-[#efece4] pt-5 sm:min-w-[230px] sm:border-l sm:border-t-0 sm:pl-6 sm:pt-0">
             <div className="font-mono-qa text-[9.5px] tracking-wider uppercase text-qa-muted-light mb-3.5">Open bugs by owner</div>
             <div className="flex flex-col gap-3">{defectBacklog.byOwner.map((o) => <div key={o.name}><div className="flex justify-between items-baseline mb-1"><span className="text-[13px] font-semibold">{o.name}</span><span className="font-mono-qa text-xs text-qa-muted">{o.open}</span></div><HorizBar pct={(o.open / ownerMax) * 100} color={QA.FAIL} /></div>)}</div>
             {defectBacklog.openTotal === 0 && <div className="py-4 text-[12.5px] text-qa-muted-light">-</div>}

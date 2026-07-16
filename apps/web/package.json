@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "node scripts/vite-dev.cjs",
     "build": "tsc -b && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test:responsive": "node scripts/__tests__/responsive-layout.test.cjs"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.45.1",

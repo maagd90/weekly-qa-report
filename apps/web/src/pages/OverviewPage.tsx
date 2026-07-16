@@ -44,7 +44,7 @@ function ProjectOverviewBlock({ slice, kpiStyle }: { slice: OverviewSlice; kpiSt
 
       <QaSection>
         <div className="flex flex-wrap gap-6">
-          <div className="max-w-[430px] flex-1 min-w-[240px]">
+          <div className="max-w-[430px] flex-1 min-w-0 sm:min-w-[240px]">
             <h3 className="font-spectral font-semibold text-base m-0 mb-1">Work-Item Type — Story vs Bug</h3>
             <p className="m-0 mb-3.5 text-[11.5px] text-qa-muted-light">Issue Type column · JIRA ({fmt(storyBug.story + storyBug.bug)} issues active in selected period).</p>
             {storyBug.story + storyBug.bug === 0 ? <div className="py-5 text-[12.5px] text-qa-muted-light">No work items match the current filters.</div> : (
@@ -54,14 +54,14 @@ function ProjectOverviewBlock({ slice, kpiStyle }: { slice: OverviewSlice; kpiSt
                   { label: 'Bug / Defect', color: QA.FAIL, count: storyBug.bug, done: storyBug.bugDone, open: storyBug.bugOpen, closedLabel: 'closed' },
                 ].map((r) => (
                   <div key={r.label}>
-                    <div className="flex justify-between items-baseline mb-1"><span className="flex items-center gap-2 text-[13px] font-semibold"><span className="w-[11px] h-[11px]" style={{ background: r.color }} />{r.label}</span><span className="font-mono-qa text-xs text-qa-muted">{fmt(r.count)} cases · {r.done} {r.closedLabel} · {r.open} open in period · {Math.round((r.count / sbTot) * 100)}%</span></div>
+                    <div className="flex flex-col items-start gap-1 mb-1 sm:flex-row sm:items-baseline sm:justify-between"><span className="flex items-center gap-2 text-[13px] font-semibold"><span className="w-[11px] h-[11px]" style={{ background: r.color }} />{r.label}</span><span className="font-mono-qa text-xs text-qa-muted break-words">{fmt(r.count)} cases · {r.done} {r.closedLabel} · {r.open} open in period · {Math.round((r.count / sbTot) * 100)}%</span></div>
                     <HorizBar pct={(r.count / sbTot) * 100} color={r.color} />
                   </div>
                 ))}
               </div>
             )}
           </div>
-          <div className="flex-1 min-w-[240px] border-l border-[#efece4] pl-6">
+          <div className="flex-1 min-w-0 border-t border-[#efece4] pt-5 sm:min-w-[240px] sm:border-l sm:border-t-0 sm:pl-6 sm:pt-0">
             <div className="font-mono-qa text-[9.5px] tracking-wider uppercase text-qa-muted-light mb-3.5">Delivery status</div>
             <div className="flex flex-col gap-4">
               {[

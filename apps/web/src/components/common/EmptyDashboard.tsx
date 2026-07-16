@@ -7,7 +7,7 @@ interface EmptyDashboardProps {
 
 export function EmptyDashboard({ onGenerate }: EmptyDashboardProps) {
   return (
-    <div className="max-w-qa mx-auto px-8 py-20 text-center">
+    <div className="max-w-qa mx-auto w-full px-4 py-12 text-center sm:px-6 sm:py-20 lg:px-8">
       <div className="font-spectral text-[64px] leading-none text-qa-border mb-4">¶</div>
       <h2 className="font-spectral font-bold text-2xl m-0 mb-2">No dashboard data yet</h2>
       <p className="text-[13.5px] text-qa-muted max-w-md mx-auto mb-6">

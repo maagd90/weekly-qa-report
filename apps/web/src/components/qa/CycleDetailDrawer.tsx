@@ -46,7 +46,7 @@ export function CycleDetailDrawer({ cycle, onClose }: CycleDetailDrawerProps) {
           <div className="mt-3"><CycleBadge status={cycle.status} /></div>
         </div>
         <div className="p-6 space-y-5">
-          <div className="grid grid-cols-2 gap-3 text-sm">
+          <div className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
             <div><div className="font-mono-qa text-[10px] uppercase text-qa-muted-light">Pass rate</div><div className="font-spectral font-bold text-2xl">{exec ? `${cycle.passPct}%` : '—'}</div></div>
             <div><div className="font-mono-qa text-[10px] uppercase text-qa-muted-light">Coverage</div><div className="font-spectral font-bold text-2xl">{cycle.coverage}%</div></div>
           </div>
