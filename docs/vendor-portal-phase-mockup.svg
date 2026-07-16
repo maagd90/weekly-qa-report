@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1440" height="900" viewBox="0 0 1440 900" role="img" aria-labelledby="title desc">
   <title id="title">Vendor Portal Bugs phase and environment mockup</title>
-  <desc id="desc">Desktop and mobile layouts showing Phase 1 UAT, Phase 2 UAT, Production, source files, and phase filters.</desc>
+  <desc id="desc">Desktop and mobile layouts showing Phase 1 UAT, Phase 2 UAT, Production, source files, separate UAT, Production, and Unclassified detail tabs, and pagination.</desc>
   <rect width="1440" height="900" fill="#edeae2"/>
   <style>
     .serif{font-family:Georgia,serif;fill:#202423}.sans{font-family:Arial,sans-serif;fill:#202423}.mono{font-family:monospace;fill:#656b69}.muted{fill:#777d7a}.tiny{font-size:10px}.small{font-size:12px}.body{font-size:14px}.h2{font-size:25px;font-weight:700}.h3{font-size:16px;font-weight:700}.count{font-size:25px;font-weight:700}.card{fill:#fff;stroke:#d8d4c9}.soft{fill:#faf8f2;stroke:#e8e4da}.line{stroke:#202423;stroke-width:2}.barbg{fill:#e9e6de}.phase1{fill:#6e89a6}.phase2{fill:#2f6f7a}.prod{fill:#c24533}.warn{fill:#fbf6e9;stroke:#b5822f}.pill{fill:#fff;stroke:#d8d4c9}.active{fill:#202423}.white{fill:#fff}
@@ -41,18 +41,17 @@
     <text x="18" y="178" class="sans small" font-weight="700">Production</text><rect x="118" y="166" width="39" height="17" class="prod"/><text x="125" y="178" class="mono tiny white">PROD</text>
     <rect x="190" y="169" width="440" height="13" class="barbg"/><rect x="190" y="169" width="220" height="13" class="prod"/><text x="650" y="180" class="mono body">16 · 22%</text><text x="736" y="179" class="mono tiny muted">11 open · 5 closed</text>
 
-    <rect x="18" y="208" width="806" height="48" class="warn"/><text x="32" y="230" class="sans small" font-weight="700">4 unclassified</text><text x="32" y="246" class="sans tiny muted">Visible for naming cleanup; not silently added to another phase.</text>
+    <rect x="18" y="208" width="806" height="48" class="warn"/><text x="32" y="230" class="sans small" font-weight="700">4 unclassified</text><text x="32" y="246" class="sans tiny muted">Visible for naming cleanup; not silently added to another phase.</text><text x="710" y="238" class="mono tiny">VIEW 4 BUGS →</text>
   </g>
 
   <!-- Desktop filters/table -->
   <g transform="translate(64 634)">
     <rect width="842" height="190" class="card"/>
-    <text x="18" y="30" class="serif h3">Vendor Portal Bugs — Production</text><text x="18" y="48" class="sans tiny muted">16 of 74 rows shown</text>
-    <rect x="405" y="15" width="75" height="24" class="pill"/><text x="415" y="31" class="mono tiny">All · 74</text>
-    <rect x="486" y="15" width="86" height="24" class="pill"/><text x="496" y="31" class="mono tiny">Phase 1 · 32</text>
-    <rect x="578" y="15" width="86" height="24" class="pill"/><text x="588" y="31" class="mono tiny">Phase 2 · 22</text>
-    <rect x="670" y="15" width="94" height="24" class="active"/><text x="680" y="31" class="mono tiny white">Production · 16</text>
-    <rect x="770" y="15" width="56" height="24" class="pill"/><text x="779" y="31" class="mono tiny">Other · 4</text>
+    <text x="18" y="30" class="serif h3">Vendor Portal Bugs — Production bugs</text><text x="18" y="48" class="sans tiny muted">16 rows · newest submissions first</text>
+    <rect x="432" y="15" width="98" height="24" class="pill"/><text x="442" y="31" class="mono tiny">UAT BUGS · 54</text>
+    <rect x="536" y="15" width="126" height="24" class="active"/><text x="546" y="31" class="mono tiny white">PRODUCTION BUGS · 16</text>
+    <rect x="668" y="15" width="108" height="24" class="pill"/><text x="678" y="31" class="mono tiny">UNCLASSIFIED · 4</text>
+    <text x="782" y="31" class="mono tiny muted">1–10 · 1/2 ›</text>
     <line x1="0" y1="62" x2="842" y2="62" class="line"/>
     <text x="18" y="82" class="mono tiny">TICKET</text><text x="112" y="82" class="mono tiny">SUBJECT</text><text x="462" y="82" class="mono tiny">STATUS</text><text x="570" y="82" class="mono tiny">PHASE / ENV</text><text x="720" y="82" class="mono tiny">SUBMITTED</text>
     <line x1="0" y1="92" x2="842" y2="92" stroke="#eeeae1"/>
@@ -81,16 +80,15 @@
     <rect x="14" y="171" width="322" height="13" class="barbg"/><rect x="14" y="171" width="221" height="13" class="phase2"/><text x="14" y="201" class="mono small">22 · 30%</text><text x="228" y="201" class="mono tiny muted">8 open · 14 closed</text>
     <text x="14" y="235" class="sans small" font-weight="700">Production</text><rect x="293" y="221" width="43" height="18" class="prod"/><text x="299" y="234" class="mono tiny white">PROD</text>
     <rect x="14" y="248" width="322" height="13" class="barbg"/><rect x="14" y="248" width="161" height="13" class="prod"/><text x="14" y="278" class="mono small">16 · 22%</text><text x="222" y="278" class="mono tiny muted">11 open · 5 closed</text>
-    <rect x="14" y="293" width="322" height="26" class="warn"/><text x="25" y="310" class="sans tiny">4 unclassified subjects need cleanup</text>
+    <rect x="14" y="293" width="322" height="26" class="warn"/><text x="25" y="310" class="sans tiny">4 unclassified subjects · VIEW BUGS →</text>
   </g>
   <g transform="translate(1030 651)">
     <rect width="350" height="173" class="card"/>
-    <text x="14" y="25" class="serif h3">Bug detail filters</text>
-    <rect x="14" y="40" width="68" height="24" class="pill"/><text x="24" y="56" class="mono tiny">All · 74</text>
-    <rect x="88" y="40" width="82" height="24" class="pill"/><text x="98" y="56" class="mono tiny">Phase 1 · 32</text>
-    <rect x="176" y="40" width="82" height="24" class="pill"/><text x="186" y="56" class="mono tiny">Phase 2 · 22</text>
-    <rect x="14" y="70" width="105" height="24" class="active"/><text x="24" y="86" class="mono tiny white">Production · 16</text>
-    <rect x="125" y="70" width="67" height="24" class="pill"/><text x="135" y="86" class="mono tiny">Other · 4</text>
+    <text x="14" y="25" class="serif h3">Separate bug detail tabs</text>
+    <rect x="14" y="40" width="91" height="24" class="pill"/><text x="24" y="56" class="mono tiny">UAT BUGS · 54</text>
+    <rect x="111" y="40" width="119" height="24" class="active"/><text x="121" y="56" class="mono tiny white">PRODUCTION · 16</text>
+    <rect x="236" y="40" width="100" height="24" class="pill"/><text x="246" y="56" class="mono tiny">OTHER · 4</text>
+    <text x="14" y="86" class="mono tiny muted">1–10 of 16 · Page 1 of 2 · PREVIOUS · NEXT</text>
     <line x1="14" y1="110" x2="336" y2="110" stroke="#ded9ce"/>
     <text x="14" y="131" class="mono tiny phase2">INC-1042</text><text x="91" y="131" class="sans tiny">Checkout unavailable</text><text x="272" y="131" class="mono tiny prod">PROD</text>
     <text x="14" y="154" class="sans tiny muted">Detail table scrolls horizontally when needed.</text>

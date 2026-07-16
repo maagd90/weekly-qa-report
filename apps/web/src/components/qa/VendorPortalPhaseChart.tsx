@@ -10,7 +10,12 @@ const PHASE_COLORS: Record<DashboardVendorPortalPhaseItem['category'], string> =
   unclassified: QA.muted,
 };
 
-export function VendorPortalPhaseChart({ items }: { items: DashboardVendorPortalPhaseItem[] }) {
+interface VendorPortalPhaseChartProps {
+  items: DashboardVendorPortalPhaseItem[];
+  onViewUnclassified?: () => void;
+}
+
+export function VendorPortalPhaseChart({ items, onViewUnclassified }: VendorPortalPhaseChartProps) {
   const classified = items.filter((item) => item.category !== 'unclassified');
   const unclassified = items.find((item) => item.category === 'unclassified');
   const total = items.reduce((sum, item) => sum + item.count, 0);
@@ -44,6 +49,15 @@ export function VendorPortalPhaseChart({ items }: { items: DashboardVendorPortal
         <div className="border-l-2 border-[#B5822F] bg-[#fbf6e9] px-3 py-2 text-[11.5px] text-qa-muted">
           <strong className="text-qa-ink">{fmt(unclassified.count)} unclassified</strong>
           {' '}— these subjects do not start with UAT, Phase 2B UAT, or INC. They remain visible for naming cleanup and are not added to another phase.
+          {onViewUnclassified && (
+            <button
+              type="button"
+              onClick={onViewUnclassified}
+              className="mt-2 block border border-[#B5822F] bg-white px-2.5 py-1 font-mono-qa text-[9.5px] font-semibold text-qa-ink hover:bg-[#fffaf0]"
+            >
+              View {fmt(unclassified.count)} unclassified bug{unclassified.count === 1 ? '' : 's'}
+            </button>
+          )}
         </div>
       )}
     </div>

@@ -74,6 +74,8 @@ hasAll('src/components/qa/VendorPortalPhaseChart.tsx', [
   'sm:grid-cols-[minmax(130px,0.9fr)_minmax(160px,2.1fr)_auto]',
   'min-w-0',
   'unclassified',
+  'onViewUnclassified',
+  'View {fmt(unclassified.count)} unclassified',
 ]);
 
 hasAll('src/pages/UatPage.tsx', [
@@ -81,6 +83,11 @@ hasAll('src/pages/UatPage.tsx', [
   "row.reportedPhase || 'unclassified'",
   'flex max-w-full flex-wrap',
   'VendorPortalPhaseChart',
+  "type BugView = 'uat' | 'production' | 'unclassified'",
+  'max-w-full overflow-x-auto overscroll-x-contain',
+  'Page {safePage + 1} of {totalPages}',
+  'Source file',
+  'pageRows.map',
 ]);
 
 hasAll('src/pages/ImportStatusPage.tsx', [
