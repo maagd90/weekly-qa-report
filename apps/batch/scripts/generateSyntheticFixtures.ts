@@ -100,8 +100,15 @@ function writeSheet(fileName: string, sheetName: string, rows: unknown[][]) {
   };
   for (let i = 1; i <= 74; i++) {
     const closed = i <= 43;
+    const subject = i <= 32
+      ? `UAT Booking issue ${i}`
+      : i <= 54
+        ? `Phase 2B UAT Booking issue ${i}`
+        : i <= 70
+          ? `INC${String(i).padStart(6, '0')} Production issue ${i}`
+          : `Booking issue without prefix ${i}`;
     rows.push([
-      `UAT-${i}`, `Subject ${i}`, 'Bookings', 'AA-1', 'High', 'P1', 'Submitter',
+      `UAT-${i}`, subject, 'Bookings', 'AA-1', 'High', 'P1', 'Submitter',
       excelDate('2026-05-01'), closed ? 'Closed' : 'Pending', excelDate('2026-06-01'),
     ]);
   }

@@ -61,6 +61,8 @@ export interface UatRow {
   open: boolean;
   project: string;
   source: DataSource;
+  /** Original spreadsheet name, retained so merged Vendor Portal imports remain traceable. */
+  sourceFile?: string;
 }
 
 export interface FileMeta {
@@ -165,7 +167,29 @@ export interface DashboardOverview {
   byMonth: DashboardMonthItem[];
   chartSeries: { resultMix: { name: string; value: number; color: string }[] };
 }
-export interface DashboardUatRow { id: string; subject: string; area: string; priority: string; status: string; submitter: string; submittedAt: string; updatedAt: string; cr: string }
+export type VendorPortalPhaseCategory = 'phase1-uat' | 'phase2-uat' | 'production' | 'unclassified';
+export interface DashboardVendorPortalPhaseItem {
+  category: VendorPortalPhaseCategory;
+  label: string;
+  environment: 'UAT' | 'PROD' | 'Unknown';
+  count: number;
+  open: number;
+  closed: number;
+}
+export interface DashboardUatRow {
+  id: string;
+  subject: string;
+  area: string;
+  priority: string;
+  status: string;
+  submitter: string;
+  submittedAt: string;
+  updatedAt: string;
+  cr: string;
+  /** Optional for compatibility with dashboard JSON generated before phase classification existed. */
+  reportedPhase?: VendorPortalPhaseCategory;
+  sourceFile?: string;
+}
 export interface DashboardUatPayload {
   total: number;
   open: number;
@@ -177,6 +201,10 @@ export interface DashboardUatPayload {
   byArea: { area: string; count: number }[];
   bySubmitter: { name: string; count: number }[];
   rows: DashboardUatRow[];
+  /** Optional so older cached dashboard JSON remains safe to render. New payloads always populate it. */
+  byReportedPhase?: DashboardVendorPortalPhaseItem[];
+  /** ODL-style spreadsheets merged into this Vendor Portal view. */
+  sourceFiles?: { name: string; rows: number }[];
 }
 export interface DashboardByProject {
   project: string;

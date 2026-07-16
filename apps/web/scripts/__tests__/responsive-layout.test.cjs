@@ -69,6 +69,26 @@ hasAll('src/pages/AiReportPage.tsx', [
   'p-4 bg-[#f5f3ed] sm:p-6 lg:p-8',
 ]);
 
+hasAll('src/components/qa/VendorPortalPhaseChart.tsx', [
+  'grid-cols-1',
+  'sm:grid-cols-[minmax(130px,0.9fr)_minmax(160px,2.1fr)_auto]',
+  'min-w-0',
+  'unclassified',
+]);
+
+hasAll('src/pages/UatPage.tsx', [
+  "uat.byReportedPhase || []",
+  "row.reportedPhase || 'unclassified'",
+  'flex max-w-full flex-wrap',
+  'VendorPortalPhaseChart',
+]);
+
+hasAll('src/pages/ImportStatusPage.tsx', [
+  'Promise.all(selectedFiles.map',
+  'multiple className="hidden"',
+  'handleFiles(e.dataTransfer.files)',
+]);
+
 hasAll('src/App.tsx', [
   'min-w-0 overflow-x-hidden',
   'overflow-x-hidden overflow-y-auto',

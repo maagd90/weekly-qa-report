@@ -24,7 +24,7 @@ interface SyncResult {
 const EXPECTED = [
   { ext: 'XLSX', label: 'Test execution export', map: 'result, tester, cycle' },
   { ext: 'XLSX', label: 'JIRA issues export', map: 'Issue Type → Story/Bug' },
-  { ext: 'XLSX', label: 'Vendor Portal Bug log', map: 'auto-detected → Vendor Portal Bugs tab' },
+  { ext: 'XLSX', label: 'Vendor Portal Bug logs', map: 'daily ODL + production files → merged and phase-separated' },
 ];
 
 const MAPPING_ROWS = [
@@ -73,7 +73,7 @@ export function ImportStatusPage() {
   });
 
   const uploadMutation = useMutation({
-    mutationFn: batchApi.upload,
+    mutationFn: (selectedFiles: File[]) => Promise.all(selectedFiles.map((file) => batchApi.upload(file))),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['input-files'] }),
   });
 
@@ -103,15 +103,15 @@ export function ImportStatusPage() {
     },
   });
 
-  const handleFile = useCallback((file: File) => {
-    uploadMutation.mutate(file);
+  const handleFiles = useCallback((selectedFiles: FileList | File[]) => {
+    const next = Array.from(selectedFiles);
+    if (next.length) uploadMutation.mutate(next);
   }, [uploadMutation]);
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(false);
-    const file = e.dataTransfer.files[0];
-    if (file) handleFile(file);
+    handleFiles(e.dataTransfer.files);
   };
 
   const syncedProjects = projectListText(syncMutation.data?.projects);
@@ -131,9 +131,9 @@ export function ImportStatusPage() {
             className={clsx('border-2 border-dashed p-10 text-center cursor-pointer transition mb-5', isDragging ? 'border-qa-ink bg-[#faf8f2]' : 'border-qa-border-mid hover:border-qa-ink hover:bg-[#faf8f2]')}
           >
             <div className="text-3xl text-qa-muted-pale mb-3">↓</div>
-            <p className="text-qa-ink font-semibold m-0">Drop Excel file here or click to browse</p>
-            <p className="text-xs text-qa-muted-light mt-1 m-0">Max 20 MB · .xlsx / .xls</p>
-            <input ref={fileInputRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); e.target.value = ''; }} />
+            <p className="text-qa-ink font-semibold m-0">Drop one or more Excel files here or click to browse</p>
+            <p className="text-xs text-qa-muted-light mt-1 m-0">Upload daily ODL and production files together · max 20 MB each · .xlsx / .xls</p>
+            <input ref={fileInputRef} type="file" accept=".xlsx,.xls" multiple className="hidden" onChange={(e) => { if (e.target.files) handleFiles(e.target.files); e.target.value = ''; }} />
           </div>
 
           <div className="mb-4 flex items-center gap-2">
@@ -151,7 +151,7 @@ export function ImportStatusPage() {
           </div>
 
           {uploadMutation.isError && <div className="p-3 border border-[#ecccc2] bg-[#f8ece8] text-[#a13d2c] text-sm mb-4">Upload failed</div>}
-          {uploadMutation.isSuccess && <div className="p-3 border border-[#cfe0d4] bg-[#eef4ef] text-[#2f6a48] text-sm mb-4">File staged successfully. Click Sync imported data to update dashboard.</div>}
+          {uploadMutation.isSuccess && <div className="p-3 border border-[#cfe0d4] bg-[#eef4ef] text-[#2f6a48] text-sm mb-4">{uploadMutation.data.length} file{uploadMutation.data.length === 1 ? '' : 's'} staged successfully. Click Sync imported data to merge and update the dashboard.</div>}
           {syncMutation.isError && <div className="p-3 border border-[#ecccc2] bg-[#f8ece8] text-[#a13d2c] text-sm mb-4">{(syncMutation.error as Error).message}</div>}
           {syncMutation.isSuccess && <div className="p-3 border border-[#cfe0d4] bg-[#eef4ef] text-[#2f6a48] text-sm mb-4">Sync completed · {rowCountText(syncMutation.data)}{syncedProjects ? ` · Projects: ${syncedProjects}` : ''}</div>}
           {deleteMutation.isError && <div className="p-3 border border-[#ecccc2] bg-[#f8ece8] text-[#a13d2c] text-sm mb-4">Remove failed</div>}

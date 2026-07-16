@@ -155,7 +155,7 @@ export function AiReportCharts({ dashboard, kpiStyle, reportType }: AiReportChar
 
       {showUat && !uat?.total && (
         <div className="pdf-section border border-qa-border p-5 bg-[#faf8f2] text-[13px] text-qa-muted">
-          No UAT issues in the selected date range. Widen the date range or check that an ODL UAT export is staged under Import Data.
+          No Vendor Portal bugs in the selected date range. Widen the date range or check that an ODL/production export is staged under Import Data.
         </div>
       )}
     </div>

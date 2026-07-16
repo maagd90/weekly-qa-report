@@ -78,7 +78,7 @@ export function AiReportOnePager({
         </div>
 
         <div className="border border-qa-border p-3 bg-white min-w-0">
-          <div className="font-mono-qa text-[9px] tracking-wider uppercase text-qa-muted-light mb-2">UAT Defects</div>
+          <div className="font-mono-qa text-[9px] tracking-wider uppercase text-qa-muted-light mb-2">Vendor Portal Bugs</div>
           {uat && uat.total > 0 ? (
             <>
               <div className="grid grid-cols-2 gap-2 mb-2">
@@ -121,7 +121,7 @@ export function AiReportOnePager({
               )}
             </>
           ) : (
-            <p className="text-[11px] text-qa-muted m-0">No UAT defects in this period.</p>
+            <p className="text-[11px] text-qa-muted m-0">No Vendor Portal bugs in this period.</p>
           )}
         </div>
       </div>

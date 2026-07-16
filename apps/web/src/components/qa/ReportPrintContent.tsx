@@ -183,10 +183,10 @@ export function ReportPrintContent({ dashboard, reportType, narrative, startDate
           <p>The objective of this sprint report is to summarize QA validation progress, execution health, defect verification, open risks, and upcoming validation focus for the selected reporting window.</p>
           <p>The report is generated from verified dashboard data only and is intended for business and delivery stakeholders.</p>
           <div className="qa-business-subtitle">Validation Focused On:</div>
-          <div className="qa-business-panel"><ul><li>Test execution and pass/fail validation</li><li>JIRA defect and story status review</li><li>Period defect activity and priority analysis</li><li>Cycle health, coverage, and at-risk areas</li><li>UAT summary and closure tracking</li></ul></div>
+          <div className="qa-business-panel"><ul><li>Test execution and pass/fail validation</li><li>JIRA defect and story status review</li><li>Period defect activity and priority analysis</li><li>Cycle health, coverage, and at-risk areas</li><li>Vendor Portal bug summary and closure tracking</li></ul></div>
         </Section>
 
-        {showDefects && <Section no={nextNo()} title="UAT Defect Verification Summary">
+        {showDefects && <Section no={nextNo()} title="Vendor Portal Bug Verification Summary">
           <StatTable dashboard={dashboard} />
           <p><em>Most defects verified in this sprint directly impact delivery readiness, execution stability, user validation, or production sign-off confidence.</em></p>
         </Section>}

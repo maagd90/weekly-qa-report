@@ -58,6 +58,7 @@ export function parseOdlFromRows(
       open,
       project,
       source: 'odl-file',
+      sourceFile: fileName,
     });
   }
 

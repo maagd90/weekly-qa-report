@@ -170,14 +170,14 @@ function traceabilityParagraph(items: DashboardTraceabilityItem[] | undefined): 
   ].filter(Boolean).join(' ');
 }
 
-/** Describes non-zero UAT activity for the selected period. */
+/** Describes non-zero Vendor Portal bug activity for the selected period. */
 function uatParagraph(uat: TemplateNarrativeMetrics['get_uat_summary']): string | null {
   if (!uat || uat.total === 0) return null;
   const breakdown = nonZeroList([['open', uat.open], ['closed', uat.closed]]);
   const closureRate = 'closureRate' in uat ? uat.closureRate : percentage(uat.closed, uat.total);
   const closure = closureRate > 0 ? ` (${closureRate}% closure rate)` : '';
 
-  return `UAT recorded ${uat.total} item${uat.total === 1 ? '' : 's'} this period${breakdown ? `: ${breakdown}` : ''}${closure}.`;
+  return `Vendor Portal Bugs recorded ${uat.total} item${uat.total === 1 ? '' : 's'} this period${breakdown ? `: ${breakdown}` : ''}${closure}.`;
 }
 
 /** Builds evidence-backed follow-up actions appropriate to the report type. */

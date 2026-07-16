@@ -50,7 +50,7 @@ function main(): void {
   assert.match(full, /1 story and 3 bugs \(2 open\)/);
   assert.doesNotMatch(full, /story \(0 open\)/);
   assert.doesNotMatch(full, /Low: 0|Nobody/);
-  assert.match(full, /UAT recorded 4 items this period: 4 open\./);
+  assert.match(full, /Vendor Portal Bugs recorded 4 items this period: 4 open\./);
   assert.doesNotMatch(full, /0 closed|0% closure rate/);
 
   const cycles = generateTemplateNarrative(metrics, filter, 'cycles');

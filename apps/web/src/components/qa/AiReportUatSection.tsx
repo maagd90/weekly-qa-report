@@ -3,6 +3,7 @@ import type { DashboardPayload } from 'qa-dashboard-batch';
 import { QA, fmt, PRIORITY_COLORS } from '../../theme/qaTheme';
 import { PriorityDonut } from './ResultDonut';
 import { HorizBar } from './SegBar';
+import { VendorPortalPhaseChart } from './VendorPortalPhaseChart';
 
 type UatPayload = NonNullable<DashboardPayload['uat']>;
 type UatCrSummary = { cr: string; total: number; open: number; closed: number };
@@ -90,7 +91,7 @@ export function AiReportUatSection({ uat: rawUat }: { uat: UatPayload }) {
     <>
       <div className="pdf-section border border-qa-border p-5 bg-white">
         <div className="font-mono-qa text-[10px] tracking-wider uppercase text-qa-muted-light mb-4">
-          UAT Issues — Bugs Reported
+          Vendor Portal Bugs — Reported
         </div>
 
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
@@ -106,6 +107,14 @@ export function AiReportUatSection({ uat: rawUat }: { uat: UatPayload }) {
             </div>
           ))}
         </div>
+
+        {uat.byReportedPhase?.some((item) => item.count > 0) && (
+          <div className="mb-6 border border-[#efece4] bg-white p-4">
+            <div className="text-[12.5px] font-semibold">Reported Phase / Environment</div>
+            <div className="mb-4 mt-1 text-[10.5px] text-qa-muted-light">Derived from Subject prefixes across the uploaded Vendor Portal spreadsheets.</div>
+            <VendorPortalPhaseChart items={uat.byReportedPhase} />
+          </div>
+        )}
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
           <div className="border border-[#efece4] p-4 bg-[#faf8f2] min-w-0">
@@ -214,7 +223,7 @@ export function AiReportUatSection({ uat: rawUat }: { uat: UatPayload }) {
 
       {uat.rows.length > 0 && (
         <div className="pdf-section border border-qa-border p-5 bg-white">
-          <div className="text-[12.5px] font-semibold mb-3">UAT Issue Detail (top {Math.min(uat.rows.length, 15)})</div>
+          <div className="text-[12.5px] font-semibold mb-3">Vendor Portal Bug Detail (top {Math.min(uat.rows.length, 15)})</div>
           <div className="overflow-x-auto">
             <table className="w-full text-[11.5px] border-collapse">
               <thead>

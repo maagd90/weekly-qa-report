@@ -9,7 +9,7 @@ export { mergeDatasets } from './merge/mergeDataset';
 export { dedupeDataset, executionIdentity, issueIdentity, uatIdentity } from './merge/dedupeDataset';
 export { buildDashboardPayload } from './export/buildDashboardPayload';
 export { hasDashboardMetrics, datasetProjectsSummary, noMetricsForScopeMessage } from './export/reportMetrics';
-export type { DashboardPayload, FilterParams, ReportType, GenerateParams, ApiFetchScope, DedupeStats } from './types/dataset';
+export type { DashboardPayload, DashboardVendorPortalPhaseItem, FilterParams, ReportType, GenerateParams, ApiFetchScope, DedupeStats, VendorPortalPhaseCategory } from './types/dataset';
 export type { JiraConnectionInput, QmetryConnectionInput, UserConnections, JiraDeploymentType, JiraAuthType } from './types/connections';
 export { emptyConnections } from './types/connections';
 export { resultColor } from './types/dataset';

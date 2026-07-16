@@ -57,6 +57,18 @@ function duplicateDataset(): Dataset {
   return mergeDatasets([file, live]);
 }
 
+function vendorPortalFilesDataset(): Dataset {
+  const dataset = emptyDataset();
+  dataset.uat = [
+    { id: 'ODL-1', subject: 'UAT login issue', area: 'Login', cr: 'CR-1', priority: 'High', clientPriority: '', submitter: 'QA One', submittedAt: '2026-07-01', updatedAt: '2026-07-01', status: 'Open', open: true, project: 'DLM', source: 'odl-file', sourceFile: 'daily-odl.xlsx' },
+    { id: 'ODL-2', subject: 'Phase 2B UAT payment issue', area: 'Payments', cr: 'CR-2', priority: 'Medium', clientPriority: '', submitter: 'QA Two', submittedAt: '2026-07-02', updatedAt: '2026-07-03', status: 'Closed', open: false, project: 'DLM', source: 'odl-file', sourceFile: 'daily-odl.xlsx' },
+    { id: 'INC-1', subject: 'INC001234 production outage', area: 'Checkout', cr: 'N/A', priority: 'Urgent', clientPriority: '', submitter: 'Support', submittedAt: '2026-07-04', updatedAt: '2026-07-05', status: 'Open', open: true, project: 'DLM', source: 'odl-file', sourceFile: 'production.xlsx' },
+    { id: 'OTHER-1', subject: 'Missing naming prefix', area: 'Checkout', cr: 'N/A', priority: 'Low', clientPriority: '', submitter: 'Support', submittedAt: '2026-07-05', updatedAt: '2026-07-05', status: 'Open', open: true, project: 'DLM', source: 'odl-file', sourceFile: 'production.xlsx' },
+  ];
+  dataset.projects = ['DLM'];
+  return dataset;
+}
+
 // Full dataset — no filter
 {
   const p = buildDashboardPayload(ds, {});
@@ -71,6 +83,33 @@ function duplicateDataset(): Dataset {
     assert.ok(p.cyclesByPassPctAsc[0].passPct <= p.cyclesByPassPctAsc[p.cyclesByPassPctAsc.length - 1].passPct);
   }
   console.log('✓ Full payload shape');
+}
+
+// Two uploaded Vendor Portal sheets merge into one payload but retain source
+// traceability and separate rows by their Subject prefix.
+{
+  const p = buildDashboardPayload(vendorPortalFilesDataset(), { project: 'DLM' });
+  assert.ok(p.uat);
+  assert.deepStrictEqual(
+    p.uat?.byReportedPhase?.map(({ category, count }) => ({ category, count })),
+    [
+      { category: 'phase1-uat', count: 1 },
+      { category: 'phase2-uat', count: 1 },
+      { category: 'production', count: 1 },
+      { category: 'unclassified', count: 1 },
+    ],
+  );
+  assert.deepStrictEqual(p.uat?.sourceFiles, [
+    { name: 'daily-odl.xlsx', rows: 2 },
+    { name: 'production.xlsx', rows: 2 },
+  ]);
+  assert.strictEqual(p.uat?.rows.find((row) => row.id === 'INC-1')?.reportedPhase, 'production');
+
+  const productionOnly = buildDashboardPayload(vendorPortalFilesDataset(), { project: 'DLM', search: 'INC001234' });
+  assert.strictEqual(productionOnly.uat?.total, 1, 'search filtering happens before phase aggregation');
+  assert.strictEqual(productionOnly.uat?.byReportedPhase?.find((item) => item.category === 'production')?.count, 1);
+  assert.deepStrictEqual(productionOnly.uat?.sourceFiles, [{ name: 'production.xlsx', rows: 1 }]);
+  console.log('✓ Vendor Portal files remain traceable and phase-separated');
 }
 
 // April 2026 window (BACKEND_PROMPT acceptance)

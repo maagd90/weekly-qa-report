@@ -4,6 +4,7 @@ import type {
 import { resultColor } from '../types/dataset';
 import { applyFilters } from '../filters/applyFilters';
 import { canonicalProjectKey, canonicalProjectOrUndefined, uniqueCanonicalProjects } from '../projects/projectKey';
+import { classifyVendorPortalPhase, vendorPortalPhaseBreakdown } from '../analysis/vendorPortalPhaseClassification';
 
 interface CycleAgg {
   pass: number; fail: number; blocked: number; ne: number; na: number;
@@ -169,8 +170,37 @@ export function buildDashboardPayload(
     const prCounts: Record<string, number> = {};
     const areaCounts: Record<string, number> = {};
     const submitterCounts: Record<string, number> = {};
+    const sourceFileCounts: Record<string, number> = {};
     uat.forEach((r) => { stCounts[r.status] = (stCounts[r.status] || 0) + 1; prCounts[r.priority] = (prCounts[r.priority] || 0) + 1; areaCounts[r.area] = (areaCounts[r.area] || 0) + 1; submitterCounts[r.submitter] = (submitterCounts[r.submitter] || 0) + 1; });
-    uatPayload = { total, open, closed, closureRate: total ? Math.round((closed / total) * 100) : 0, urgentOpen: uat.filter((r) => r.open && r.priority === 'Urgent').length, byStatus: Object.entries(stCounts).map(([status, count]) => ({ status, count })).sort((a, b) => b.count - a.count), byPriority: Object.entries(prCounts).map(([priority, count]) => ({ priority, count })).sort((a, b) => b.count - a.count), byArea: Object.entries(areaCounts).map(([area, count]) => ({ area, count })).sort((a, b) => b.count - a.count).slice(0, 8), bySubmitter: Object.entries(submitterCounts).map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count), rows: uat.map((r) => ({ id: r.id, subject: r.subject, area: r.area, priority: r.priority, status: r.status, submitter: r.submitter, submittedAt: r.submittedAt || '', updatedAt: r.updatedAt, cr: r.cr })) };
+    uat.forEach((r) => {
+      if (r.sourceFile) sourceFileCounts[r.sourceFile] = (sourceFileCounts[r.sourceFile] || 0) + 1;
+    });
+    uatPayload = {
+      total,
+      open,
+      closed,
+      closureRate: total ? Math.round((closed / total) * 100) : 0,
+      urgentOpen: uat.filter((r) => r.open && r.priority === 'Urgent').length,
+      byStatus: Object.entries(stCounts).map(([status, count]) => ({ status, count })).sort((a, b) => b.count - a.count),
+      byPriority: Object.entries(prCounts).map(([priority, count]) => ({ priority, count })).sort((a, b) => b.count - a.count),
+      byArea: Object.entries(areaCounts).map(([area, count]) => ({ area, count })).sort((a, b) => b.count - a.count).slice(0, 8),
+      bySubmitter: Object.entries(submitterCounts).map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count),
+      byReportedPhase: vendorPortalPhaseBreakdown(uat),
+      sourceFiles: Object.entries(sourceFileCounts).map(([name, rows]) => ({ name, rows })).sort((a, b) => a.name.localeCompare(b.name)),
+      rows: uat.map((r) => ({
+        id: r.id,
+        subject: r.subject,
+        area: r.area,
+        priority: r.priority,
+        status: r.status,
+        submitter: r.submitter,
+        submittedAt: r.submittedAt || '',
+        updatedAt: r.updatedAt,
+        cr: r.cr,
+        reportedPhase: classifyVendorPortalPhase(r.subject),
+        sourceFile: r.sourceFile,
+      })),
+    };
   }
 
   const isAllProjects = !normalizedProject;
