@@ -255,6 +255,7 @@ function vendorPortalFilesDataset(): Dataset {
   const exact = buildDashboardPayload(summaryDataset, { project: 'DLM', startDate: '2026-07-01', endDate: '2026-07-14' });
   assert.strictEqual(exact.overview.totalCases, 10, 'summary must replace incomplete detailed rows for overview counts');
   assert.strictEqual(exact.overview.passRate, 80);
+  assert.strictEqual(exact.testers.length, 1, 'mismatched detail totals must not replace authoritative tester attribution');
   assert.strictEqual(exact.testers[0]?.name, 'Summary Tester');
   assert.strictEqual(exact.testers[0]?.executed, 10);
   assert.ok(exact.cycles.every((cycle) => !cycle.key.includes('EXECUTION-SUMMARY')), 'summary rows must not create a fake test cycle');
@@ -263,6 +264,51 @@ function vendorPortalFilesDataset(): Dataset {
   const differentRange = buildDashboardPayload(summaryDataset, { project: 'DLM', startDate: '2026-07-01', endDate: '2026-07-31' });
   assert.notStrictEqual(differentRange.overview.totalCases, 10, 'a scoped summary must not leak into another date window');
   console.log('✓ QMetry execution summary is authoritative and scope-safe');
+}
+
+// When detailed QMetry rows reconcile exactly with every executed summary
+// result bucket, they may safely provide the more complete tester names. N/A
+// is an executed result and participates in the reconciliation rather than
+// being treated as an attribution balancing bucket.
+{
+  const reconciledDataset = emptyDataset();
+  const summaryBase = {
+    project: 'DLM',
+    cycleKey: 'DLM-EXECUTION-SUMMARY-2026-07-01-2026-07-14',
+    cycleName: 'QMetry execution summary (2026-07-01 to 2026-07-14)',
+    tester: 'Summary Tester',
+    executedAt: null,
+    updatedAt: null,
+    source: 'qmetry' as const,
+    summaryOnly: true,
+    summaryScopeStart: '2026-07-01',
+    summaryScopeEnd: '2026-07-14',
+  };
+  const detailTesterNames = ['Tester One', 'Tester Two', 'Tester Three', 'Tester Four'];
+  reconciledDataset.executions = [
+    ...Array.from({ length: 100 }, (_, index) => ({ ...summaryBase, caseKey: `DLM-SUMMARY-${index}`, result: index < 6 ? 'PASS' as const : 'NA' as const })),
+    ...Array.from({ length: 100 }, (_, index) => ({
+      project: 'DLM',
+      cycleKey: 'DLM-TR-1',
+      cycleName: 'Reconciled cycle',
+      caseKey: `DLM-TC-${index + 1}`,
+      result: index < 6 ? 'PASS' as const : 'NA' as const,
+      tester: detailTesterNames[Math.floor(index / 25)],
+      executedAt: '2026-07-05',
+      updatedAt: '2026-07-05',
+      source: 'qmetry' as const,
+    })),
+  ];
+  reconciledDataset.projects = ['DLM'];
+
+  const payload = buildDashboardPayload(reconciledDataset, { project: 'DLM', startDate: '2026-07-01', endDate: '2026-07-14' });
+  assert.strictEqual(payload.overview.totalCases, 100, 'authoritative summary total must remain unchanged');
+  assert.strictEqual(payload.overview.executed, 100, 'N/A must remain included in executed totals');
+  assert.strictEqual(payload.overview.resultMix.find((item) => item.code === 'NA')?.count, 94);
+  assert.deepStrictEqual(payload.testers.map((tester) => tester.name), detailTesterNames);
+  assert.strictEqual(payload.testers.reduce((sum, tester) => sum + tester.executed, 0), 100, 'reconciled tester totals must not exceed the authoritative total');
+  assert.strictEqual(payload.testers.reduce((sum, tester) => sum + tester.na, 0), 94, 'all 94 N/A results must remain attributed without changing the total');
+  console.log('✓ reconciled detail rows restore complete tester names without double-counting N/A');
 }
 
 // JIRA updatedAt keeps traceability rows in date-scoped views
