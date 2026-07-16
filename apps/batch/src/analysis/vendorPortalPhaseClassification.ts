@@ -5,7 +5,10 @@ import type {
 } from '../types/dataset';
 
 const PHASE_2_UAT_PREFIX = /^phase\s*2\s*b\s+uat(?=$|[^a-z])/i;
-const PHASE_1_UAT_PREFIX = /^uat(?=$|[^a-z])/i;
+// Accept both the plain prefix (`UAT ...`) and the bracketed tag (`[UAT] ...`).
+// The bracketed form is exact, so similar tags such as `[UATILITY]` remain
+// Other UAT instead of being misclassified as Phase 1.
+const PHASE_1_UAT_PREFIX = /^(?:uat(?=$|[^a-z])|\[\s*uat\s*\])/i;
 const PRODUCTION_PREFIX = /^inc(?=$|[^a-z])/i;
 
 const CATEGORY_META: Record<VendorPortalPhaseCategory, Pick<DashboardVendorPortalPhaseItem, 'category' | 'label' | 'environment'>> = {
