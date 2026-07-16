@@ -44,7 +44,7 @@ function isDefectReport(reportType: ReportType): boolean {
 
 function QualityAssuranceRows({ dashboard }: { dashboard: DashboardPayload }) {
   if (!dashboard.testers.length) return <p>No named Quality Assurance executions are available for this reporting scope.</p>;
-  return <table className="qa-business-table"><thead><tr><th>Quality Assurance member</th><th>Executed</th><th>Passed</th><th>Failed</th><th>Blocked</th><th>Pass %</th></tr></thead><tbody>{dashboard.testers.map((member) => <tr key={member.name}><td>{member.name}</td><td className="qa-business-number">{member.executed}</td><td className="qa-business-number">{member.pass}</td><td className="qa-business-number">{member.fail}</td><td className="qa-business-number">{member.blocked}</td><td className="qa-business-number">{member.passPct}%</td></tr>)}</tbody></table>;
+  return <table className="qa-business-table"><thead><tr><th>Quality Assurance member</th><th>Executed</th><th>Passed</th><th>Failed</th><th>Blocked</th><th>N/A</th><th>Pass %</th></tr></thead><tbody>{dashboard.testers.map((member) => <tr key={member.name}><td>{member.name}</td><td className="qa-business-number">{member.executed}</td><td className="qa-business-number">{member.pass}</td><td className="qa-business-number">{member.fail}</td><td className="qa-business-number">{member.blocked}</td><td className="qa-business-number">{member.na}</td><td className="qa-business-number">{member.passPct}%</td></tr>)}</tbody></table>;
 }
 
 function StatTable({ dashboard }: { dashboard: DashboardPayload }) {
