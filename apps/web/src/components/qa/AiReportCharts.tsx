@@ -81,6 +81,7 @@ export function AiReportCharts({ dashboard, kpiStyle, reportType }: AiReportChar
                     {initials(t.name)}
                   </div>
                   <div className="flex-1 min-w-0 text-[13px] font-semibold truncate">{t.name}</div>
+                  <div className="font-mono-qa text-[10px] text-qa-muted-light shrink-0">{fmt(t.executed)} exec · {fmt(t.na)} N/A</div>
                   <div className="font-spectral font-bold text-lg" style={{ color: passRateColor(t.passPct) }}>{t.passPct}%</div>
                 </div>
                 <SegBar segments={testerSegSegments(t.pass, t.fail, t.blocked, t.na, t.executed)} />
