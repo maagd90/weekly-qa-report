@@ -7,6 +7,10 @@ import {
 function main(): void {
   assert.strictEqual(classifyVendorPortalPhase('UAT login error'), 'phase1-uat');
   assert.strictEqual(classifyVendorPortalPhase('uat: checkout error'), 'phase1-uat');
+  assert.strictEqual(classifyVendorPortalPhase('[UAT] login error'), 'phase1-uat');
+  assert.strictEqual(classifyVendorPortalPhase('[uat] checkout error'), 'phase1-uat');
+  assert.strictEqual(classifyVendorPortalPhase(' [ UAT ] payment error '), 'phase1-uat');
+  assert.strictEqual(classifyVendorPortalPhase('[UAT]Search error'), 'phase1-uat');
   assert.strictEqual(classifyVendorPortalPhase(' Phase 2B UAT search error '), 'phase2-uat');
   assert.strictEqual(classifyVendorPortalPhase('phase2b uat - payment error'), 'phase2-uat');
   assert.strictEqual(classifyVendorPortalPhase('INC0012345 production outage'), 'production');
@@ -15,6 +19,7 @@ function main(): void {
   assert.strictEqual(classifyVendorPortalPhase('Incident review notes'), 'other-uat');
   assert.strictEqual(classifyVendorPortalPhase('Incorrect value displayed'), 'other-uat');
   assert.strictEqual(classifyVendorPortalPhase('Uatility typo'), 'other-uat');
+  assert.strictEqual(classifyVendorPortalPhase('[UATILITY] typo'), 'other-uat');
   assert.strictEqual(classifyVendorPortalPhase(''), 'unclassified');
   assert.strictEqual(classifyVendorPortalPhase(undefined), 'unclassified');
 
