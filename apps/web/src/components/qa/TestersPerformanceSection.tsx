@@ -44,7 +44,7 @@ function TesterList({ testers, neCount, unattributedCount }: { testers: Dashboar
             <div className="flex-1 min-w-0">
               <div className="text-sm font-semibold">{t.name}</div>
               <div className="font-mono-qa text-[10.5px] text-qa-muted-light">
-                {t.executed} executed · {t.pass} pass · {t.fail} fail · {t.blocked} blocked
+                {t.executed} executed · {t.pass} pass · {t.fail} fail · {t.blocked} blocked · {t.na} N/A
               </div>
             </div>
             <div className="text-right">
