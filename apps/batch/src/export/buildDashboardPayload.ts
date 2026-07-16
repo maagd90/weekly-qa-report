@@ -38,6 +38,45 @@ function authoritativeMetricExecutions(rows: ExecutionRow[]): ExecutionRow[] {
   return rows.filter((row) => !row.summaryMarker && (row.summaryOnly || !summaryProjects.has(canonicalProjectKey(row.project))));
 }
 
+/**
+ * Selects the most complete safe source for per-tester attribution.
+ *
+ * QMetry's execution summary is authoritative for totals, but some on-prem
+ * responses collapse otherwise attributable executions under one assignee.
+ * Cycle detail rows retain the wider set of Quality Assurance names. We only
+ * use those detail rows when every executed result bucket reconciles exactly
+ * with the summary for the same project. N/A is deliberately included in the
+ * comparison because it is an executed result and must never be treated as a
+ * balancing or unassigned bucket.
+ */
+function testerMetricExecutions(rows: ExecutionRow[], authoritativeRows: ExecutionRow[]): ExecutionRow[] {
+  const projectKeys = new Set(authoritativeRows.map((row) => canonicalProjectKey(row.project)));
+  const selected: ExecutionRow[] = [];
+
+  for (const projectKey of projectKeys) {
+    const projectRows = rows.filter((row) => canonicalProjectKey(row.project) === projectKey);
+    const projectAuthoritative = authoritativeRows.filter((row) => canonicalProjectKey(row.project) === projectKey);
+    const hasSummary = projectRows.some((row) => row.summaryOnly);
+    if (!hasSummary) {
+      selected.push(...projectAuthoritative);
+      continue;
+    }
+
+    const detailRows = projectRows.filter((row) => !row.summaryOnly && !row.summaryMarker);
+    const summaryTotals = cycleAgg(projectAuthoritative);
+    const detailTotals = cycleAgg(detailRows);
+    const executedResultsMatch = detailRows.length > 0
+      && summaryTotals.pass === detailTotals.pass
+      && summaryTotals.fail === detailTotals.fail
+      && summaryTotals.blocked === detailTotals.blocked
+      && summaryTotals.na === detailTotals.na;
+
+    selected.push(...(executedResultsMatch ? detailRows : projectAuthoritative));
+  }
+
+  return selected;
+}
+
 function monthBucket(row: ExecutionRow): { key: string; label?: string } | null {
   const date = row.executedAt || row.updatedAt;
   if (date) return { key: date.slice(0, 7) };
@@ -62,6 +101,7 @@ export function buildDashboardPayload(
   const filtered = applyFilters(dataset, filterParams);
   const { executions, issues, uat } = filtered;
   const metricExecutions = authoritativeMetricExecutions(executions);
+  const testerExecutions = testerMetricExecutions(executions, metricExecutions);
   const cycleExecutions = executions.filter((row) => !row.summaryOnly);
   const execTotals = cycleAgg(metricExecutions);
 
@@ -100,9 +140,9 @@ export function buildDashboardPayload(
     return { ym, label, pass: bucket.pass, blocked: bucket.blocked, fail: bucket.fail };
   }).filter((m) => m.pass + m.blocked + m.fail > 0);
 
-  const testerNames = [...new Set(metricExecutions.map((r) => r.tester).filter(Boolean))] as string[];
+  const testerNames = [...new Set(testerExecutions.map((r) => r.tester).filter(Boolean))] as string[];
   const testers = testerNames.map((name) => {
-    const testerRows = metricExecutions.filter((r) => r.tester === name);
+    const testerRows = testerExecutions.filter((r) => r.tester === name);
     const pass = testerRows.filter((r) => r.result === 'PASS').length;
     const fail = testerRows.filter((r) => r.result === 'FAIL').length;
     const blocked = testerRows.filter((r) => r.result === 'BLOCKED').length;
