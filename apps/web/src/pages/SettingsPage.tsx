@@ -20,6 +20,7 @@ import {
 } from '../lib/api';
 import { QaPageShell, QaSection } from '../components/layout/QaPageShell';
 import { QA } from '../theme/qaTheme';
+import { userFacingWarnings } from '../lib/userFacingWarnings';
 
 const fieldClass = 'w-full border border-qa-line bg-white px-2.5 py-1.5 text-[12.5px] font-mono-qa';
 const labelClass = 'block text-[10.5px] font-mono-qa uppercase tracking-wide text-qa-muted-light mb-1';
@@ -185,6 +186,7 @@ export function SettingsPage() {
   const llmTest = useMutation({ mutationFn: () => batchApi.testLlm(currentLlmSelection()), onSuccess: (data) => setLlmTestMsg(data.ok ? (data.provider === 'template' ? `Ready - ${data.providerLabel || LLM_PROVIDER_LABELS[llmProvider]} / ${data.model}; no network required` : `Connected - ${data.providerLabel || LLM_PROVIDER_LABELS[llmProvider]} / ${data.model}`) : data.error || 'Narrative provider validation failed'), onError: (err: Error) => setLlmTestMsg(err.message) });
   const testResult = testMutation.data as TestResult | undefined;
   const syncResult = syncLiveMutation.data as SyncInputResult | undefined;
+  const syncWarnings = userFacingWarnings(syncResult?.warnings);
 
   function changeLlmProvider(provider: LlmProvider) {
     setLlmProvider(provider);
@@ -254,7 +256,7 @@ export function SettingsPage() {
           <p className="text-[11.5px] text-qa-muted-light mt-0">Sync scope: all projects · any → any</p>
           <p className="text-[11.5px] text-qa-muted-light mt-0">Settings Sync is global. Use the dashboard Search button for project/date-specific live searching.</p>
           <div className="flex flex-wrap gap-2"><button type="button" onClick={() => { saveAll(); syncLiveMutation.mutate(); }} disabled={syncLiveMutation.isPending} className="font-mono-qa text-xs font-semibold tracking-wider uppercase px-4 py-2.5 border-none cursor-pointer text-white disabled:opacity-50" style={{ background: QA.accent }}>{syncLiveMutation.isPending ? 'Syncing...' : 'Sync JIRA & QMetry now'}</button><button type="button" onClick={() => { saveAll(); testMutation.mutate(); }} disabled={testMutation.isPending} className="font-mono-qa text-xs font-semibold tracking-wider uppercase px-4 py-2.5 border border-qa-border bg-white cursor-pointer disabled:opacity-50">{testMutation.isPending ? 'Testing...' : 'Save & Test all connections'}</button></div>
-          {syncCounts && <div className="mt-3 p-3 text-[13px] border border-[#cfe0d4] bg-[#eef4ef] text-[#2f6a48]">Synced executions {syncCounts.executions} · issues {syncCounts.issues} · uat {syncCounts.uat}{syncResult?.warnings?.length ? ` · warnings: ${syncResult.warnings.join('; ')}` : ''}</div>}
+          {syncCounts && <div className="mt-3 p-3 text-[13px] border border-[#cfe0d4] bg-[#eef4ef] text-[#2f6a48]">Synced executions {syncCounts.executions} · issues {syncCounts.issues} · uat {syncCounts.uat}{syncWarnings.length ? ` · warnings: ${syncWarnings.join('; ')}` : ''}</div>}
           {syncLiveMutation.isError && <div className="mt-3 p-3 text-[13px] border border-[#ecccc2] bg-[#f8ece8] text-[#a13d2c]">{(syncLiveMutation.error as Error).message}</div>}
           {testResult && <div className={`mt-3 p-3 text-[13px] border ${testResult.ok ? 'border-[#cfe0d4] bg-[#eef4ef] text-[#2f6a48]' : 'border-[#ecccc2] bg-[#f8ece8] text-[#a13d2c]'}`}>{testResult.ok ? `Fetched ${testResult.executions} executions, ${testResult.issues} issues, ${testResult.uat} rows` : testResult.error}</div>}
           {savedMsg && <div className="mt-3 p-3 text-[13px] border border-[#cfe0d4] bg-[#eef4ef] text-[#2f6a48]">{savedMsg}</div>}

@@ -2,7 +2,7 @@ import assert from 'assert';
 import path from 'path';
 import { parseExecutionExport } from '../parseExecutionExport';
 import { parseJira } from '../parseJira';
-import { parseOdl } from '../parseOdl';
+import { parseOdl, parseOdlFromRows } from '../parseOdl';
 import { parseAllFiles } from '../dispatcher';
 import { buildDashboardPayload } from '../../export/buildDashboardPayload';
 import { mergeDatasets } from '../../merge/mergeDataset';
@@ -55,6 +55,22 @@ function countResults(executions: { result: string }[]) {
   assert.strictEqual(closed, 43);
   assert.strictEqual(open, 31);
   console.log('✓ ODL parser');
+}
+
+// Production-style rows may omit Submittedon while retaining LastUpdate.
+// They must use that valid activity date instead of being skipped.
+{
+  const warnings: string[] = [];
+  const { uat } = parseOdlFromRows([
+    ['TicketID', 'Subject', 'ProductArea', 'odlPriorityDescription', 'Status', 'Submittedon', 'LastUpdate'],
+    ['148286', 'INC00148286 production issue', 'Bookings', 'High', 'Open', '', '2026-07-10'],
+    ['148291', 'INC00148291 missing every date', 'Bookings', 'High', 'Open', '', ''],
+  ], 'production.xlsx', warnings);
+  assert.strictEqual(uat.length, 1);
+  assert.strictEqual(uat[0].submittedAt, '2026-07-10');
+  assert.strictEqual(uat[0].updatedAt, '2026-07-10');
+  assert.deepStrictEqual(warnings, ['[technical] production.xlsx: 1 Vendor Portal row skipped because both Submittedon and LastUpdate were empty.']);
+  console.log('✓ ODL LastUpdate date fallback');
 }
 
 // Full merge + dashboard payload

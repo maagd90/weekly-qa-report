@@ -90,6 +90,27 @@ hasAll('src/pages/UatPage.tsx', [
   'pageRows.map',
 ]);
 
+hasAll('src/components/qa/ReportPrintContent.tsx', [
+  "import { VendorPortalPhaseChart } from './VendorPortalPhaseChart'",
+  'Vendor Portal Bugs by Phase / Environment',
+  '<VendorPortalPhaseChart items={vendorPortalPhases} />',
+  'qa-business-vendor-phase-chart',
+]);
+
+hasAll('src/lib/printReadiness.ts', [
+  '[data-testid="vendor-portal-phase-chart"]',
+]);
+
+hasAll('src/pages/AiReportPage.tsx', [
+  'userFacingWarnings(reportData.dashboard.meta.warnings)',
+  'userFacingWarnings(result.warnings)',
+]);
+
+hasAll('src/pages/SettingsPage.tsx', [
+  'userFacingWarnings(syncResult?.warnings)',
+  'syncWarnings.join',
+]);
+
 hasAll('src/pages/ImportStatusPage.tsx', [
   'Promise.all(selectedFiles.map',
   'multiple className="hidden"',

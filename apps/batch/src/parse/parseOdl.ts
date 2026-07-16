@@ -27,6 +27,7 @@ export function parseOdlFromRows(
 
   const headers = (rows[headerIdx] as unknown[]).map((h) => sanitizeText(h));
   const uat: UatRow[] = [];
+  let rowsWithoutAnyDate = 0;
 
   for (let i = headerIdx + 1; i < rows.length; i++) {
     const row = rows[i] as unknown[];
@@ -35,9 +36,14 @@ export function parseOdlFromRows(
     const id = sanitizeText(obj['TicketID']);
     if (!id) continue;
 
-    const submittedAt = excelSerialToIso(obj['Submittedon']);
+    const submittedDate = excelSerialToIso(obj['Submittedon']);
+    const updatedDate = excelSerialToIso(obj['LastUpdate']);
+    // Production exports sometimes omit Submittedon while still supplying a
+    // valid LastUpdate. Use that real activity date instead of dropping the
+    // row and flooding the UI with one warning per ticket.
+    const submittedAt = submittedDate || updatedDate;
     if (!submittedAt) {
-      warnings.push(`${id}: missing submitted date, skipped`);
+      rowsWithoutAnyDate += 1;
       continue;
     }
     const { status, open } = mapOdlStatus(sanitizeText(obj['Status']));
@@ -53,13 +59,17 @@ export function parseOdlFromRows(
       clientPriority: sanitizeText(obj['Client_Priority']),
       submitter: sanitizeText(obj['Submittedby']),
       submittedAt,
-      updatedAt: excelSerialToIso(obj['LastUpdate']) || submittedAt,
+      updatedAt: updatedDate || submittedAt,
       status,
       open,
       project,
       source: 'odl-file',
       sourceFile: fileName,
     });
+  }
+
+  if (rowsWithoutAnyDate > 0) {
+    warnings.push(`[technical] ${fileName}: ${rowsWithoutAnyDate} Vendor Portal row${rowsWithoutAnyDate === 1 ? '' : 's'} skipped because both Submittedon and LastUpdate were empty.`);
   }
 
   return {

@@ -11,6 +11,7 @@ import { QA } from '../theme/qaTheme';
 import { AiReportCharts } from '../components/qa/AiReportCharts';
 import { projectDisplayName } from '../lib/projectDisplay';
 import { defaultReportingPeriod } from '../lib/reportingPeriod';
+import { userFacingWarnings } from '../lib/userFacingWarnings';
 
 const REPORT_TYPES: { value: ReportType; label: string; desc: string }[] = [
   { value: 'full', label: 'Full', desc: 'all sections' },
@@ -128,7 +129,8 @@ export function AiReportPage({ dashboard, kpiStyle, project }: AiReportPageProps
     const meta = reportData.meta as ReportMeta | undefined;
     if (reportData.dashboard) {
       setReportDashboard(reportData.dashboard);
-      setWarning(reportData.dashboard.meta.warnings?.length ? reportData.dashboard.meta.warnings.join('; ') : null);
+      const visibleWarnings = userFacingWarnings(reportData.dashboard.meta.warnings);
+      setWarning(visibleWarnings.length ? visibleWarnings.join('; ') : null);
     }
     setReportMeta(meta || null);
     setReportMarkdown(reportData.markdown || '');
@@ -163,7 +165,8 @@ export function AiReportPage({ dashboard, kpiStyle, project }: AiReportPageProps
         return;
       }
       setError(null);
-      setWarning(result.warnings?.length ? result.warnings.join('; ') : null);
+      const visibleWarnings = userFacingWarnings(result.warnings);
+      setWarning(visibleWarnings.length ? visibleWarnings.join('; ') : null);
       if (result.payload && nextMeta) {
         queryClient.setQueryData<GeneratedReportData>(['report'], {
           dashboard: result.payload,

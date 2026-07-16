@@ -6,6 +6,7 @@ import type { KpiStyle } from '../../theme/qaTheme';
 import { projectDisplayName } from '../../lib/projectDisplay';
 import { ResultDonut } from './ResultDonut';
 import { StackedMonthChart } from './StackedMonthChart';
+import { VendorPortalPhaseChart } from './VendorPortalPhaseChart';
 
 interface ReportPrintContentProps {
   dashboard: DashboardPayload;
@@ -123,6 +124,8 @@ export function ReportPrintContent({ dashboard, reportType, narrative, startDate
   const showCycles = fullReport || cycleReport;
   const showStatus = fullReport || executiveReport;
   const showPlan = fullReport || executiveReport;
+  const vendorPortalPhases = dashboard.uat?.byReportedPhase || [];
+  const showVendorPortalPhaseChart = showDefects && vendorPortalPhases.some((item) => item.count > 0);
 
   let sectionNo = 1;
   const nextNo = () => sectionNo++;
@@ -189,6 +192,13 @@ export function ReportPrintContent({ dashboard, reportType, narrative, startDate
         {showDefects && <Section no={nextNo()} title="Vendor Portal Bug Verification Summary">
           <StatTable dashboard={dashboard} />
           <p><em>Most defects verified in this sprint directly impact delivery readiness, execution stability, user validation, or production sign-off confidence.</em></p>
+        </Section>}
+
+        {showVendorPortalPhaseChart && <Section no={nextNo()} title="Vendor Portal Bugs by Phase / Environment">
+          <p>Vendor Portal rows are separated by the Subject prefix used in the uploaded daily ODL and production files.</p>
+          <div className="qa-business-chart qa-business-vendor-phase-chart">
+            <VendorPortalPhaseChart items={vendorPortalPhases} />
+          </div>
         </Section>}
 
         {showExecution && <Section no={nextNo()} title="Test Execution Summary">
