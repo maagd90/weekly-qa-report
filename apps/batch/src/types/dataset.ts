@@ -167,7 +167,7 @@ export interface DashboardOverview {
   byMonth: DashboardMonthItem[];
   chartSeries: { resultMix: { name: string; value: number; color: string }[] };
 }
-export type VendorPortalPhaseCategory = 'phase1-uat' | 'phase2-uat' | 'production' | 'unclassified';
+export type VendorPortalPhaseCategory = 'phase1-uat' | 'phase2-uat' | 'other-uat' | 'production' | 'unclassified';
 export interface DashboardVendorPortalPhaseItem {
   category: VendorPortalPhaseCategory;
   label: string;

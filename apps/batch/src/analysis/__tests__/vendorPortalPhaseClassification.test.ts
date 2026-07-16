@@ -12,9 +12,9 @@ function main(): void {
   assert.strictEqual(classifyVendorPortalPhase('INC0012345 production outage'), 'production');
   assert.strictEqual(classifyVendorPortalPhase('inc-812 production outage'), 'production');
 
-  assert.strictEqual(classifyVendorPortalPhase('Incident review notes'), 'unclassified');
-  assert.strictEqual(classifyVendorPortalPhase('Incorrect value displayed'), 'unclassified');
-  assert.strictEqual(classifyVendorPortalPhase('Uatility typo'), 'unclassified');
+  assert.strictEqual(classifyVendorPortalPhase('Incident review notes'), 'other-uat');
+  assert.strictEqual(classifyVendorPortalPhase('Incorrect value displayed'), 'other-uat');
+  assert.strictEqual(classifyVendorPortalPhase('Uatility typo'), 'other-uat');
   assert.strictEqual(classifyVendorPortalPhase(''), 'unclassified');
   assert.strictEqual(classifyVendorPortalPhase(undefined), 'unclassified');
 
@@ -29,20 +29,21 @@ function main(): void {
 
   assert.deepStrictEqual(
     breakdown.map((item) => item.category),
-    ['phase1-uat', 'phase2-uat', 'production', 'unclassified'],
+    ['phase1-uat', 'phase2-uat', 'other-uat', 'production', 'unclassified'],
   );
   assert.deepStrictEqual(
     breakdown.map(({ count, open, closed }) => ({ count, open, closed })),
     [
       { count: 2, open: 1, closed: 1 },
       { count: 1, open: 1, closed: 0 },
-      { count: 2, open: 1, closed: 1 },
       { count: 1, open: 1, closed: 0 },
+      { count: 2, open: 1, closed: 1 },
+      { count: 0, open: 0, closed: 0 },
     ],
   );
 
   const empty = vendorPortalPhaseBreakdown([]);
-  assert.strictEqual(empty.length, 4);
+  assert.strictEqual(empty.length, 5);
   assert.ok(empty.every((item) => item.count === 0));
 
   console.log('vendor portal phase classification tests passed');

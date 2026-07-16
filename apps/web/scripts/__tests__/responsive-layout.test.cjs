@@ -74,6 +74,7 @@ hasAll('src/components/qa/VendorPortalPhaseChart.tsx', [
   'sm:grid-cols-[minmax(130px,0.9fr)_minmax(160px,2.1fr)_auto]',
   'min-w-0',
   'unclassified',
+  'other-uat',
   'onViewUnclassified',
   'View {fmt(unclassified.count)} unclassified',
 ]);
@@ -81,6 +82,7 @@ hasAll('src/components/qa/VendorPortalPhaseChart.tsx', [
 hasAll('src/pages/UatPage.tsx', [
   "uat.byReportedPhase || []",
   "row.reportedPhase || 'unclassified'",
+  "category === 'other-uat'",
   'flex max-w-full flex-wrap',
   'VendorPortalPhaseChart',
   "type BugView = 'uat' | 'production' | 'unclassified'",

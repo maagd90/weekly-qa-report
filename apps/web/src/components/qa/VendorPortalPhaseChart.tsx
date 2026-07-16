@@ -6,6 +6,7 @@ import { HorizBar } from './SegBar';
 const PHASE_COLORS: Record<DashboardVendorPortalPhaseItem['category'], string> = {
   'phase1-uat': '#6E89A6',
   'phase2-uat': '#2F6F7A',
+  'other-uat': '#8A7F68',
   production: QA.FAIL,
   unclassified: QA.muted,
 };
@@ -46,14 +47,14 @@ export function VendorPortalPhaseChart({ items, onViewUnclassified }: VendorPort
       ))}
 
       {unclassified && unclassified.count > 0 && (
-        <div className="border-l-2 border-[#B5822F] bg-[#fbf6e9] px-3 py-2 text-[11.5px] text-qa-muted">
+        <div className="border-l-2 border-qa-border bg-[#faf8f2] px-3 py-2 text-[11.5px] text-qa-muted">
           <strong className="text-qa-ink">{fmt(unclassified.count)} unclassified</strong>
-          {' '}— these subjects do not start with UAT, Phase 2B UAT, or INC. They remain visible for naming cleanup and are not added to another phase.
+          {' '}— these rows have no Subject value. Non-empty subjects without a named prefix are included under Other UAT.
           {onViewUnclassified && (
             <button
               type="button"
               onClick={onViewUnclassified}
-              className="mt-2 block border border-[#B5822F] bg-white px-2.5 py-1 font-mono-qa text-[9.5px] font-semibold text-qa-ink hover:bg-[#fffaf0]"
+              className="mt-2 block border border-qa-border bg-white px-2.5 py-1 font-mono-qa text-[9.5px] font-semibold text-qa-ink hover:bg-[#f6f4ee]"
             >
               View {fmt(unclassified.count)} unclassified bug{unclassified.count === 1 ? '' : 's'}
             </button>

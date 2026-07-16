@@ -25,6 +25,7 @@ type BugView = 'uat' | 'production' | 'unclassified';
 const PHASE_FILTER_LABELS: Record<VendorPortalPhaseCategory, string> = {
   'phase1-uat': 'Phase 1 UAT',
   'phase2-uat': 'Phase 2 UAT',
+  'other-uat': 'Other UAT',
   production: 'Production',
   unclassified: 'Unclassified',
 };
@@ -63,7 +64,7 @@ export function UatPage({ dashboard, kpiStyle }: UatPageProps) {
     if (bugView === 'uat') {
       return rows.filter((row) => {
         const category = row.reportedPhase || 'unclassified';
-        return category === 'phase1-uat' || category === 'phase2-uat';
+        return category === 'phase1-uat' || category === 'phase2-uat' || category === 'other-uat';
       });
     }
     return rows.filter((row) => (row.reportedPhase || 'unclassified') === bugView);
@@ -96,7 +97,7 @@ export function UatPage({ dashboard, kpiStyle }: UatPageProps) {
     ? phaseItems.find((item) => item.category === category)?.count || 0
     : uat.rows.filter((row) => (row.reportedPhase || 'unclassified') === category).length;
   const viewCounts: Record<BugView, number> = {
-    uat: categoryCount('phase1-uat') + categoryCount('phase2-uat'),
+    uat: categoryCount('phase1-uat') + categoryCount('phase2-uat') + categoryCount('other-uat'),
     production: categoryCount('production'),
     unclassified: categoryCount('unclassified'),
   };
@@ -113,7 +114,7 @@ export function UatPage({ dashboard, kpiStyle }: UatPageProps) {
     <QaPageShell
       title="Vendor Portal Bugs"
       subtitle={`${fmt(uat.total)} bugs · ${uat.open} open`}
-      intro="DLM Vendor Portal bug logs — daily ODL and production exports are merged, then separated by the Subject prefix. This tab is shown only when the dashboard project filter is DLM."
+      intro="DLM Vendor Portal bug logs — INC subjects are separated as Production; all remaining non-empty subjects stay in the UAT view, with named UAT phases shown where available. This tab is shown only when the dashboard project filter is DLM."
     >
       <QaKpiGrid cols={4}>
         <QaKpiCard kpiStyle={kpiStyle} label="Total Vendor Portal Bugs" value={fmt(uat.total)}
@@ -129,7 +130,7 @@ export function UatPage({ dashboard, kpiStyle }: UatPageProps) {
       {phaseItems.some((item) => item.count > 0) && (
         <QaSection
           title="Reported Phase / Environment"
-          subtitle="Automatically derived from the start of each Subject: UAT → Phase 1, Phase 2B UAT → Phase 2, INC → Production."
+          subtitle="Automatically derived from Subject: UAT → Phase 1, Phase 2B UAT → Phase 2, INC → Production, all other non-empty subjects → Other UAT."
           className="mb-[22px]"
           headerRight={sourceFiles.length > 0 ? (
             <div className="max-w-full text-right font-mono-qa text-[10px] text-qa-muted-light">

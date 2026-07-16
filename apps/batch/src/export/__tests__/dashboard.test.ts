@@ -95,8 +95,9 @@ function vendorPortalFilesDataset(): Dataset {
     [
       { category: 'phase1-uat', count: 1 },
       { category: 'phase2-uat', count: 1 },
+      { category: 'other-uat', count: 1 },
       { category: 'production', count: 1 },
-      { category: 'unclassified', count: 1 },
+      { category: 'unclassified', count: 0 },
     ],
   );
   assert.deepStrictEqual(p.uat?.sourceFiles, [
