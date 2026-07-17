@@ -129,7 +129,7 @@ function QmetryConnectionCard({ conn, onChange, onRemove }: { conn: QmetryConnec
 export function SettingsPage() {
   const queryClient = useQueryClient();
   const initialLlm = getUserLlmSelection();
-  const initialProvider = (initialLlm.provider || 'anthropic') as LlmProvider;
+  const initialProvider = (initialLlm.provider || 'template') as LlmProvider;
   const initialBranding = getReportBranding();
   const [llmProvider, setLlmProvider] = useState<LlmProvider>(initialProvider);
   const [llmModel, setLlmModel] = useState(initialLlm.model || LLM_MODELS[initialProvider][0]);

@@ -74,6 +74,11 @@ hasAll('src/components/qa/QaBadge.tsx', [
 hasAll('src/pages/SettingsPage.tsx', [
   'grid grid-cols-1 gap-2.5 mb-2.5 sm:grid-cols-2',
   'flex flex-wrap items-center gap-2',
+  "initialLlm.provider || 'template'",
+]);
+
+hasAll('src/lib/api.ts', [
+  "? value : 'template'",
 ]);
 
 hasAll('src/pages/AiReportPage.tsx', [
