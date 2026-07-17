@@ -75,7 +75,15 @@ hasAll('src/pages/SettingsPage.tsx', [
   'grid grid-cols-1 gap-2.5 mb-2.5 sm:grid-cols-2',
   'flex flex-wrap items-center gap-2',
   "initialLlm.provider || 'template'",
+  'function saveNarrativeProvider()',
+  'function saveBranding()',
+  'function saveConnections()',
+  'onClick={saveNarrativeProvider}',
+  'onClick={saveBranding}',
+  'saveConnections(); syncLiveMutation.mutate();',
+  'saveConnections(); testMutation.mutate();',
 ]);
+hasNone('src/pages/SettingsPage.tsx', ['saveAll']);
 
 hasAll('src/lib/api.ts', [
   "? value : 'template'",
