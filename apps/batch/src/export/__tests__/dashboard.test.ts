@@ -339,6 +339,32 @@ function vendorPortalFilesDataset(): Dataset {
   console.log('✓ traceability updatedAt filter');
 }
 
+// Browser-side Quality Assurance search metadata and Not Executed diagnostics
+// must come from the already-filtered QMetry detail rows. They are read-only
+// additions and must not alter authoritative dashboard totals.
+{
+  const diagnosticDataset = emptyDataset();
+  diagnosticDataset.executions = [
+    { project: 'DLM', cycleKey: 'DLM-CY-SEARCH', cycleName: 'Searchable Checkout Cycle', caseKey: 'DLM-TC-EXECUTED', result: 'PASS', tester: 'QA Search Person', executedAt: '2026-07-10', updatedAt: '2026-07-10', source: 'qmetry' },
+    { project: 'DLM', cycleKey: 'DLM-CY-SEARCH', cycleName: 'Searchable Checkout Cycle', caseKey: 'DLM-TC-PENDING', result: 'NE', tester: null, executedAt: null, updatedAt: '2026-07-10', source: 'qmetry' },
+  ];
+  diagnosticDataset.projects = ['DLM'];
+
+  const payload = buildDashboardPayload(diagnosticDataset, { project: 'DLM', startDate: '2026-07-01', endDate: '2026-07-31' });
+  assert.strictEqual(payload.overview.totalCases, 2);
+  assert.strictEqual(payload.overview.executed, 1, 'diagnostic fields must not make Not Executed count as executed');
+  assert.match(payload.qualityAssuranceSearch?.[0]?.searchText || '', /Searchable Checkout Cycle/);
+  assert.match(payload.qualityAssuranceSearch?.[0]?.searchText || '', /DLM-TC-EXECUTED/);
+  assert.deepStrictEqual(payload.notExecutedCases, [{
+    project: 'DLM',
+    cycleKey: 'DLM-CY-SEARCH',
+    cycleName: 'Searchable Checkout Cycle',
+    caseKey: 'DLM-TC-PENDING',
+    updatedAt: '2026-07-10',
+  }]);
+  console.log('✓ runtime QA search metadata and Not Executed diagnostics');
+}
+
 // Empty filtered result must preserve all project options
 {
   const p = buildDashboardPayload(focusedDataset(), { startDate: '2030-01-01', endDate: '2030-01-31' });

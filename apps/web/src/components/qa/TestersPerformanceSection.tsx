@@ -5,6 +5,7 @@ import { QA, fmt, initials, passRateColor } from '../../theme/qaTheme';
 import { QaSection } from '../layout/QaPageShell';
 import { QaKpiCard, QaKpiGrid } from './QaKpiCard';
 import { SegBar, testerSegSegments } from './SegBar';
+import { QaTable, QaThead } from './QaBadge';
 
 const LEGEND = [
   { label: 'Pass', color: QA.PASS },
@@ -17,6 +18,8 @@ interface TestersPerformanceSectionProps {
   dashboard: DashboardPayload;
   kpiStyle: KpiStyle;
   embedded?: boolean;
+  visibleTesters?: DashboardPayload['testers'];
+  searchActive?: boolean;
 }
 
 function TesterLegend() {
@@ -32,7 +35,56 @@ function TesterLegend() {
   );
 }
 
-function TesterList({ testers, neCount, unattributedCount }: { testers: DashboardPayload['testers']; neCount: number; unattributedCount: number }) {
+function NotExecutedDetails({ dashboard, neCount }: { dashboard: DashboardPayload; neCount: number }) {
+  const cases = dashboard.notExecutedCases || [];
+  if (neCount === 0) return null;
+  const detailsReconcile = cases.length === neCount;
+
+  return (
+    <div className="pt-3.5 text-xs text-qa-muted-light">
+      <div className="flex items-start gap-2.5">
+        <span className="w-2.5 h-2.5 bg-[#B3AEA3] shrink-0 mt-0.5" />
+        <span>
+          {fmt(neCount)} case{neCount === 1 ? ' is' : 's are'} marked <strong>Not Executed</strong> in QMetry. A Not Executed case has no completed execution result, so it is included in total test-case scope but excluded from Total Executions, pass rate, and Quality Assurance rankings. Set the correct execution result in QMetry when the case has been run.
+        </span>
+      </div>
+      {cases.length > 0 && (
+        <details className="mt-3 border border-qa-border bg-[#faf8f2]">
+          <summary className="cursor-pointer px-3 py-2 font-mono-qa text-[10.5px] font-semibold uppercase tracking-wide text-qa-ink">
+            {detailsReconcile ? 'Show' : 'Review'} {cases.length} Not Executed test case{cases.length === 1 ? '' : 's'} from cycle details
+          </summary>
+          {!detailsReconcile && (
+            <p className="mx-3 mb-2 mt-0 text-[11px] text-[#8a5a00]">
+              QMetry's aggregate summary reports {neCount}, while the available cycle-detail response contains {cases.length}. The rows below are diagnostic candidates and are not presented as a one-to-one reconciliation of the aggregate count.
+            </p>
+          )}
+          <div className="max-h-[360px] overflow-auto border-t border-qa-border bg-white">
+            <QaTable>
+              <QaThead cols={[{ label: 'Test case', className: 'pl-3' }, { label: 'Test cycle' }, { label: 'Cycle key' }, { label: 'Last updated', className: 'pr-3' }]} />
+              <tbody>
+                {cases.map((item) => (
+                  <tr key={`${item.cycleKey}:${item.caseKey}`} className="border-t border-[#f0ede5]">
+                    <td className="py-2 pl-3 font-mono-qa text-[11px]" style={{ color: QA.accent }}>{item.caseKey}</td>
+                    <td className="max-w-[360px] px-3 py-2"><div className="whitespace-normal break-words">{item.cycleName}</div></td>
+                    <td className="px-3 py-2 font-mono-qa text-[10.5px] text-qa-muted whitespace-nowrap">{item.cycleKey}</td>
+                    <td className="py-2 pr-3 font-mono-qa text-[10.5px] text-qa-muted whitespace-nowrap">{item.updatedAt ? item.updatedAt.slice(0, 10) : '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </QaTable>
+          </div>
+        </details>
+      )}
+      {cases.length === 0 && (
+        <p className="ml-5 mt-2 mb-0 text-[11px] text-[#8a5a00]">
+          The current QMetry response supplied only an aggregate Not Executed count, so individual case keys are not available in this scope.
+        </p>
+      )}
+    </div>
+  );
+}
+
+function TesterList({ dashboard, testers, neCount, unattributedCount, showNotExecutedDetails }: { dashboard: DashboardPayload; testers: DashboardPayload['testers']; neCount: number; unattributedCount: number; showNotExecutedDetails: boolean }) {
   return (
     <div className="px-[22px] pb-[18px] pt-2">
       {testers.map((t) => (
@@ -63,12 +115,7 @@ function TesterList({ testers, neCount, unattributedCount }: { testers: Dashboar
           <span>{fmt(unattributedCount)} executed cases were returned without an <strong>Executed By</strong> value. They are included in total execution metrics but excluded from Quality Assurance rankings.</span>
         </div>
       )}
-      {neCount > 0 && (
-        <div className="flex items-center gap-2.5 pt-3.5 text-xs text-qa-muted-light">
-          <span className="w-2.5 h-2.5 bg-[#B3AEA3] shrink-0" />
-          <span>{fmt(neCount)} cases Not Executed are excluded from Quality Assurance totals above.</span>
-        </div>
-      )}
+      {showNotExecutedDetails && <NotExecutedDetails dashboard={dashboard} neCount={neCount} />}
       {!testers.length && (
         <div className="py-6 text-center text-[13px] text-qa-muted-light">
           No named Quality Assurance executions match the current filters. Check the QMetry Executed By data and selected period.
@@ -78,8 +125,9 @@ function TesterList({ testers, neCount, unattributedCount }: { testers: Dashboar
   );
 }
 
-export function TestersPerformanceSection({ dashboard, kpiStyle, embedded = false }: TestersPerformanceSectionProps) {
+export function TestersPerformanceSection({ dashboard, kpiStyle, embedded = false, visibleTesters, searchActive = false }: TestersPerformanceSectionProps) {
   const { testers, overview } = dashboard;
+  const displayedTesters = visibleTesters ?? testers;
 
   const stats = useMemo(() => {
     const attributedExec = testers.reduce((a, b) => a + b.executed, 0);
@@ -93,7 +141,7 @@ export function TestersPerformanceSection({ dashboard, kpiStyle, embedded = fals
   }, [testers, overview.executed]);
 
   const neCount = overview.resultMix.find((r) => r.code === 'NE')?.count ?? 0;
-  const list = <TesterList testers={testers} neCount={neCount} unattributedCount={stats.unattributedExec} />;
+  const list = <TesterList dashboard={dashboard} testers={displayedTesters} neCount={neCount} unattributedCount={stats.unattributedExec} showNotExecutedDetails={!embedded} />;
 
   return (
     <div className="flex flex-col gap-6">
@@ -114,14 +162,14 @@ export function TestersPerformanceSection({ dashboard, kpiStyle, embedded = fals
         <div className="pdf-section border border-qa-border bg-white">
           <div className="flex items-center justify-between gap-4 px-5 py-4 border-b border-qa-border flex-wrap">
             <div className="font-mono-qa text-[10px] tracking-wider uppercase text-qa-muted-light">
-              Execution by Quality Assurance · {testers.length} named QA members
+              Execution by Quality Assurance · {displayedTesters.length}{searchActive ? ` of ${testers.length}` : ''} named QA members
             </div>
             <TesterLegend />
           </div>
           {list}
         </div>
       ) : (
-        <QaSection title="Execution by Quality Assurance" noPadding headerRight={<TesterLegend />}>
+        <QaSection title="Execution by Quality Assurance" subtitle={searchActive ? 'List filtered instantly; KPI cards remain scoped to the full selected period.' : undefined} noPadding headerRight={<TesterLegend />}>
           {list}
         </QaSection>
       )}

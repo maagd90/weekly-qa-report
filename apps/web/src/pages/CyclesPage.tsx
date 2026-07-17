@@ -19,6 +19,7 @@ interface CyclesPageProps {
   selectedCycle: string | null;
   onSelectCycle: (key: string | null) => void;
   filterParams: FilterParams;
+  searchQuery: string;
 }
 
 type CycleRow = DashboardPayload['cycles'][number] | CycleHealth;
@@ -56,7 +57,7 @@ function FolderPicker({ selectedFolder, onSelectFolder, connectionId, project }:
   );
 }
 
-export function CyclesPage({ dashboard, kpiStyle, selectedCycle, onSelectCycle, filterParams }: CyclesPageProps) {
+export function CyclesPage({ dashboard, kpiStyle, selectedCycle, onSelectCycle, filterParams, searchQuery }: CyclesPageProps) {
   const [selectedFolder, setSelectedFolder] = useState('');
   const [loadAfterFolderChange, setLoadAfterFolderChange] = useState(false);
   const qmetryConnectionId = useMemo(() => qmetryConnectionIdForProject(filterParams.project), [filterParams.project]);
@@ -64,7 +65,7 @@ export function CyclesPage({ dashboard, kpiStyle, selectedCycle, onSelectCycle, 
   const lastDashboardGeneration = useRef(dashboard.meta.generatedAt);
   const appliedStartDate = dashboard.scope.startDate;
   const appliedEndDate = dashboard.scope.endDate;
-  const appliedSearch = (dashboard.scope.search || '').trim().toLowerCase();
+  const runtimeSearch = searchQuery.trim().toLowerCase();
   const liveCyclesQuery = useQuery({
     queryKey: ['cycles-by-folder-table', selectedFolder, qmetryConnectionId || 'all', selectedProject || 'all', appliedStartDate || 'any', appliedEndDate || 'any'],
     queryFn: () => batchApi.getCyclesByFolder(selectedFolder, qmetryConnectionId, {
@@ -108,7 +109,7 @@ export function CyclesPage({ dashboard, kpiStyle, selectedCycle, onSelectCycle, 
   }
 
   const sourceCycles: CycleRow[] = liveCyclesQuery.data?.source === 'qmetry-live' ? liveCyclesQuery.data.cycles : dashboard.cycles;
-  const cycles = sourceCycles.filter((cycle) => !appliedSearch || `${cycle.key} ${cycle.name}`.toLowerCase().includes(appliedSearch));
+  const cycles = sourceCycles.filter((cycle) => !runtimeSearch || `${cycle.key} ${cycle.name}`.toLowerCase().includes(runtimeSearch));
   const overview = dashboard.overview;
   const notStarted = cycles.filter((c) => c.pass + c.fail + c.blocked + c.na === 0).length;
   const fullPass = cycles.filter((c) => { const exec = c.pass + c.fail + c.blocked + c.na; return exec > 0 && c.fail === 0 && c.blocked === 0; }).length;
@@ -129,7 +130,7 @@ export function CyclesPage({ dashboard, kpiStyle, selectedCycle, onSelectCycle, 
           <button type="button" onClick={() => liveCyclesQuery.refetch()} disabled={!selectedFolder || liveCyclesQuery.isFetching || Boolean(selectedProject && !qmetryConnectionId)} className="font-mono-qa text-[10px] px-3 py-1.5 border border-qa-border bg-white cursor-pointer disabled:opacity-50">
             {liveCyclesQuery.isFetching ? 'Searching...' : 'Search test cycles'}
           </button>
-          <span className="font-mono-qa text-[10px] text-qa-muted-light">Use Apply filters above to search cycle names or keys. Search test cycles refreshes the selected folder directly.</span>
+          <span className="font-mono-qa text-[10px] text-qa-muted-light">The search box filters loaded cycle names and keys instantly. Search test cycles refreshes the selected folder directly from QMetry.</span>
         </div>
         {selectedFolder && liveCyclesQuery.isLoading && <div className="mb-4 text-[12px] text-qa-muted-light">Loading cycles and execution results for selected folder...</div>}
         {selectedFolder && liveCyclesQuery.error && <div className="mb-4 text-[12px] text-[#a13d2c]">Could not load folder cycles: {(liveCyclesQuery.error as Error).message}</div>}

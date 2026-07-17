@@ -229,7 +229,7 @@ export function AiReportPage({ dashboard, kpiStyle, project }: AiReportPageProps
           <div className="w-full min-w-0 sm:w-auto"><label className="font-mono-qa text-[10px] uppercase tracking-wider text-qa-muted-light block mb-1">Report type</label><select value={reportType} onChange={(e) => setReportType(e.target.value as ReportType)} className="w-full min-w-0 max-w-full border border-qa-ink px-2 py-1 text-sm bg-white sm:w-auto">{REPORT_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label} — {t.desc}</option>)}</select></div>
           <div className="w-full min-w-0 sm:w-auto"><label className="font-mono-qa text-[10px] uppercase tracking-wider text-qa-muted-light block mb-1">Project</label><select value={reportProject} onChange={(e) => setReportProject(e.target.value)} className="w-full min-w-0 max-w-full border border-qa-ink px-2 py-1 text-sm bg-white sm:w-auto">{projectOptions.map((p) => <option key={p} value={p}>{p === 'all' ? 'All projects' : projectDisplayName(p)}</option>)}</select></div>
           <div className="flex gap-1">{datePresets.map((p) => <button type="button" key={p.label} onClick={() => setPreset(p.days)} className="px-2 py-1 text-xs border border-qa-border bg-white">{p.label}</button>)}</div>
-          <button type="button" onClick={() => generateMutation.mutate()} disabled={generating} className={clsx('w-full px-4 py-2 text-xs font-mono-qa uppercase tracking-wider text-white border-0 sm:w-auto', generating ? 'opacity-60 cursor-wait' : 'cursor-pointer')} style={{ background: QA.accent }}>{generating ? 'Generating...' : 'Generate AI report'}</button>
+          <button type="button" onClick={() => generateMutation.mutate()} disabled={generating} className={clsx('w-full px-4 py-2 text-xs font-mono-qa uppercase tracking-wider text-white border-0 sm:w-auto', generating ? 'opacity-60 cursor-wait' : 'cursor-pointer')} style={{ background: QA.accent }}>{generating ? 'Generating...' : 'Generate Report'}</button>
           <button type="button" onClick={downloadPdf} disabled={downloading || !chartData} className="w-full justify-center px-4 py-2 text-xs font-mono-qa uppercase tracking-wider border border-qa-ink bg-white disabled:opacity-50 inline-flex items-center gap-2 sm:w-auto"><Download size={14} />{downloading ? 'Exporting...' : 'Download PDF'}</button>
         </div>
         <div className="mt-2 text-[12px] text-qa-muted-light">Selected scope: {selectedProjectLabel} · {startDate || 'any'} → {endDate || 'any'}</div>
@@ -251,8 +251,8 @@ export function AiReportPage({ dashboard, kpiStyle, project }: AiReportPageProps
             </div>
           ) : (
             <div className="p-6 text-center text-qa-muted sm:p-12">
-              <div className="font-spectral text-2xl font-bold text-qa-ink mb-2">No AI report yet</div>
-              <p>Choose dates and click Generate AI report.</p>
+              <div className="font-spectral text-2xl font-bold text-qa-ink mb-2">No report yet</div>
+              <p>Choose dates and click Generate Report.</p>
             </div>
           )}
         </div>

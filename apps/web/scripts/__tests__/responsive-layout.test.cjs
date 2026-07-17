@@ -44,10 +44,12 @@ hasAll('src/components/layout/QaFilterBar.tsx', [
   'w-full min-w-0 max-w-full',
   'sm:w-auto',
   'onSubmit=',
-  'Apply filters',
+  'Apply dates',
+  'showSearch',
+  'datesChanged',
   'type="search"',
 ]);
-hasNone('src/components/layout/QaFilterBar.tsx', ['FOCUS_CHIPS', 'onResultChange', '>Result<']);
+hasNone('src/components/layout/QaFilterBar.tsx', ['FOCUS_CHIPS', 'onResultChange', '>Result<', 'onSearchApis']);
 
 hasAll('src/components/layout/QaMasthead.tsx', [
   'flex flex-col items-stretch',
@@ -78,6 +80,44 @@ hasAll('src/pages/AiReportPage.tsx', [
   'px-4 py-4',
   'w-full min-w-0 sm:w-auto',
   'p-4 bg-[#f5f3ed] sm:p-6 lg:p-8',
+  'Generate Report',
+  'No report yet',
+]);
+hasNone('src/pages/AiReportPage.tsx', ['Generate AI report', 'No AI report yet']);
+
+hasAll('src/App.tsx', [
+  'showRuntimeSearch',
+  'showSearch={showRuntimeSearch}',
+  'datesChanged={datesChanged}',
+  'searchQuery={filters.search}',
+]);
+
+hasAll('src/pages/TestersPage.tsx', [
+  'qualityAssuranceSearch',
+  'searchText.toLowerCase()',
+  'Search updates this page instantly',
+]);
+
+hasAll('src/components/qa/TestersPerformanceSection.tsx', [
+  'notExecutedCases',
+  'Not Executed test case{cases.length',
+  'excluded from Total Executions, pass rate, and Quality Assurance rankings',
+]);
+
+hasAll('src/pages/CyclesPage.tsx', [
+  'searchQuery.trim().toLowerCase()',
+  'filters loaded cycle names and keys instantly',
+]);
+
+hasAll('src/pages/TraceabilityPage.tsx', [
+  'searchQuery.trim().toLowerCase()',
+  'Search filters these rows instantly',
+]);
+
+hasAll('src/pages/UatPage.tsx', [
+  'searchQuery.trim().toLowerCase()',
+  'searchedRows',
+  'Search filters the bug rows instantly',
 ]);
 
 hasAll('src/components/qa/VendorPortalPhaseChart.tsx', [

@@ -27,7 +27,6 @@ const queryClient = new QueryClient({
 });
 
 const SEARCH_PLACEHOLDERS: Partial<Record<QaTab, string>> = {
-  overview: 'Search cycles, cases, Quality Assurance, or issues...',
   testers: 'Search Quality Assurance, cycle, or case key...',
   cycles: 'Search cycle name or key...',
   trace: 'Search key, summary, sprint, area, assignee, or status...',
@@ -70,7 +69,7 @@ function AppContent() {
     setFilteredByTab((prev) => ({ ...prev, [tab]: freshDashboard }));
   };
 
-  const searchDashboardData = useMutation({
+  const applyDateRange = useMutation({
     mutationFn: (vars: { params: Partial<FilterParams>; tab: QaTab }) => batchApi.searchDashboardByDates(vars.params).then((d) => ({ d, tab: vars.tab })),
     onSuccess: ({ d, tab }) => setFilteredView(d, tab),
   });
@@ -85,7 +84,11 @@ function AppContent() {
 
   const showFilters = !currentTab.hideFilters;
   const hasDashboard = !!display;
-  const canSearch = activeTab === 'overview' || activeTab === 'testers' || activeTab === 'cycles' || activeTab === 'trace' || activeTab === 'uat';
+  const showRuntimeSearch = activeTab === 'testers' || activeTab === 'cycles' || activeTab === 'trace' || activeTab === 'uat';
+  const datesChanged = Boolean(display && (
+    filters.startDate !== (display.scope.startDate || '')
+    || filters.endDate !== (display.scope.endDate || '')
+  ));
 
   const handleTabChange = (tab: QaTab) => {
     setActiveTab(tab);
@@ -121,16 +124,17 @@ function AppContent() {
           onKpiStyleChange={ui.setKpiStyle}
           dataMin={display?.meta.dataMin}
           dataMax={display?.meta.dataMax}
-          onSearchApis={canSearch ? () => searchDashboardData.mutate({ params: { ...filters.filterParams }, tab: activeTab }) : undefined}
-          searchApisLabel="Apply filters"
-          isSearchingApis={searchDashboardData.isPending}
+          showSearch={showRuntimeSearch}
+          onApplyDates={() => applyDateRange.mutate({ params: { ...filters.filterParams }, tab: activeTab })}
+          datesChanged={datesChanged}
+          isApplyingDates={applyDateRange.isPending}
         />
       )}
 
-      {searchDashboardData.isError && showFilters && (
+      {applyDateRange.isError && showFilters && (
         <div className="max-w-qa mx-auto w-full px-4 pt-3 sm:px-6 lg:px-8 print:hidden">
           <div className="p-3 border border-[#ecccc2] bg-[#f8ece8] text-[#a13d2c] text-sm">
-            {(searchDashboardData.error as Error).message}
+            {(applyDateRange.error as Error).message}
           </div>
         </div>
       )}
@@ -139,10 +143,10 @@ function AppContent() {
         {(isLoading || isProjectLoading) && showFilters && <div className="flex items-center justify-center h-64 font-mono-qa text-sm text-qa-muted-light">Loading dashboard…</div>}
         {!isLoading && !isProjectLoading && !hasDashboard && showFilters && <EmptyDashboard onGenerate={goGenerate} />}
         {display && activeTab === 'overview' && <OverviewPage dashboard={display} kpiStyle={ui.kpiStyle} />}
-        {display && activeTab === 'testers' && <TestersPage dashboard={display} kpiStyle={ui.kpiStyle} />}
-        {display && activeTab === 'cycles' && <CyclesPage dashboard={display} kpiStyle={ui.kpiStyle} selectedCycle={ui.selectedCycle} onSelectCycle={ui.setSelectedCycle} filterParams={filters.filterParams} />}
-        {display && activeTab === 'trace' && <TraceabilityPage dashboard={display} kpiStyle={ui.kpiStyle} />}
-        {display && activeTab === 'uat' && showUat && <UatPage dashboard={display} kpiStyle={ui.kpiStyle} />}
+        {display && activeTab === 'testers' && <TestersPage dashboard={display} kpiStyle={ui.kpiStyle} searchQuery={filters.search} />}
+        {display && activeTab === 'cycles' && <CyclesPage dashboard={display} kpiStyle={ui.kpiStyle} selectedCycle={ui.selectedCycle} onSelectCycle={ui.setSelectedCycle} filterParams={filters.filterParams} searchQuery={filters.search} />}
+        {display && activeTab === 'trace' && <TraceabilityPage dashboard={display} kpiStyle={ui.kpiStyle} searchQuery={filters.search} />}
+        {display && activeTab === 'uat' && showUat && <UatPage dashboard={display} kpiStyle={ui.kpiStyle} searchQuery={filters.search} />}
         {activeTab === 'import' && <ImportStatusPage />}
         {activeTab === 'ai' && <AiReportPage dashboard={display} kpiStyle={ui.kpiStyle} project={filters.project} />}
         {activeTab === 'settings' && <SettingsPage />}

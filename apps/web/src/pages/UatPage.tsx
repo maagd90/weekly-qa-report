@@ -13,6 +13,7 @@ import { VendorPortalPhaseChart } from '../components/qa/VendorPortalPhaseChart'
 interface UatPageProps {
   dashboard: DashboardPayload;
   kpiStyle: KpiStyle;
+  searchQuery: string;
 }
 
 function barWidth(count: number, max: number): number {
@@ -42,15 +43,19 @@ function displaySourceName(name: string): string {
   return name.replace(/^\d+_/, '');
 }
 
-export function UatPage({ dashboard, kpiStyle }: UatPageProps) {
+export function UatPage({ dashboard, kpiStyle, searchQuery }: UatPageProps) {
   const [bugView, setBugView] = useState<BugView>('uat');
   const [page, setPage] = useState(0);
   const detailRef = useRef<HTMLDivElement>(null);
   const uat = dashboard.uat;
+  const normalizedSearch = searchQuery.trim().toLowerCase();
   const phaseItems = uat?.byReportedPhase || [];
-  const categoryCount = (category: VendorPortalPhaseCategory): number => phaseItems.length > 0
-    ? phaseItems.find((item) => item.category === category)?.count || 0
-    : (uat?.rows || []).filter((row) => (row.reportedPhase || 'unclassified') === category).length;
+  const searchedRows = useMemo(() => (uat?.rows || []).filter((row) =>
+    !normalizedSearch
+    || `${row.id} ${row.subject} ${row.area} ${row.submitter} ${row.status} ${row.priority} ${row.cr} ${row.sourceFile || ''}`.toLowerCase().includes(normalizedSearch)),
+  [normalizedSearch, uat?.rows]);
+  const categoryCount = (category: VendorPortalPhaseCategory): number =>
+    searchedRows.filter((row) => (row.reportedPhase || 'unclassified') === category).length;
   const viewCounts: Record<BugView, number> = {
     uat: categoryCount('phase1-uat') + categoryCount('phase2-uat') + categoryCount('other-uat'),
     production: categoryCount('production'),
@@ -69,7 +74,7 @@ export function UatPage({ dashboard, kpiStyle }: UatPageProps) {
   [uat?.byPriority]);
 
   const visibleRows = useMemo(() => {
-    const rows = [...(uat?.rows || [])].sort((left, right) =>
+    const rows = [...searchedRows].sort((left, right) =>
       (right.submittedAt || right.updatedAt || '').localeCompare(left.submittedAt || left.updatedAt || '')
       || left.id.localeCompare(right.id));
 
@@ -80,7 +85,7 @@ export function UatPage({ dashboard, kpiStyle }: UatPageProps) {
       });
     }
     return rows.filter((row) => (row.reportedPhase || 'unclassified') === bugView);
-  }, [bugView, uat?.rows]);
+  }, [bugView, searchedRows]);
 
   const totalPages = Math.max(1, Math.ceil(visibleRows.length / PAGE_SIZE));
   const safePage = Math.min(page, totalPages - 1);
@@ -91,6 +96,10 @@ export function UatPage({ dashboard, kpiStyle }: UatPageProps) {
   useEffect(() => {
     if (page > totalPages - 1) setPage(Math.max(0, totalPages - 1));
   }, [page, totalPages]);
+
+  useEffect(() => {
+    setPage(0);
+  }, [normalizedSearch]);
 
   useEffect(() => {
     if (bugView === 'unclassified' && viewCounts.unclassified === 0) {
@@ -122,7 +131,7 @@ export function UatPage({ dashboard, kpiStyle }: UatPageProps) {
     <QaPageShell
       title="Vendor Portal Bugs"
       subtitle={`${fmt(uat.total)} bugs · ${uat.open} open`}
-      intro="DLM Vendor Portal bug logs — INC subjects are separated as Production; all remaining non-empty subjects stay in the UAT view, with named UAT phases shown where available. This tab is shown only when the dashboard project filter is DLM."
+      intro="DLM Vendor Portal bug logs — INC subjects are separated as Production; all remaining non-empty subjects stay in the UAT view. Search filters the bug rows instantly; apply dates only when the reporting period changes."
     >
       <QaKpiGrid cols={4}>
         <QaKpiCard kpiStyle={kpiStyle} label="Total Vendor Portal Bugs" value={fmt(uat.total)}

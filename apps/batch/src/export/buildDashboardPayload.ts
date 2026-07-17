@@ -151,6 +151,42 @@ export function buildDashboardPayload(
     return { name, executed, pass, fail, blocked, na, passPct: executed ? Math.round((pass / executed) * 100) : 0 };
   }).filter((t) => t.executed > 0).sort((a, b) => b.executed - a.executed);
 
+  // Search-only metadata lets the browser find a named QA member by tester,
+  // cycle, or case without calling JIRA/QMetry again. Keep it outside the
+  // tester metric objects because those are also exposed to report/AI tools.
+  const qualityAssuranceSearch = testers.map((tester) => {
+    const detailRows = cycleExecutions.filter((row) => row.tester === tester.name && row.result !== 'NE');
+    const rows = detailRows.length > 0
+      ? detailRows
+      : testerExecutions.filter((row) => row.tester === tester.name && row.result !== 'NE');
+    const terms = new Set<string>([tester.name]);
+    for (const row of rows) {
+      terms.add(row.cycleName);
+      terms.add(row.cycleKey);
+      terms.add(row.caseKey);
+    }
+    return { tester: tester.name, searchText: [...terms].filter(Boolean).join(' ') };
+  });
+
+  // The summary gadget is authoritative for the NE total but only contains
+  // synthetic aggregate rows. These real cycle-detail rows are diagnostic:
+  // they identify which QMetry cases can be corrected without changing any
+  // overview, coverage, or tester calculation.
+  const notExecutedByIdentity = new Map<string, typeof cycleExecutions[number]>();
+  for (const row of cycleExecutions) {
+    if (row.result !== 'NE' || row.source !== 'qmetry') continue;
+    notExecutedByIdentity.set(`${row.cycleKey}::${row.caseKey}`, row);
+  }
+  const notExecutedCases = [...notExecutedByIdentity.values()]
+    .map((row) => ({
+      project: canonicalProjectKey(row.project),
+      cycleKey: row.cycleKey,
+      cycleName: row.cycleName,
+      caseKey: row.caseKey,
+      updatedAt: row.updatedAt || '',
+    }))
+    .sort((left, right) => left.cycleName.localeCompare(right.cycleName) || left.caseKey.localeCompare(right.caseKey));
+
   const cycleKeys = [...new Set(cycleExecutions.map((r) => r.cycleKey))];
   const cycles = cycleKeys.map((key) => {
     const cycleRows = cycleExecutions.filter((r) => r.cycleKey === key);
@@ -253,6 +289,8 @@ export function buildDashboardPayload(
     scope: { startDate: params.startDate, endDate: params.endDate, search: params.search || '', result: params.result || 'all', project: normalizedProject || 'all', projects },
     overview: { totalCases: execTotals.total, executed: execTotals.exec, passRate: execTotals.exec ? Math.round((execTotals.pass / execTotals.exec) * 100) : 0, failed: execTotals.fail, blocked: execTotals.blocked, resultMix, byMonth, chartSeries },
     testers,
+    qualityAssuranceSearch,
+    notExecutedCases,
     cycles,
     cyclesByPassPctAsc,
     storyBug,

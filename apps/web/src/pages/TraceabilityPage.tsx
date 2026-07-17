@@ -11,6 +11,7 @@ import { PRIORITY_COLORS } from '../theme/qaTheme';
 interface TraceabilityPageProps {
   dashboard: DashboardPayload;
   kpiStyle: KpiStyle;
+  searchQuery: string;
 }
 
 type WorkItem = {
@@ -120,17 +121,20 @@ function WorkItemsTable({ rows, emptyText }: { rows: WorkItem[]; emptyText: stri
   );
 }
 
-export function TraceabilityPage({ dashboard, kpiStyle }: TraceabilityPageProps) {
+export function TraceabilityPage({ dashboard, kpiStyle, searchQuery }: TraceabilityPageProps) {
   const { traceability, storyBug, defectBacklog } = dashboard;
   const [storyPage, setStoryPage] = useState(0);
   const [bugPage, setBugPage] = useState(0);
   const [storyStatus, setStoryStatus] = useState<WorkItemStatusFilter>('all');
   const [bugStatus, setBugStatus] = useState<WorkItemStatusFilter>('all');
+  const normalizedSearch = searchQuery.trim().toLowerCase();
 
   const allWorkItems = useMemo(() => {
     const rows = (((dashboard as unknown as { workItems?: WorkItem[] }).workItems) || []);
-    return [...rows].sort(compareNewestFirst);
-  }, [dashboard]);
+    return rows
+      .filter((row) => !normalizedSearch || `${row.key} ${row.summary} ${row.sprint} ${row.area} ${row.assignee} ${row.status} ${row.priority} ${row.project}`.toLowerCase().includes(normalizedSearch))
+      .sort(compareNewestFirst);
+  }, [dashboard, normalizedSearch]);
 
   const allStoryRows = useMemo(() => allWorkItems.filter((w) => w.issueType === 'Story'), [allWorkItems]);
   const allBugRows = useMemo(() => allWorkItems.filter((w) => w.issueType === 'Bug'), [allWorkItems]);
@@ -148,7 +152,7 @@ export function TraceabilityPage({ dashboard, kpiStyle }: TraceabilityPageProps)
   useEffect(() => {
     setStoryPage(0);
     setBugPage(0);
-  }, [dashboard.scope.startDate, dashboard.scope.endDate, dashboard.scope.search, dashboard.scope.project]);
+  }, [dashboard.scope.startDate, dashboard.scope.endDate, dashboard.scope.project, normalizedSearch]);
 
   function selectStoryStatus(status: WorkItemStatusFilter): void {
     setStoryStatus(status);
@@ -176,7 +180,7 @@ export function TraceabilityPage({ dashboard, kpiStyle }: TraceabilityPageProps)
     <QaPageShell
       title="Requirements Traceability Matrix"
       subtitle="Story and Bug rows are shown separately with pagination"
-      intro="Every Story and Bug work item from JIRA is shown with sprint information when available, so you can review requirement coverage, defect status, and sprint-level traceability together."
+      intro="Every Story and Bug work item from JIRA is shown with sprint information when available. Search filters these rows instantly; change the dates and apply them only when you need a different reporting period."
     >
       <QaKpiGrid cols={4}>
         <QaKpiCard kpiStyle={kpiStyle} label="Story Requirements" value={fmt(storyBug.story)} sub={`${traceKpis.areas} feature areas`} color={QA.accent} />

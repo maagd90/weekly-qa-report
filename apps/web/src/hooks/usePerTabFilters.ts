@@ -84,10 +84,9 @@ export function usePerTabFilters(activeTab: QaTab, baseDashboard: DashboardPaylo
   const filterParams: FilterParams = useMemo(() => ({
     startDate: current.startDate,
     endDate: current.endDate,
-    search: current.search || undefined,
     result: 'all',
     project: canonicalProjectOrUndefined(project),
-  }), [current.startDate, current.endDate, current.search, project]);
+  }), [current.startDate, current.endDate, project]);
 
   return {
     startDate: current.startDate,

@@ -150,6 +150,8 @@ export function resultColor(code: string): string {
 export interface DashboardResultMixItem { code: string; label: string; count: number; pct: number; color: string }
 export interface DashboardMonthItem { ym: string; label: string; pass: number; blocked: number; fail: number }
 export interface DashboardTesterItem { name: string; executed: number; pass: number; fail: number; blocked: number; na: number; passPct: number }
+export interface DashboardQualityAssuranceSearchItem { tester: string; searchText: string }
+export interface DashboardNotExecutedCase { project: string; cycleKey: string; cycleName: string; caseKey: string; updatedAt: string }
 export interface DashboardCycleItem { key: string; name: string; total: number; pass: number; fail: number; blocked: number; ne: number; na: number; passPct: number; coverage: number; status: string }
 export interface DashboardTraceabilityItem { area: string; stories: number; done: number; open: number; bugs: number; openBugs: number; completion: number; status: string }
 export interface DashboardWorkItem { key: string; summary: string; issueType: IssueType; status: IssueStatus; priority: string; assignee: string; sprint: string; sprintId?: unknown; area: string; project: string; updatedAt: string }
@@ -220,6 +222,10 @@ export interface DashboardPayload {
   scope: { startDate?: string; endDate?: string; search: string; result: string; project: string; projects: string[] };
   overview: DashboardOverview;
   testers: DashboardTesterItem[];
+  /** Optional runtime-search metadata. Kept separate from tester metrics so AI/report tools do not receive a large search-only field. */
+  qualityAssuranceSearch?: DashboardQualityAssuranceSearchItem[];
+  /** Identifiable QMetry detail rows behind the Not Executed count; optional for older cached dashboards. */
+  notExecutedCases?: DashboardNotExecutedCase[];
   cycles: DashboardCycleItem[];
   cyclesByPassPctAsc: DashboardCycleItem[];
   storyBug: DashboardStoryBug;
