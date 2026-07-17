@@ -169,6 +169,7 @@ export interface DashboardOverview {
   byMonth: DashboardMonthItem[];
   chartSeries: { resultMix: { name: string; value: number; color: string }[] };
 }
+/** `other-uat` is retained only for dashboards cached before unmatched non-empty subjects became Phase 1 UAT. */
 export type VendorPortalPhaseCategory = 'phase1-uat' | 'phase2-uat' | 'other-uat' | 'production' | 'unclassified';
 export interface DashboardVendorPortalPhaseItem {
   category: VendorPortalPhaseCategory;

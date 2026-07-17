@@ -138,7 +138,7 @@ hasAll('src/components/qa/VendorPortalPhaseChart.tsx', [
   'sm:grid-cols-[minmax(130px,0.9fr)_minmax(160px,2.1fr)_auto]',
   'min-w-0',
   'unclassified',
-  'other-uat',
+  'legacyOtherUat',
   'onViewUnclassified',
   'View {fmt(unclassified.count)} unclassified',
 ]);
@@ -149,6 +149,7 @@ hasAll('src/pages/UatPage.tsx', [
   "category === 'other-uat'",
   'VendorPortalPhaseChart',
   'Bug Distribution by Environment & Phase',
+  'every other non-empty subject → Phase 1',
   'availableBugViews',
   "viewCounts.unclassified > 0",
   "type BugView = 'uat' | 'production' | 'unclassified'",

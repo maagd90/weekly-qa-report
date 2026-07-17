@@ -17,9 +17,22 @@ interface VendorPortalPhaseChartProps {
 }
 
 export function VendorPortalPhaseChart({ items, onViewUnclassified }: VendorPortalPhaseChartProps) {
-  const classified = items.filter((item) => item.category !== 'unclassified');
-  const unclassified = items.find((item) => item.category === 'unclassified');
-  const total = items.reduce((sum, item) => sum + item.count, 0);
+  // Fold the retired Other UAT bucket into Phase 1 when rendering dashboard
+  // JSON generated before the classification rule changed.
+  const legacyOtherUat = items.find((item) => item.category === 'other-uat');
+  const normalizedItems = items
+    .filter((item) => item.category !== 'other-uat')
+    .map((item) => item.category === 'phase1-uat' && legacyOtherUat
+      ? {
+        ...item,
+        count: item.count + legacyOtherUat.count,
+        open: item.open + legacyOtherUat.open,
+        closed: item.closed + legacyOtherUat.closed,
+      }
+      : item);
+  const classified = normalizedItems.filter((item) => item.category !== 'unclassified');
+  const unclassified = normalizedItems.find((item) => item.category === 'unclassified');
+  const total = normalizedItems.reduce((sum, item) => sum + item.count, 0);
   const max = Math.max(1, ...classified.map((item) => item.count));
 
   return (
@@ -49,7 +62,7 @@ export function VendorPortalPhaseChart({ items, onViewUnclassified }: VendorPort
       {unclassified && unclassified.count > 0 && (
         <div className="border-l-2 border-qa-border bg-[#faf8f2] px-3 py-2 text-[11.5px] text-qa-muted">
           <strong className="text-qa-ink">{fmt(unclassified.count)} unclassified</strong>
-          {' '}— these rows have no Subject value. Non-empty subjects without a named prefix are included under Other UAT.
+          {' '}— these rows have no Subject value. Every non-empty subject that is not Production or Phase 2 is included under Phase 1 UAT.
           {onViewUnclassified && (
             <button
               type="button"

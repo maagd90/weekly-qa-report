@@ -93,9 +93,8 @@ function vendorPortalFilesDataset(): Dataset {
   assert.deepStrictEqual(
     p.uat?.byReportedPhase?.map(({ category, count }) => ({ category, count })),
     [
-      { category: 'phase1-uat', count: 1 },
+      { category: 'phase1-uat', count: 2 },
       { category: 'phase2-uat', count: 1 },
-      { category: 'other-uat', count: 1 },
       { category: 'production', count: 1 },
       { category: 'unclassified', count: 0 },
     ],

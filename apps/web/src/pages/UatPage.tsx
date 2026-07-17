@@ -26,7 +26,7 @@ type BugView = 'uat' | 'production' | 'unclassified';
 const PHASE_FILTER_LABELS: Record<VendorPortalPhaseCategory, string> = {
   'phase1-uat': 'Phase 1 UAT',
   'phase2-uat': 'Phase 2 UAT',
-  'other-uat': 'Other UAT',
+  'other-uat': 'Phase 1 UAT',
   production: 'Production',
   unclassified: 'Unclassified',
 };
@@ -147,7 +147,7 @@ export function UatPage({ dashboard, kpiStyle, searchQuery }: UatPageProps) {
       {phaseItems.some((item) => item.count > 0) && (
         <QaSection
           title="Bug Distribution by Environment & Phase"
-          subtitle="Automatically derived from Subject: UAT → Phase 1, Phase 2B UAT → Phase 2, INC → Production, all other non-empty subjects → Other UAT."
+          subtitle="Automatically derived from Subject: Phase 2B UAT → Phase 2, INC → Production, and every other non-empty subject → Phase 1."
           className="mb-[22px]"
         >
           <VendorPortalPhaseChart
