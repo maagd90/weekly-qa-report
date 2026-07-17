@@ -27,6 +27,13 @@ type WorkItem = {
 };
 
 const PAGE_SIZE = 10;
+type WorkItemStatusFilter = 'all' | WorkItem['status'];
+
+const STATUS_FILTERS: Array<{ id: WorkItemStatusFilter; label: string }> = [
+  { id: 'all', label: 'All' },
+  { id: 'open', label: 'Open' },
+  { id: 'done', label: 'Done / Closed' },
+];
 
 type WorkItemPager = {
   page: number;
@@ -44,6 +51,51 @@ function Pager({ page, totalPages, setPage }: WorkItemPager) {
   ) : <span className="font-mono-qa text-[10.5px] text-qa-muted-light">latest first</span>;
 }
 
+function compareNewestFirst(left: WorkItem, right: WorkItem): number {
+  const leftTime = Date.parse(left.updatedAt || '');
+  const rightTime = Date.parse(right.updatedAt || '');
+  const normalizedLeft = Number.isFinite(leftTime) ? leftTime : 0;
+  const normalizedRight = Number.isFinite(rightTime) ? rightTime : 0;
+  return normalizedRight - normalizedLeft
+    || (right.updatedAt || '').localeCompare(left.updatedAt || '')
+    || left.key.localeCompare(right.key);
+}
+
+function StatusTabs({ rows, value, onChange, label }: {
+  rows: WorkItem[];
+  value: WorkItemStatusFilter;
+  onChange: (status: WorkItemStatusFilter) => void;
+  label: string;
+}) {
+  const counts: Record<WorkItemStatusFilter, number> = {
+    all: rows.length,
+    open: rows.filter((row) => row.status === 'open').length,
+    done: rows.filter((row) => row.status === 'done').length,
+  };
+
+  return (
+    <div className="qa-scroll max-w-full overflow-x-auto overscroll-x-contain" role="tablist" aria-label={label}>
+      <div className="flex min-w-max gap-1.5">
+        {STATUS_FILTERS.map((status) => {
+          const active = status.id === value;
+          return (
+            <button
+              key={status.id}
+              type="button"
+              role="tab"
+              aria-selected={active}
+              onClick={() => onChange(status.id)}
+              className={`shrink-0 border px-3 py-1.5 font-mono-qa text-[9.5px] font-semibold ${active ? 'border-qa-ink bg-qa-ink text-white' : 'border-qa-border bg-white text-qa-muted hover:border-qa-ink'}`}
+            >
+              {status.label} · {counts[status.id]}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function WorkItemsTable({ rows, emptyText }: { rows: WorkItem[]; emptyText: string }) {
   return (
     <>
@@ -56,7 +108,7 @@ function WorkItemsTable({ rows, emptyText }: { rows: WorkItem[]; emptyText: stri
               <td className="py-2.5 px-3 font-mono-qa text-[11px] text-qa-muted whitespace-nowrap">{w.sprint || 'Not mapped'}</td>
               <td className="py-2.5 px-3 max-w-[420px]"><div className="whitespace-normal break-words leading-relaxed">{w.summary || w.area}</div></td>
               <td className="py-2.5 px-3 text-[12px]">{w.priority}</td>
-              <td className="py-2.5 px-3 text-[12px]" style={{ color: w.status === 'done' ? QA.PASS : QA.BLOCKED }}>{w.status}</td>
+              <td className="py-2.5 px-3 text-[12px]" style={{ color: w.status === 'done' ? QA.PASS : QA.BLOCKED }}>{w.status === 'done' ? 'Done / Closed' : 'Open'}</td>
               <td className="py-2.5 px-3 font-mono-qa text-[11px] text-qa-muted whitespace-nowrap">{w.updatedAt || '-'}</td>
               <td className="py-2.5 pr-[22px] text-qa-muted whitespace-nowrap">{w.assignee}</td>
             </tr>
@@ -72,14 +124,18 @@ export function TraceabilityPage({ dashboard, kpiStyle }: TraceabilityPageProps)
   const { traceability, storyBug, defectBacklog } = dashboard;
   const [storyPage, setStoryPage] = useState(0);
   const [bugPage, setBugPage] = useState(0);
+  const [storyStatus, setStoryStatus] = useState<WorkItemStatusFilter>('all');
+  const [bugStatus, setBugStatus] = useState<WorkItemStatusFilter>('all');
 
   const allWorkItems = useMemo(() => {
     const rows = (((dashboard as unknown as { workItems?: WorkItem[] }).workItems) || []);
-    return [...rows].sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || '') || a.key.localeCompare(b.key));
+    return [...rows].sort(compareNewestFirst);
   }, [dashboard]);
 
-  const storyRows = useMemo(() => allWorkItems.filter((w) => w.issueType === 'Story'), [allWorkItems]);
-  const bugRows = useMemo(() => allWorkItems.filter((w) => w.issueType === 'Bug'), [allWorkItems]);
+  const allStoryRows = useMemo(() => allWorkItems.filter((w) => w.issueType === 'Story'), [allWorkItems]);
+  const allBugRows = useMemo(() => allWorkItems.filter((w) => w.issueType === 'Bug'), [allWorkItems]);
+  const storyRows = useMemo(() => allStoryRows.filter((row) => storyStatus === 'all' || row.status === storyStatus), [allStoryRows, storyStatus]);
+  const bugRows = useMemo(() => allBugRows.filter((row) => bugStatus === 'all' || row.status === bugStatus), [allBugRows, bugStatus]);
   const storyTotalPages = Math.max(1, Math.ceil(storyRows.length / PAGE_SIZE));
   const bugTotalPages = Math.max(1, Math.ceil(bugRows.length / PAGE_SIZE));
   const safeStoryPage = Math.min(storyPage, storyTotalPages - 1);
@@ -89,6 +145,20 @@ export function TraceabilityPage({ dashboard, kpiStyle }: TraceabilityPageProps)
 
   useEffect(() => { if (storyPage > storyTotalPages - 1) setStoryPage(Math.max(0, storyTotalPages - 1)); }, [storyPage, storyTotalPages]);
   useEffect(() => { if (bugPage > bugTotalPages - 1) setBugPage(Math.max(0, bugTotalPages - 1)); }, [bugPage, bugTotalPages]);
+  useEffect(() => {
+    setStoryPage(0);
+    setBugPage(0);
+  }, [dashboard.scope.startDate, dashboard.scope.endDate, dashboard.scope.search, dashboard.scope.project]);
+
+  function selectStoryStatus(status: WorkItemStatusFilter): void {
+    setStoryStatus(status);
+    setStoryPage(0);
+  }
+
+  function selectBugStatus(status: WorkItemStatusFilter): void {
+    setBugStatus(status);
+    setBugPage(0);
+  }
 
   const traceKpis = useMemo(() => {
     const verified = traceability.filter((t) => t.status === 'Verified').length;
@@ -136,11 +206,33 @@ export function TraceabilityPage({ dashboard, kpiStyle }: TraceabilityPageProps)
         {!traceability.length && <div className="py-8 text-center text-[13px] text-qa-muted-light">No Story requirements match the current filters.</div>}
       </QaSection>
 
-      <QaSection title={`Stories by Sprint (${storyRows.length})`} subtitle="latest Story rows with sprint mapping when available" noPadding className="mb-[22px]" headerRight={<Pager page={safeStoryPage} totalPages={storyTotalPages} setPage={setStoryPage} />}>
+      <QaSection
+        title={`Stories by Sprint (${allStoryRows.length})`}
+        subtitle={`${storyRows.length} matching rows · newest updates first`}
+        noPadding
+        className="mb-[22px]"
+        headerRight={(
+          <div className="flex max-w-full flex-col items-start gap-2 sm:items-end">
+            <StatusTabs rows={allStoryRows} value={storyStatus} onChange={selectStoryStatus} label="Filter Stories by status" />
+            <Pager page={safeStoryPage} totalPages={storyTotalPages} setPage={setStoryPage} />
+          </div>
+        )}
+      >
         <WorkItemsTable rows={visibleStories} emptyText="No Story rows available for the current filters." />
       </QaSection>
 
-      <QaSection title={`Bugs by Sprint (${bugRows.length})`} subtitle="latest Bug rows with sprint mapping when available" noPadding className="mb-[22px]" headerRight={<Pager page={safeBugPage} totalPages={bugTotalPages} setPage={setBugPage} />}>
+      <QaSection
+        title={`Bugs by Sprint (${allBugRows.length})`}
+        subtitle={`${bugRows.length} matching rows · newest updates first`}
+        noPadding
+        className="mb-[22px]"
+        headerRight={(
+          <div className="flex max-w-full flex-col items-start gap-2 sm:items-end">
+            <StatusTabs rows={allBugRows} value={bugStatus} onChange={selectBugStatus} label="Filter Bugs by status" />
+            <Pager page={safeBugPage} totalPages={bugTotalPages} setPage={setBugPage} />
+          </div>
+        )}
+      >
         <WorkItemsTable rows={visibleBugs} emptyText="No Bug rows available for the current filters." />
       </QaSection>
 

@@ -15,6 +15,13 @@ function hasAll(relativePath, tokens) {
   }
 }
 
+function hasNone(relativePath, tokens) {
+  const contents = source(relativePath);
+  for (const token of tokens) {
+    assert.equal(contents.includes(token), false, `${relativePath} must not include removed UI token: ${token}`);
+  }
+}
+
 function hasNoUnscopedClass(relativePath, className) {
   const contents = source(relativePath);
   const pattern = new RegExp(`(?<![\\w:-])${className}(?![\\w-])`, 'g');
@@ -36,7 +43,11 @@ hasAll('src/components/layout/QaFilterBar.tsx', [
   'grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]',
   'w-full min-w-0 max-w-full',
   'sm:w-auto',
+  'onSubmit=',
+  'Apply filters',
+  'type="search"',
 ]);
+hasNone('src/components/layout/QaFilterBar.tsx', ['FOCUS_CHIPS', 'onResultChange', '>Result<']);
 
 hasAll('src/components/layout/QaMasthead.tsx', [
   'flex flex-col items-stretch',
@@ -80,21 +91,34 @@ hasAll('src/components/qa/VendorPortalPhaseChart.tsx', [
 ]);
 
 hasAll('src/pages/UatPage.tsx', [
-  "uat.byReportedPhase || []",
+  "uat?.byReportedPhase || []",
   "row.reportedPhase || 'unclassified'",
   "category === 'other-uat'",
-  'flex max-w-full flex-wrap',
   'VendorPortalPhaseChart',
+  'Bug Distribution by Environment & Phase',
+  'availableBugViews',
+  "viewCounts.unclassified > 0",
   "type BugView = 'uat' | 'production' | 'unclassified'",
   'max-w-full overflow-x-auto overscroll-x-contain',
   'Page {safePage + 1} of {totalPages}',
   'Source file',
   'pageRows.map',
 ]);
+hasNone('src/pages/UatPage.tsx', ['ODL source file', "(['uat', 'production', 'unclassified'] as BugView[])"]);
+
+hasAll('src/pages/TraceabilityPage.tsx', [
+  'compareNewestFirst',
+  'StatusTabs',
+  "type WorkItemStatusFilter = 'all' | WorkItem['status']",
+  'Done / Closed',
+  'max-w-full overflow-x-auto overscroll-x-contain',
+  'setStoryPage(0)',
+  'setBugPage(0)',
+]);
 
 hasAll('src/components/qa/ReportPrintContent.tsx', [
   "import { VendorPortalPhaseChart } from './VendorPortalPhaseChart'",
-  'Vendor Portal Bugs by Phase / Environment',
+  'Vendor Portal Bug Distribution by Environment & Phase',
   '<VendorPortalPhaseChart items={vendorPortalPhases} />',
   'qa-business-vendor-phase-chart',
 ]);

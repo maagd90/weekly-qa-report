@@ -110,7 +110,7 @@ export function AiReportUatSection({ uat: rawUat }: { uat: UatPayload }) {
 
         {uat.byReportedPhase?.some((item) => item.count > 0) && (
           <div className="mb-6 border border-[#efece4] bg-white p-4">
-            <div className="text-[12.5px] font-semibold">Reported Phase / Environment</div>
+            <div className="text-[12.5px] font-semibold">Bug Distribution by Environment &amp; Phase</div>
             <div className="mb-4 mt-1 text-[10.5px] text-qa-muted-light">Derived from Subject prefixes across the uploaded Vendor Portal spreadsheets.</div>
             <VendorPortalPhaseChart items={uat.byReportedPhase} />
           </div>

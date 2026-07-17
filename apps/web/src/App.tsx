@@ -26,6 +26,14 @@ const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, staleTime: 30_000 } },
 });
 
+const SEARCH_PLACEHOLDERS: Partial<Record<QaTab, string>> = {
+  overview: 'Search cycles, cases, Quality Assurance, or issues...',
+  testers: 'Search Quality Assurance, cycle, or case key...',
+  cycles: 'Search cycle name or key...',
+  trace: 'Search key, summary, sprint, area, assignee, or status...',
+  uat: 'Search ticket, subject, area, submitter, status, or CR...',
+};
+
 function AppContent() {
   const [activeTab, setActiveTab] = useState<QaTab>('overview');
   const [filteredByTab, setFilteredByTab] = useState<Partial<Record<QaTab, DashboardPayload>>>({});
@@ -108,14 +116,13 @@ function AppContent() {
           onEndDateChange={filters.setEndDate}
           search={filters.search}
           onSearchChange={filters.setSearch}
-          result={filters.result}
-          onResultChange={filters.setResult}
+          searchPlaceholder={SEARCH_PLACEHOLDERS[activeTab]}
           kpiStyle={ui.kpiStyle}
           onKpiStyleChange={ui.setKpiStyle}
           dataMin={display?.meta.dataMin}
           dataMax={display?.meta.dataMax}
           onSearchApis={canSearch ? () => searchDashboardData.mutate({ params: { ...filters.filterParams }, tab: activeTab }) : undefined}
-          searchApisLabel="Search"
+          searchApisLabel="Apply filters"
           isSearchingApis={searchDashboardData.isPending}
         />
       )}

@@ -27,7 +27,7 @@
   <!-- Desktop phase chart -->
   <g transform="translate(64 334)">
     <rect width="842" height="278" class="card"/>
-    <text x="18" y="28" class="serif h3">Reported Phase / Environment</text>
+    <text x="18" y="28" class="serif h3">Bug Distribution by Environment &amp; Phase</text>
     <text x="18" y="47" class="sans tiny muted">UAT → Phase 1 · Phase 2B UAT → Phase 2 · INC → Production</text>
     <rect x="596" y="15" width="112" height="24" class="pill"/><text x="606" y="31" class="mono tiny">daily-odl.xlsx · 54</text>
     <rect x="714" y="15" width="111" height="24" class="pill"/><text x="724" y="31" class="mono tiny">production.xlsx · 20</text>
@@ -72,7 +72,7 @@
   </g>
   <g transform="translate(1030 302)">
     <rect width="350" height="333" class="card"/>
-    <text x="14" y="28" class="serif h3">Reported Phase / Environment</text>
+    <text x="14" y="28" class="serif h3">Bug Distribution by Environment &amp; Phase</text>
     <text x="14" y="49" class="sans tiny muted">2 source files in scope</text>
     <text x="14" y="81" class="sans small" font-weight="700">Phase 1 UAT</text><rect x="297" y="67" width="38" height="18" class="phase1"/><text x="306" y="80" class="mono tiny white">UAT</text>
     <rect x="14" y="94" width="322" height="13" class="phase1"/><text x="14" y="124" class="mono small">32 · 43%</text><text x="222" y="124" class="mono tiny muted">10 open · 22 closed</text>

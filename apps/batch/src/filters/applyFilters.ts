@@ -99,7 +99,7 @@ function filterIssues(rows: IssueRow[], filter: FilterParams, window: DateWindow
   const q = (filter.search || '').trim().toLowerCase();
   if (q) {
     out = out.filter((r) =>
-      `${r.summary || ''} ${r.area} ${r.assignee} ${r.key} ${r.issueType} ${r.priority}`.toLowerCase().includes(q)
+      `${r.summary || ''} ${r.area} ${r.assignee} ${r.key} ${r.issueType} ${r.priority} ${r.status} ${r.sprint || ''} ${r.project}`.toLowerCase().includes(q)
     );
   }
   return out;
@@ -116,7 +116,7 @@ function filterUat(rows: UatRow[], filter: FilterParams, window: DateWindow): Ua
   const q = (filter.search || '').trim().toLowerCase();
   if (q) {
     out = out.filter((r) =>
-      `${r.id} ${r.subject} ${r.area} ${r.submitter} ${r.status} ${r.priority} ${r.cr}`.toLowerCase().includes(q)
+      `${r.id} ${r.subject} ${r.area} ${r.submitter} ${r.status} ${r.priority} ${r.cr} ${r.sourceFile || ''}`.toLowerCase().includes(q)
     );
   }
   return out;

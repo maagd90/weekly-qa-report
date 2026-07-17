@@ -47,6 +47,18 @@ export function UatPage({ dashboard, kpiStyle }: UatPageProps) {
   const [page, setPage] = useState(0);
   const detailRef = useRef<HTMLDivElement>(null);
   const uat = dashboard.uat;
+  const phaseItems = uat?.byReportedPhase || [];
+  const categoryCount = (category: VendorPortalPhaseCategory): number => phaseItems.length > 0
+    ? phaseItems.find((item) => item.category === category)?.count || 0
+    : (uat?.rows || []).filter((row) => (row.reportedPhase || 'unclassified') === category).length;
+  const viewCounts: Record<BugView, number> = {
+    uat: categoryCount('phase1-uat') + categoryCount('phase2-uat') + categoryCount('other-uat'),
+    production: categoryCount('production'),
+    unclassified: categoryCount('unclassified'),
+  };
+  const availableBugViews: BugView[] = viewCounts.unclassified > 0
+    ? ['uat', 'production', 'unclassified']
+    : ['uat', 'production'];
 
   const priorityItems = useMemo(() =>
     (uat?.byPriority || []).map((p) => ({
@@ -80,6 +92,13 @@ export function UatPage({ dashboard, kpiStyle }: UatPageProps) {
     if (page > totalPages - 1) setPage(Math.max(0, totalPages - 1));
   }, [page, totalPages]);
 
+  useEffect(() => {
+    if (bugView === 'unclassified' && viewCounts.unclassified === 0) {
+      setBugView('uat');
+      setPage(0);
+    }
+  }, [bugView, viewCounts.unclassified]);
+
   if (!uat) {
     return (
       <QaPageShell title="Vendor Portal Bugs">
@@ -91,17 +110,6 @@ export function UatPage({ dashboard, kpiStyle }: UatPageProps) {
   const statusMax = Math.max(1, ...uat.byStatus.map((s) => s.count));
   const areaMax = Math.max(1, ...uat.byArea.map((a) => a.count));
   const submitterMax = Math.max(1, ...uat.bySubmitter.map((s) => s.count));
-  const phaseItems = uat.byReportedPhase || [];
-  const sourceFiles = uat.sourceFiles || [];
-  const categoryCount = (category: VendorPortalPhaseCategory): number => phaseItems.length > 0
-    ? phaseItems.find((item) => item.category === category)?.count || 0
-    : uat.rows.filter((row) => (row.reportedPhase || 'unclassified') === category).length;
-  const viewCounts: Record<BugView, number> = {
-    uat: categoryCount('phase1-uat') + categoryCount('phase2-uat') + categoryCount('other-uat'),
-    production: categoryCount('production'),
-    unclassified: categoryCount('unclassified'),
-  };
-
   function selectBugView(view: BugView, scrollToDetail = false): void {
     setBugView(view);
     setPage(0);
@@ -129,23 +137,14 @@ export function UatPage({ dashboard, kpiStyle }: UatPageProps) {
 
       {phaseItems.some((item) => item.count > 0) && (
         <QaSection
-          title="Reported Phase / Environment"
+          title="Bug Distribution by Environment & Phase"
           subtitle="Automatically derived from Subject: UAT → Phase 1, Phase 2B UAT → Phase 2, INC → Production, all other non-empty subjects → Other UAT."
           className="mb-[22px]"
-          headerRight={sourceFiles.length > 0 ? (
-            <div className="max-w-full text-right font-mono-qa text-[10px] text-qa-muted-light">
-              <div>{sourceFiles.length} ODL source file{sourceFiles.length === 1 ? '' : 's'} in scope</div>
-              <div className="mt-1 flex max-w-full flex-wrap justify-end gap-1.5">
-                {sourceFiles.map((file) => (
-                  <span key={file.name} className="max-w-full truncate border border-qa-border bg-[#faf8f2] px-2 py-1" title={displaySourceName(file.name)}>
-                    {displaySourceName(file.name)} · {file.rows}
-                  </span>
-                ))}
-              </div>
-            </div>
-          ) : undefined}
         >
-          <VendorPortalPhaseChart items={phaseItems} onViewUnclassified={() => selectBugView('unclassified', true)} />
+          <VendorPortalPhaseChart
+            items={phaseItems}
+            onViewUnclassified={viewCounts.unclassified > 0 ? () => selectBugView('unclassified', true) : undefined}
+          />
         </QaSection>
       )}
 
@@ -200,7 +199,7 @@ export function UatPage({ dashboard, kpiStyle }: UatPageProps) {
           <div className="flex flex-col gap-3 border-b border-[#e9e5dc] px-4 py-3 sm:px-[22px] lg:flex-row lg:items-center lg:justify-between">
             <div className="qa-scroll max-w-full overflow-x-auto overscroll-x-contain" role="tablist" aria-label="Vendor Portal bug environment">
               <div className="flex min-w-max gap-1.5">
-                {(['uat', 'production', 'unclassified'] as BugView[]).map((view) => {
+                {availableBugViews.map((view) => {
                   const active = bugView === view;
                   return (
                     <button

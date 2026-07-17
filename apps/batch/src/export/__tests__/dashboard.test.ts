@@ -27,8 +27,8 @@ function focusedDataset(): Dataset {
     { project: 'DP', cycleKey: 'DP-TR-1', cycleName: 'Excel cycle', caseKey: 'DP-TC-1', result: 'BLOCKED', tester: 'Tester Three', executedAt: '2026-06-15', updatedAt: '2026-06-15', source: 'test-execution-file' },
   ];
   dataset.issues = [
-    { project: 'DLM', key: 'DLM-101', summary: 'Global DMC complete story summary shown without fallback', area: 'Login', issueType: 'Story', status: 'open', priority: 'High', assignee: 'Owner One', createdAt: '2026-01-10', resolvedAt: null, updatedAt: '2026-07-03', source: 'jira-api' },
-    { project: 'DLM', key: 'DLM-102', summary: 'Reactive Maintenance complete bug summary shown without fallback', area: 'Login', issueType: 'Bug', status: 'open', priority: 'Highest', assignee: 'Owner Two', createdAt: '2026-02-10', resolvedAt: null, updatedAt: '2026-07-04', source: 'jira-api' },
+    { project: 'DLM', key: 'DLM-101', summary: 'Global DMC complete story summary shown without fallback', area: 'Login', issueType: 'Story', status: 'open', priority: 'High', assignee: 'Owner One', createdAt: '2026-01-10', resolvedAt: null, updatedAt: '2026-07-03', sprint: 'Sprint 12', source: 'jira-api' },
+    { project: 'DLM', key: 'DLM-102', summary: 'Reactive Maintenance complete bug summary shown without fallback', area: 'Login', issueType: 'Bug', status: 'open', priority: 'Highest', assignee: 'Owner Two', createdAt: '2026-02-10', resolvedAt: null, updatedAt: '2026-07-04', sprint: 'Sprint 13', source: 'jira-api' },
   ];
   dataset.projects = ['DLM', 'DP'];
   return dataset;
@@ -110,7 +110,23 @@ function vendorPortalFilesDataset(): Dataset {
   assert.strictEqual(productionOnly.uat?.total, 1, 'search filtering happens before phase aggregation');
   assert.strictEqual(productionOnly.uat?.byReportedPhase?.find((item) => item.category === 'production')?.count, 1);
   assert.deepStrictEqual(productionOnly.uat?.sourceFiles, [{ name: 'production.xlsx', rows: 1 }]);
+
+  const sourceFileSearch = buildDashboardPayload(vendorPortalFilesDataset(), { project: 'DLM', search: 'production.xlsx' });
+  assert.strictEqual(sourceFileSearch.uat?.total, 2, 'Vendor Portal search includes source-file provenance');
   console.log('✓ Vendor Portal files remain traceable and phase-separated');
+}
+
+// Traceability search includes sprint and normalized issue status, not only
+// the issue key/summary fields shown in the original filter implementation.
+{
+  const sprintSearch = buildDashboardPayload(focusedDataset(), { project: 'DLM', search: 'Sprint 13' });
+  assert.strictEqual(sprintSearch.storyBug.story, 0);
+  assert.strictEqual(sprintSearch.storyBug.bug, 1);
+  assert.strictEqual(sprintSearch.workItems?.[0]?.key, 'DLM-102');
+
+  const statusSearch = buildDashboardPayload(focusedDataset(), { project: 'DLM', search: 'open' });
+  assert.strictEqual(statusSearch.workItems?.length, 2, 'Traceability search includes normalized open/done status');
+  console.log('✓ Traceability sprint and status search');
 }
 
 // April 2026 window (BACKEND_PROMPT acceptance)

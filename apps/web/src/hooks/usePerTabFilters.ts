@@ -5,10 +5,10 @@ import { getActiveProject, setActiveProject } from '../lib/api';
 import { canonicalProjectOrAll, canonicalProjectOrUndefined, uniqueCanonicalProjects } from '../lib/projectKey';
 import { defaultReportingPeriod } from '../lib/reportingPeriod';
 
-// Tabs that have an independent date/search/result filter.
+// Tabs that have an independent date/search filter.
 const FILTERABLE: QaTab[] = ['overview', 'testers', 'cycles', 'trace', 'uat'];
 
-type TabFilter = { startDate: string; endDate: string; search: string; result: 'all' | 'PASS' | 'FAIL' | 'BLOCKED' };
+type TabFilter = { startDate: string; endDate: string; search: string };
 
 function seedRange(baseDashboard: DashboardPayload | undefined): { startDate: string; endDate: string } {
   const fallback = defaultReportingPeriod();
@@ -24,12 +24,12 @@ function seedRange(baseDashboard: DashboardPayload | undefined): { startDate: st
 function blankMap(baseDashboard: DashboardPayload | undefined): Record<string, TabFilter> {
   const r = seedRange(baseDashboard);
   const map: Record<string, TabFilter> = {};
-  for (const t of FILTERABLE) map[t] = { startDate: r.startDate, endDate: r.endDate, search: '', result: 'all' };
+  for (const t of FILTERABLE) map[t] = { startDate: r.startDate, endDate: r.endDate, search: '' };
   return map;
 }
 
 /**
- * Per-tab filter state. Each filterable tab keeps its OWN startDate/endDate/search/result,
+ * Per-tab filter state. Each filterable tab keeps its OWN startDate/endDate/search,
  * so changing the period on Overview does not affect Cycles, Testers, etc.
  * Project stays GLOBAL (one business scope across all tabs).
  */
@@ -85,9 +85,9 @@ export function usePerTabFilters(activeTab: QaTab, baseDashboard: DashboardPaylo
     startDate: current.startDate,
     endDate: current.endDate,
     search: current.search || undefined,
-    result: current.result,
+    result: 'all',
     project: canonicalProjectOrUndefined(project),
-  }), [current.startDate, current.endDate, current.search, current.result, project]);
+  }), [current.startDate, current.endDate, current.search, project]);
 
   return {
     startDate: current.startDate,
@@ -96,8 +96,6 @@ export function usePerTabFilters(activeTab: QaTab, baseDashboard: DashboardPaylo
     setEndDate: (v: string) => patchDate({ endDate: v }),
     search: current.search,
     setSearch: (v: string) => patch({ search: v }),
-    result: current.result,
-    setResult: (v: TabFilter['result']) => patch({ result: v }),
     project,
     setProject,
     projects,

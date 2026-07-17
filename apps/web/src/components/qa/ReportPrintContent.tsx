@@ -194,7 +194,7 @@ export function ReportPrintContent({ dashboard, reportType, narrative, startDate
           <p><em>Most defects verified in this sprint directly impact delivery readiness, execution stability, user validation, or production sign-off confidence.</em></p>
         </Section>}
 
-        {showVendorPortalPhaseChart && <Section no={nextNo()} title="Vendor Portal Bugs by Phase / Environment">
+        {showVendorPortalPhaseChart && <Section no={nextNo()} title="Vendor Portal Bug Distribution by Environment & Phase">
           <p>Vendor Portal rows are separated by the Subject prefix used in the uploaded daily ODL and production files.</p>
           <div className="qa-business-chart qa-business-vendor-phase-chart">
             <VendorPortalPhaseChart items={vendorPortalPhases} />
