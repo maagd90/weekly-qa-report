@@ -84,7 +84,7 @@ function AppContent() {
     onSuccess: ({ d, tab }) => setFilteredView(d, tab),
   });
 
-  const supportsVendorPortal = (project: (typeof registeredProjects)[number]) => [project.key, ...(project.sourceKeys || [])].includes('DLM');
+  const supportsVendorPortal = (project: (typeof registeredProjects)[number]) => project.key === 'DLM';
   const selectedProjectRecord = registeredProjects.find((project) => project.key === filters.project);
   const showVendorPortalBugs = Boolean(
     base?.uat
