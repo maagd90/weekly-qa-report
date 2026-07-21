@@ -24,6 +24,8 @@ import {
   searchQmetryTestCycles,
   emptyConnections,
   emptyDataset,
+  isUsableJiraConnection,
+  isUsableQmetryConnection,
   canonicalProjectKey,
   canonicalProjectOrUndefined,
   ensureRuntimeDirectories,
@@ -48,8 +50,10 @@ import type {
 import { getEnvStatus } from '../loadRepoEnv';
 import { generateReportPdf, type ReportBrandingPayload } from '../services/reportPdf';
 import { ProjectImportStore } from '../services/projectImports';
+import { canUseDashboardPayloadFallback } from '../services/dashboardFallback';
 import {
   normalizeDatasetProjectOwnership,
+  planConnectionProjectMigration,
   ProjectConnectionValidationError,
   validateProjectConnections,
 } from '../services/projectConnections';
@@ -65,6 +69,13 @@ const REPORT_OUTPUT_FILES = ['report-dashboard.json', 'report-raw-dataset.json',
 const IMPORT_CACHE_FILE = 'raw-dataset.imported.json';
 const LIVE_CACHE_FILE = 'raw-dataset.live.json';
 const REPORT_TYPES: ReportType[] = ['full', 'executive', 'testers', 'defects', 'cycles'];
+let outputQueue: Promise<void> = Promise.resolve();
+
+function serializeOutputs<T>(operation: () => Promise<T> | T): Promise<T> {
+  const result = outputQueue.then(operation, operation);
+  outputQueue = result.then(() => undefined, () => undefined);
+  return result;
+}
 
 type BuildMode = 'cached' | 'import-only' | 'live';
 type DashboardPayload = ReturnType<typeof refilterDashboard>;
@@ -242,10 +253,18 @@ function preserveLiveCache(freshDataset: Dataset, apiScope?: ApiFetchScope): Dat
 }
 
 function hasLiveSources(connections: UserConnections): boolean {
-  if (connections.jira.some((c) => c.enabled !== false && c.syncIssues !== false)) return true;
-  if (connections.qmetry.some((c) => c.enabled !== false && c.syncExecutions !== false)) return true;
-  const summary = integrationsSummary(CONFIG_DIR);
-  return Boolean(summary.jira.enabled || summary.qmetry.enabled);
+  if (connections.jira.some(isUsableJiraConnection)) return true;
+  if (connections.qmetry.some(isUsableQmetryConnection)) return true;
+  const config = loadIntegrations(CONFIG_DIR);
+  const jiraProfiles = config.jiraProfiles.length ? config.jiraProfiles : [config.jira];
+  const hasConfiguredJira = jiraProfiles.some((profile) => profile.enabled
+    && Boolean(profile.baseUrl.trim())
+    && Boolean(profile.auth.token?.trim() || (profile.auth.tokenEnv && process.env[profile.auth.tokenEnv]?.trim()) || profile.cookie?.trim() || profile.jiraSessionId?.trim() || profile.jiraXsrfToken?.trim()));
+  const qmetry = config.qmetry;
+  const hasConfiguredQmetry = qmetry.enabled
+    && Boolean(qmetry.baseUrl.trim())
+    && Boolean(qmetry.auth.token?.trim() || (qmetry.auth.tokenEnv && process.env[qmetry.auth.tokenEnv]?.trim()) || (qmetry.authEncodedEnv && process.env[qmetry.authEncodedEnv]?.trim()));
+  return hasConfiguredJira || hasConfiguredQmetry;
 }
 
 function mergedSourceDataset(updatedMode?: BuildMode, updatedDataset?: Dataset): Dataset {
@@ -258,6 +277,7 @@ function mergedSourceDataset(updatedMode?: BuildMode, updatedDataset?: Dataset):
 }
 
 async function refreshGeneratedOutputs(req: Request, connections: UserConnections, apiScope?: ApiFetchScope, dashboardFilter: Partial<FilterParams> = {}, mode: BuildMode = 'live') {
+  return serializeOutputs(async () => {
   const options = buildOptions(mode, apiScope);
   const sourceConnections = mode === 'live' ? connections : emptyConnections();
   const fingerprint = computeFingerprint(INPUT_DIR, CONFIG_DIR, sourceConnections, options);
@@ -278,12 +298,14 @@ async function refreshGeneratedOutputs(req: Request, connections: UserConnection
   }
   saveRawDataset(OUTPUT_DIR, dataset, fingerprint);
   const payload = refilterDashboard(dataset, { ...dashboardFilter, project: cleanProject(dashboardFilter.project) });
-  writeJsonFile(outputPath('dashboard-data.json'), payload);
+  writeJsonFile(outputPath('dashboard-data.json'), refilterDashboard(dataset, {}));
   log(req, 'generated outputs refreshed', { mode, rowCounts: counts, warnings: dataset.meta.warnings, projects: dataset.projects, apiScope: options.apiScope });
   return { rebuilt: true, rowCounts: counts, removed, warnings: dataset.meta.warnings, files: dataset.files, projects: dataset.projects, dashboard: payload };
+  });
 }
 
 function publishProjectImportOutputs(req: Request, dashboardFilter: Partial<FilterParams> = {}) {
+  return serializeOutputs(() => {
   const imported = loadDatasetFile(IMPORT_CACHE_FILE) || emptyDataset();
   const dataset = mergedSourceDataset('import-only', imported);
   const counts = rowCounts(dataset);
@@ -295,9 +317,10 @@ function publishProjectImportOutputs(req: Request, dashboardFilter: Partial<Filt
   const fingerprint = `project-import:${imported.meta.parsedAt}:${totalRows(imported)}`;
   saveRawDataset(OUTPUT_DIR, dataset, fingerprint);
   const dashboard = refilterDashboard(dataset, { ...dashboardFilter, project: cleanProject(dashboardFilter.project) });
-  writeJsonFile(outputPath('dashboard-data.json'), dashboard);
+  writeJsonFile(outputPath('dashboard-data.json'), refilterDashboard(dataset, {}));
   log(req, 'project-scoped import outputs published', { rowCounts: counts, projects: dataset.projects });
   return { rebuilt: true, rowCounts: counts, removed, warnings: dataset.meta.warnings, files: dataset.files, projects: dataset.projects, dashboard };
+  });
 }
 
 function connectionSummary(connections: UserConnections) {
@@ -392,7 +415,7 @@ function queryString(value: unknown, fallback = ''): string {
 
 function selectQmetryConnection(connections: UserConnections, connectionId?: string): QmetryConnectionInput | null {
   if (!connections.qmetry.length) return null;
-  if (connectionId) return connections.qmetry.find((c) => c.id === connectionId) || connections.qmetry[0];
+  if (connectionId) return connections.qmetry.find((c) => c.id === connectionId) || null;
   return connections.qmetry[0];
 }
 
@@ -486,6 +509,12 @@ router.get('/dashboard', async (req: Request, res: Response) => {
   if (imported) return res.json(refilterDashboard(imported.dataset, filter));
   const file = path.join(OUTPUT_DIR, 'dashboard-data.json');
   if (!fs.existsSync(file)) return res.status(404).json({ error: 'No dashboard generated yet. Import files, then Sync imported data, or use Settings → Sync JIRA/QMetry. Dataset contains: no projects / 0 rows.', requestId: requestId(req) });
+  if (!canUseDashboardPayloadFallback(filter)) {
+    return res.status(409).json({
+      error: 'Only an aggregate dashboard snapshot is available, so the requested project/date/search filters cannot be applied safely. Sync imported or live data to rebuild the raw dataset, then retry.',
+      requestId: requestId(req),
+    });
+  }
   const dashboard = readJsonFile<DashboardPayload>(file);
   if (!dashboard) return res.status(500).json({ error: 'The cached dashboard is not valid JSON. Sync data to rebuild it.', requestId: requestId(req) });
   res.json(dashboard);
@@ -704,28 +733,65 @@ router.get('/projects', (_req: Request, res: Response) => {
 
 router.post('/projects', (req: Request, res: Response) => {
   try {
-    const project = projectImports.createProject(req.body as { key?: string; sourceKeys?: string[]; name?: string });
+    const project = projectImports.createProject(req.body as { key?: string; sourceKeys?: string[]; name?: string; capabilities?: { vendorPortal?: boolean; wonderMilesExport?: boolean } });
     return res.status(201).json({ ok: true, project, requestId: requestId(req) });
   } catch (err) {
     return res.status(projectErrorStatus(err)).json({ ok: false, error: toErrorMessage(err), requestId: requestId(req) });
   }
 });
 
-router.patch('/projects/:projectId', (req: Request, res: Response) => {
+router.post('/projects/migrate-connections', (req: Request, res: Response) => {
   try {
-    const project = projectImports.updateProject(req.params.projectId, req.body as { key?: string; sourceKeys?: string[]; name?: string });
-    const published = publishProjectImportOutputs(req);
+    if (projectImports.listProjects().length) {
+      return res.status(409).json({ ok: false, error: 'Connection migration is available only while the project registry is empty.', requestId: requestId(req) });
+    }
+    const body = req.body as Partial<UserConnections>;
+    const connections: UserConnections = {
+      jira: Array.isArray(body.jira) ? body.jira : [],
+      qmetry: Array.isArray(body.qmetry) ? body.qmetry : [],
+    };
+    const plan = planConnectionProjectMigration(connections);
+    if (!plan.length) {
+      return res.status(400).json({ ok: false, error: 'No saved connection contains an explicit workspace or source project key to migrate.', requestId: requestId(req) });
+    }
+    for (const candidate of plan) {
+      if (candidate.name.length < 2 || candidate.name.length > 100 || candidate.sourceKeys.some((key) => !/^[A-Z0-9][A-Z0-9_-]{1,31}$/.test(key))) {
+        throw new ProjectConnectionValidationError(`Project ${candidate.key} contains an invalid ownership key. Use 2-32 letters, numbers, underscores, or hyphens.`);
+      }
+    }
+    const migrated = plan.map((candidate) => ({
+      candidate,
+      project: projectImports.createProject({ key: candidate.key, sourceKeys: candidate.sourceKeys, name: candidate.name }),
+    }));
+    return res.status(201).json({
+      ok: true,
+      projects: migrated.map(({ project }) => project),
+      assignments: migrated.flatMap(({ candidate, project }) => [
+        ...(candidate.jiraConnectionId ? [{ type: 'jira' as const, connectionId: candidate.jiraConnectionId, projectId: project.id, projectKey: project.key }] : []),
+        ...(candidate.qmetryConnectionId ? [{ type: 'qmetry' as const, connectionId: candidate.qmetryConnectionId, projectId: project.id, projectKey: project.key }] : []),
+      ]),
+      requestId: requestId(req),
+    });
+  } catch (err) {
+    return res.status(projectErrorStatus(err)).json({ ok: false, error: toErrorMessage(err), requestId: requestId(req) });
+  }
+});
+
+router.patch('/projects/:projectId', async (req: Request, res: Response) => {
+  try {
+    const project = projectImports.updateProject(req.params.projectId, req.body as { key?: string; sourceKeys?: string[]; name?: string; capabilities?: { vendorPortal?: boolean; wonderMilesExport?: boolean } });
+    const published = await publishProjectImportOutputs(req);
     return res.json({ ok: true, project, ...published, requestId: requestId(req) });
   } catch (err) {
     return res.status(projectErrorStatus(err)).json({ ok: false, error: toErrorMessage(err), requestId: requestId(req) });
   }
 });
 
-router.delete('/projects/:projectId', (req: Request, res: Response) => {
+router.delete('/projects/:projectId', async (req: Request, res: Response) => {
   try {
     const confirmationKey = String((req.body as { confirmationKey?: string } | undefined)?.confirmationKey || '');
     const deletion = projectImports.deleteProject(req.params.projectId, confirmationKey);
-    const published = publishProjectImportOutputs(req);
+    const published = await publishProjectImportOutputs(req);
     log(req, 'project deleted', { projectId: deletion.project.id, projectKey: deletion.project.key, filesDeleted: deletion.filesDeleted, syncReportsDeleted: deletion.syncReportsDeleted });
     return res.json({ ok: true, deletion, ...published, requestId: requestId(req) });
   } catch (err) {
@@ -746,17 +812,17 @@ router.post('/projects/:projectId/files', upload.single('file'), (req: Request, 
   try {
     const file = projectImports.stageFile(req.params.projectId, req.file.originalname, req.file.buffer);
     log(req, 'project file staged', { projectId: req.params.projectId, fileId: file.id, filename: file.originalName, size: file.size });
-    return res.status(201).json({ ok: true, file, message: 'File staged for the selected project. Click Sync imported data to reconcile it.' });
+    return res.status(201).json({ ok: true, file, message: 'File uploaded for the selected project. The Import Data workflow will automatically synchronize it.' });
   } catch (err) {
     return res.status(projectErrorStatus(err)).json({ ok: false, error: toErrorMessage(err), requestId: requestId(req) });
   }
 });
 
-router.post('/projects/:projectId/imports/sync', (req: Request, res: Response) => {
+router.post('/projects/:projectId/imports/sync', async (req: Request, res: Response) => {
   const filter = filterFromBody(req.body as Partial<FilterParams>);
   try {
-    const reconciliation = projectImports.syncProject(req.params.projectId, req.header('x-user-name') || 'Local user');
-    const published = publishProjectImportOutputs(req, { ...filter, project: reconciliation.project.key });
+    const reconciliation = await projectImports.syncProjectSerialized(req.params.projectId, req.header('x-user-name') || 'Local user');
+    const published = await publishProjectImportOutputs(req, { ...filter, project: reconciliation.project.key });
     return res.json({
       ok: true,
       ...published,
@@ -770,11 +836,11 @@ router.post('/projects/:projectId/imports/sync', (req: Request, res: Response) =
   }
 });
 
-router.delete('/projects/:projectId/files/:fileId', (req: Request, res: Response) => {
+router.delete('/projects/:projectId/files/:fileId', async (req: Request, res: Response) => {
   try {
     const removedFile = projectImports.deleteFile(req.params.projectId, req.params.fileId);
-    const reconciliation = projectImports.syncProject(req.params.projectId, req.header('x-user-name') || 'Local user');
-    const published = publishProjectImportOutputs(req, { project: reconciliation.project.key });
+    const reconciliation = await projectImports.syncProjectSerialized(req.params.projectId, req.header('x-user-name') || 'Local user');
+    const published = await publishProjectImportOutputs(req, { project: reconciliation.project.key });
     return res.json({ ok: true, removedFile, ...published, rowCounts: reconciliation.rowCounts, reconciliation, requestId: requestId(req) });
   } catch (err) {
     return res.status(projectErrorStatus(err)).json({ ok: false, error: toErrorMessage(err), requestId: requestId(req) });
@@ -814,12 +880,12 @@ router.get('/projects/:projectId/imports/:syncId/report.csv', (req: Request, res
 // Compatibility endpoints remain project-scoped. They intentionally refuse an
 // unscoped request so older clients cannot list, sync, or delete another
 // project's files by accident.
-router.post('/input/sync', (req: Request, res: Response) => {
+router.post('/input/sync', async (req: Request, res: Response) => {
   const projectId = String((req.body as { projectId?: string }).projectId || '');
   if (!projectId) return res.status(400).json({ ok: false, error: 'projectId is required.', requestId: requestId(req) });
   try {
-    const reconciliation = projectImports.syncProject(projectId, req.header('x-user-name') || 'Local user');
-    const published = publishProjectImportOutputs(req, { project: reconciliation.project.key });
+    const reconciliation = await projectImports.syncProjectSerialized(projectId, req.header('x-user-name') || 'Local user');
+    const published = await publishProjectImportOutputs(req, { project: reconciliation.project.key });
     return res.json({ ok: true, ...published, rowCounts: reconciliation.rowCounts, reconciliation, requestId: requestId(req) });
   } catch (err) {
     return res.status(projectErrorStatus(err)).json({ ok: false, error: toErrorMessage(err), requestId: requestId(req) });
@@ -848,13 +914,13 @@ router.get('/input/files', (req: Request, res: Response) => {
   }
 });
 
-router.delete('/input/:fileId', (req: Request, res: Response) => {
+router.delete('/input/:fileId', async (req: Request, res: Response) => {
   const projectId = queryString(req.query.projectId);
   if (!projectId) return res.status(400).json({ error: 'projectId is required.', requestId: requestId(req) });
   try {
     const removedFile = projectImports.deleteFile(projectId, req.params.fileId);
-    const reconciliation = projectImports.syncProject(projectId, req.header('x-user-name') || 'Local user');
-    const published = publishProjectImportOutputs(req, { project: reconciliation.project.key });
+    const reconciliation = await projectImports.syncProjectSerialized(projectId, req.header('x-user-name') || 'Local user');
+    const published = await publishProjectImportOutputs(req, { project: reconciliation.project.key });
     return res.json({ ok: true, removedFile, ...published, rowCounts: reconciliation.rowCounts, reconciliation, requestId: requestId(req) });
   } catch (err) {
     return res.status(projectErrorStatus(err)).json({ ok: false, error: toErrorMessage(err), requestId: requestId(req) });

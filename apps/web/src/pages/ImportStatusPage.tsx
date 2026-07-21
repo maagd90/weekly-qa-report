@@ -19,9 +19,9 @@ const STANDARD_EXPECTED = [
   { ext: 'XLSX', label: 'JIRA issues export', map: 'Issue Type → Story/Bug' },
 ];
 
-function expectedFileTypes(projectKey?: string) {
-  if (projectKey === 'DLM') return [...STANDARD_EXPECTED, { ext: 'XLSX', label: 'Vendor Portal Bug logs', map: 'daily ODL + production files → merged and phase-separated' }];
-  if (projectKey === 'DTTRV') return [STANDARD_EXPECTED[0], { ext: 'XLSX', label: 'Wonder Miles Story/Bug export', map: 'uploaded Jira-style rows → Wonder Miles Export Data tab' }];
+function expectedFileTypes(project?: ProjectRecord | null) {
+  if (project?.capabilities.vendorPortal) return [...STANDARD_EXPECTED, { ext: 'XLSX', label: 'Vendor Portal Bug logs', map: 'daily ODL + production files → merged and phase-separated' }];
+  if (project?.capabilities.wonderMilesExport) return [STANDARD_EXPECTED[0], { ext: 'XLSX', label: 'Wonder Miles Story/Bug export', map: 'uploaded Jira-style rows → Wonder Miles Export Data tab' }];
   return STANDARD_EXPECTED;
 }
 
@@ -81,11 +81,11 @@ function ReconciliationPanel({ report, onDownload }: { report: ProjectSyncReport
       </div>
       <div className="overflow-x-auto border border-qa-border">
         <table className="w-full min-w-[1120px] text-left text-[11px] border-collapse">
-          <thead className="bg-[#f7f5ef] font-mono-qa uppercase tracking-wide"><tr>{['File', 'Type / sheet', 'Found', 'Imported', 'Created', 'Updated', 'Duplicate / skipped', 'Rejected', 'Validation'].map((header) => <th key={header} className="px-3 py-2 border-b border-qa-border">{header}</th>)}</tr></thead>
+          <thead className="bg-[#f7f5ef] font-mono-qa uppercase tracking-wide"><tr>{['File', 'Type / sheet', 'Found', 'Imported', 'Created', 'Updated', 'Unchanged', 'Duplicate / skipped', 'Rejected', 'Validation'].map((header) => <th key={header} className="px-3 py-2 border-b border-qa-border">{header}</th>)}</tr></thead>
           <tbody>{report.files.map((file) => <tr key={file.fileId} className="align-top border-t border-qa-border first:border-t-0">
             <td className="px-3 py-2 font-semibold max-w-[220px] break-all">{file.filename}</td>
             <td className="px-3 py-2">{file.detectedType}<div className="text-qa-muted-light">{file.sheet || 'Not detected'}</div></td>
-            <td className="px-3 py-2">{file.totalRowsFound.toLocaleString()}</td><td className="px-3 py-2">{file.successfullyImportedRows.toLocaleString()}</td><td className="px-3 py-2">{file.createdRecords.toLocaleString()}</td><td className="px-3 py-2">{file.updatedRecords.toLocaleString()}</td><td className="px-3 py-2">{file.duplicateOrSkippedRows.toLocaleString()}</td><td className="px-3 py-2">{file.rejectedRows.toLocaleString()}</td>
+            <td className="px-3 py-2">{file.totalRowsFound.toLocaleString()}</td><td className="px-3 py-2">{file.successfullyImportedRows.toLocaleString()}</td><td className="px-3 py-2">{file.createdRecords.toLocaleString()}</td><td className="px-3 py-2">{file.updatedRecords.toLocaleString()}</td><td className="px-3 py-2">{file.unchangedRecords.toLocaleString()}</td><td className="px-3 py-2">{file.duplicateOrSkippedRows.toLocaleString()}</td><td className="px-3 py-2">{file.rejectedRows.toLocaleString()}</td>
             <td className="px-3 py-2 max-w-[330px]">{file.errors.length === 0 && file.warnings.length === 0 && file.rejections.length === 0 ? <span className="text-[#2f6a48]">No issues</span> : <ul className="m-0 pl-4 space-y-1">{file.errors.map((message) => <li key={`e-${message}`} className="text-[#a13d2c]">{message}</li>)}{file.warnings.map((message) => <li key={`w-${message}`} className="text-[#8f6312]">{message}</li>)}{file.rejections.slice(0, 5).map((rejection) => <li key={`r-${rejection.rowNumber}-${rejection.reference}`} className="text-[#a13d2c]">Row {rejection.rowNumber} · {rejection.reference}: {rejection.reason}</li>)}{file.rejections.length > 5 && <li className="text-qa-muted">+{file.rejections.length - 5} more in the CSV report</li>}</ul>}</td>
           </tr>)}</tbody>
         </table>
@@ -101,7 +101,9 @@ export function ImportStatusPage({ selectedProject, projects, onProjectChange, o
   const [downloadError, setDownloadError] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const selected = useMemo(() => projects.find((project) => project.key === selectedProject) || null, [projects, selectedProject]);
-  const expectedFiles = useMemo(() => expectedFileTypes(selected?.key), [selected?.key]);
+  const selectedProjectIdRef = useRef<string | undefined>(selected?.id);
+  selectedProjectIdRef.current = selected?.id;
+  const expectedFiles = useMemo(() => expectedFileTypes(selected), [selected]);
 
   useEffect(() => {
     setLastReconciliation(null);
@@ -124,7 +126,11 @@ export function ImportStatusPage({ selectedProject, projects, onProjectChange, o
     queryClient.invalidateQueries({ queryKey: ['report'] }),
   ]);
 
-  const publishImportedData = async (result: SyncInputResult) => {
+  const publishImportedData = async (result: SyncInputResult, requestProjectId: string) => {
+    if (selectedProjectIdRef.current !== requestProjectId) {
+      await invalidateData();
+      return;
+    }
     setLastReconciliation(result.reconciliation);
     onImportedDataChanged?.(result.dashboard ?? null);
     await invalidateData();
@@ -135,27 +141,35 @@ export function ImportStatusPage({ selectedProject, projects, onProjectChange, o
       if (!selected) throw new Error('Select one project before uploading files.');
       const uploads = await Promise.all(selectedFiles.map((file) => batchApi.upload(selected.id, file)));
       const sync = await batchApi.syncInputFiles(selected.id, { project: selected.key });
-      return { uploads, sync };
+      return { uploads, sync, projectId: selected.id };
     },
-    onSuccess: async ({ sync }) => publishImportedData(sync),
+    onSuccess: async ({ sync, projectId }) => publishImportedData(sync, projectId),
     onSettled: () => queryClient.invalidateQueries({ queryKey: ['input-files', selected?.id] }),
   });
 
   const syncMutation = useMutation({
     mutationFn: () => {
       if (!selected) throw new Error('All Projects cannot run an imported-data sync. Select one project first.');
-      return batchApi.syncInputFiles(selected.id, { project: selected.key });
+      return batchApi.syncInputFiles(selected.id, { project: selected.key }).then((result) => ({ result, projectId: selected.id }));
     },
-    onSuccess: publishImportedData,
+    onSuccess: ({ result, projectId }) => publishImportedData(result, projectId),
   });
 
   const deleteMutation = useMutation({
     mutationFn: (fileId: string) => {
       if (!selected) throw new Error('Select one project before removing an imported file.');
-      return batchApi.deleteInputFile(selected.id, fileId);
+      return batchApi.deleteInputFile(selected.id, fileId).then((result) => ({ result, projectId: selected.id }));
     },
-    onSuccess: publishImportedData,
+    onSuccess: ({ result, projectId }) => publishImportedData(result, projectId),
   });
+
+  useEffect(() => {
+    uploadMutation.reset();
+    syncMutation.reset();
+    deleteMutation.reset();
+  // Mutation reset functions are stable; project ownership is the reset boundary.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selected?.id]);
 
   const handleFiles = useCallback((selectedFiles: FileList | File[]) => {
     const next = Array.from(selectedFiles);

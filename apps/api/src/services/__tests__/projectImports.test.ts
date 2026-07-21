@@ -5,6 +5,7 @@ import path from 'path';
 import { readJsonFile } from 'qa-dashboard-batch';
 import type { Dataset, RuntimePaths } from 'qa-dashboard-batch';
 import { ProjectImportStore } from '../projectImports';
+import { canUseDashboardPayloadFallback } from '../dashboardFallback';
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'qa-project-imports-'));
 const paths: RuntimePaths = {
@@ -15,11 +16,32 @@ const paths: RuntimePaths = {
 };
 Object.values(paths).forEach((directory) => fs.mkdirSync(directory, { recursive: true }));
 
+async function run(): Promise<void> {
 try {
   const store = new ProjectImportStore(paths);
   const projectA = store.createProject({ key: 'PROJA', sourceKeys: ['PROJA', 'PROJAUX'], name: 'Project A' });
   const projectB = store.createProject({ key: 'PROJB', name: 'Project B' });
+  const dlmProject = store.createProject({ key: 'DLM', sourceKeys: ['DLM', 'DN4_FT'], name: 'DLM Workspace' });
   assert.deepStrictEqual(projectA.sourceKeys, ['PROJA', 'PROJAUX']);
+  assert.deepStrictEqual(dlmProject.sourceKeys, ['DLM', 'DN4_FT'], 'raw source aliases must not collapse to the dashboard key');
+  assert.deepStrictEqual(dlmProject.capabilities, { vendorPortal: true, wonderMilesExport: false });
+  const wonderMilesProject = store.createProject({ key: 'TRAVEL', sourceKeys: ['TRAVEL', 'DP', 'DTTRV'], name: 'Travel' });
+  assert.deepStrictEqual(wonderMilesProject.capabilities, { vendorPortal: false, wonderMilesExport: true });
+  const registryPath = path.join(paths.configDir, 'projects.json');
+  const legacyRegistry = JSON.parse(fs.readFileSync(registryPath, 'utf8')) as { projects: Array<{ id: string; capabilities?: unknown }> };
+  delete legacyRegistry.projects.find((project) => project.id === dlmProject.id)!.capabilities;
+  fs.writeFileSync(registryPath, JSON.stringify(legacyRegistry));
+  assert.deepStrictEqual(store.getProject(dlmProject.id).capabilities, { vendorPortal: true, wonderMilesExport: false });
+  const migratedRegistry = JSON.parse(fs.readFileSync(registryPath, 'utf8')) as { projects: Array<{ id: string; capabilities?: unknown }> };
+  assert.deepStrictEqual(migratedRegistry.projects.find((project) => project.id === dlmProject.id)?.capabilities, { vendorPortal: true, wonderMilesExport: false });
+  const capabilityOverride = store.updateProject(dlmProject.id, { capabilities: { vendorPortal: false, wonderMilesExport: true } });
+  assert.deepStrictEqual(capabilityOverride.capabilities, { vendorPortal: false, wonderMilesExport: true });
+  assert.deepStrictEqual(store.getProject(dlmProject.id).capabilities, { vendorPortal: false, wonderMilesExport: true }, 'explicit capability overrides must persist');
+  assert.equal(canUseDashboardPayloadFallback({}), true);
+  assert.equal(canUseDashboardPayloadFallback({ result: 'all' }), true);
+  assert.equal(canUseDashboardPayloadFallback({ project: 'PROJA' }), false);
+  assert.equal(canUseDashboardPayloadFallback({ startDate: '2026-07-01' }), false);
+  assert.equal(canUseDashboardPayloadFallback({ search: 'bug' }), false);
   assert.throws(() => store.createProject({ key: 'PROJC', sourceKeys: ['PROJC', 'PROJAUX'], name: 'Duplicate alias' }), /Source key PROJAUX is already assigned/i);
   const fixtures = path.resolve(__dirname, '../../../../../fixtures/synthetic');
   const executionFile = fs.readFileSync(path.join(fixtures, 'zephyr-regression.xlsx'));
@@ -44,9 +66,20 @@ try {
   assert.equal(retryA.newTotals.executions, 2210, 'retry must not duplicate imported executions');
   assert.equal(retryA.files[0].createdRecords, 0);
   assert.equal(retryA.files[0].updatedRecords, 0);
-  assert.equal(retryA.files[0].duplicateOrSkippedRows, 2210);
+  assert.equal(retryA.files[0].unchangedRecords, 2210);
+  assert.equal(retryA.files[0].duplicateOrSkippedRows, 0);
+  assert.equal(retryA.files[0].successfullyImportedRows, 2210);
 
-  const syncB = store.syncProject(projectB.id, 'QA tester');
+  const [concurrentA, syncB] = await Promise.all([
+    store.syncProjectSerialized(projectA.id, 'Concurrent QA tester'),
+    store.syncProjectSerialized(projectB.id, 'QA tester'),
+  ]);
+  assert.equal(concurrentA.project.key, 'PROJA');
+  assert.equal(concurrentA.rowCounts.executions, 2210);
+  assert.equal(concurrentA.rowCounts.issues, 0);
+  assert.equal(syncB.project.key, 'PROJB');
+  assert.equal(syncB.rowCounts.executions, 0);
+  assert.equal(syncB.rowCounts.issues, 779);
   assert.equal(syncB.newTotals.stories, 582);
   assert.equal(syncB.newTotals.bugs, 197);
   assert.equal(syncB.files[0].filename, 'project-b-jira.xlsx');
@@ -62,6 +95,8 @@ try {
   assert.deepStrictEqual(aggregate!.projects, ['PROJA', 'PROJB']);
   assert.equal(aggregate!.executions.length, 2210);
   assert.equal(aggregate!.issues.length, 779);
+  assert.deepStrictEqual([...new Set(aggregate!.executions.map((row) => row.project))], ['PROJA']);
+  assert.deepStrictEqual([...new Set(aggregate!.issues.map((row) => row.project))], ['PROJB']);
   assert.equal(store.getSyncReport(projectA.id, syncA.id).id, syncA.id);
   assert.throws(() => store.getSyncReport(projectB.id, syncA.id), /selected project/i, 'cross-project report access must be rejected');
   const csv = store.reconciliationCsv(projectA.id, syncA.id);
@@ -111,3 +146,9 @@ try {
 } finally {
   fs.rmSync(root, { recursive: true, force: true });
 }
+}
+
+run().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});

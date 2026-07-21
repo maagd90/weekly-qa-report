@@ -99,6 +99,9 @@ hasAll('src/pages/SettingsPage.tsx', [
   'all configured projects',
   'Under All Projects, expand any project to edit its connection.',
   'This never processes uploaded Excel files.',
+  'if (projectsData.length === 0)',
+  'Migrate saved connections',
+  'never creates projects from API response rows',
 ]);
 hasNone('src/pages/SettingsPage.tsx', ['saveAll', '+ Add JIRA connection', '+ Add QMetry connection']);
 
@@ -125,9 +128,10 @@ hasAll('src/App.tsx', [
   'batchApi.getDashboard(vars.params)',
   'batchApi.getUploadedIssueDashboard',
   'batchApi.searchDashboardByDates(vars.params)',
-  "filters.project === 'DLM'",
-  "selectedProjectRecord?.key === 'DTTRV'",
-  'registeredProjects.some(supportsVendorPortal)',
+  'project.capabilities.vendorPortal',
+  'selectedProjectRecord?.capabilities.wonderMilesExport',
+  'selectedProjectRecord?.capabilities.vendorPortal',
+  'projectRequestSequence.current === 0',
 ]);
 
 hasAll('src/pages/TestersPage.tsx', [

@@ -1,4 +1,14 @@
-import { canonicalProjectKey } from 'qa-dashboard-batch';
+import {
+  canonicalProjectKey,
+  hasJiraAuthMaterial,
+  hasQmetryAuthMaterial,
+  isBlankJiraConnection,
+  isBlankQmetryConnection,
+  jiraProjectJql,
+  jqlProjectKeys,
+  normalizeSourceProjectKey,
+  projectSourceKeys,
+} from 'qa-dashboard-batch';
 import type {
   Dataset,
   JiraConnectionInput,
@@ -9,6 +19,14 @@ import type { ProjectRecord } from './projectImports';
 
 type ConnectionKind = 'JIRA' | 'QMetry';
 type ProjectConnection = JiraConnectionInput | QmetryConnectionInput;
+
+export interface ConnectionMigrationProject {
+  key: string;
+  sourceKeys: string[];
+  name: string;
+  jiraConnectionId?: string;
+  qmetryConnectionId?: string;
+}
 
 export class ProjectConnectionValidationError extends Error {
   constructor(message: string) {
@@ -21,21 +39,58 @@ function connectionLabel(connection: ProjectConnection, kind: ConnectionKind): s
   return (connection.name || '').trim() || `${kind} connection`;
 }
 
-function jiraProjectJql(projectKeys: string[]): string {
-  const scope = projectKeys.length === 1 ? `project = ${projectKeys[0]}` : `project in (${projectKeys.join(', ')})`;
-  return `${scope} AND issuetype in (Story, Bug) ORDER BY updated DESC`;
-}
+export function planConnectionProjectMigration(connections: UserConnections): ConnectionMigrationProject[] {
+  validateConnectionIds(connections.jira, 'JIRA');
+  validateConnectionIds(connections.qmetry, 'QMetry');
+  const groups = new Map<string, ConnectionMigrationProject>();
 
-function projectSourceKeys(project: ProjectRecord): string[] {
-  return [...new Set([project.key, ...(project.sourceKeys || [])].map(canonicalProjectKey).filter(Boolean))];
-}
+  const addConnection = (
+    connection: ProjectConnection,
+    kind: ConnectionKind,
+    rawSourceKeys: string[],
+  ): void => {
+    const explicitWorkspaceKey = canonicalProjectKey(connection.workspaceProjectKey);
+    const sourceKeys = [...new Set(rawSourceKeys.map(normalizeSourceProjectKey).filter(Boolean))];
+    const inferredKeys = [...new Set(sourceKeys.map(canonicalProjectKey).filter(Boolean))];
+    if (!explicitWorkspaceKey && inferredKeys.length !== 1) {
+      throw new ProjectConnectionValidationError(
+        `${connectionLabel(connection, kind)} has ambiguous ownership keys (${sourceKeys.join(', ') || 'none'}). Set one workspaceProjectKey in the saved connection or create the dashboard project manually with these source keys.`,
+      );
+    }
+    const key = explicitWorkspaceKey || inferredKeys[0];
+    if (!key || key === 'all') {
+      throw new ProjectConnectionValidationError(
+        `${connectionLabel(connection, kind)} has no explicit project ownership key. Add a workspace/source key to the saved connection or create the dashboard project manually before configuring it.`,
+      );
+    }
+    const group = groups.get(key) || { key, sourceKeys: [key], name: key };
+    group.sourceKeys = [...new Set([key, ...group.sourceKeys, ...sourceKeys])];
+    const assignmentField = kind === 'JIRA' ? 'jiraConnectionId' : 'qmetryConnectionId';
+    if (group[assignmentField] && group[assignmentField] !== connection.id) {
+      throw new ProjectConnectionValidationError(
+        `Multiple ${kind} connections claim project ${key}. Assign unique workspaceProjectKey values before migrating.`,
+      );
+    }
+    group[assignmentField] = connection.id;
+    groups.set(key, group);
+  };
 
-function jqlProjectKeys(jql: string): string[] {
-  const equals = jql.match(/\bproject\s*=\s*(?:["']([^"']+)["']|([A-Z0-9_-]+))/i);
-  if (equals) return [canonicalProjectKey(equals[1] || equals[2])].filter(Boolean);
-  const inside = jql.match(/\bproject\s+in\s*\(([^)]+)\)/i)?.[1];
-  if (!inside) return [];
-  return [...new Set(inside.split(',').map((key) => canonicalProjectKey(key.replace(/^[\s"']+|[\s"']+$/g, ''))).filter(Boolean))];
+  for (const connection of connections.jira) addConnection(connection, 'JIRA', connection.projectKeys || []);
+  for (const connection of connections.qmetry) addConnection(connection, 'QMetry', [connection.projectKey]);
+
+  const sourceOwners = new Map<string, string>();
+  for (const group of groups.values()) {
+    for (const sourceKey of group.sourceKeys) {
+      const owner = sourceOwners.get(sourceKey);
+      if (owner && owner !== group.key) {
+        throw new ProjectConnectionValidationError(
+          `Source key ${sourceKey} is claimed by both ${owner} and ${group.key}. Set explicit, non-overlapping ownership keys before migrating.`,
+        );
+      }
+      sourceOwners.set(sourceKey, group.key);
+    }
+  }
+  return [...groups.values()].sort((left, right) => left.key.localeCompare(right.key));
 }
 
 function scopedJiraJql(jql: string | undefined, project: ProjectRecord): string {
@@ -119,8 +174,14 @@ export function validateProjectConnections(
 ): UserConnections {
   const projectsById = new Map(projects.map((project) => [project.id, project]));
   const projectsByKey = new Map(projects.flatMap((project) => projectSourceKeys(project).map((key) => [key, project] as const)));
-  const jira = validateOnePerProject(connections.jira, 'JIRA', projectsById, projectsByKey, (connection, project) => {
-    const keys = [...new Set((connection.projectKeys || []).map(canonicalProjectKey).filter(Boolean))];
+  const jiraConnections = connections.jira.filter((connection) => !isBlankJiraConnection(connection));
+  const qmetryConnections = connections.qmetry.filter((connection) => !isBlankQmetryConnection(connection));
+  const jira = validateOnePerProject(jiraConnections, 'JIRA', projectsById, projectsByKey, (connection, project) => {
+    if (connection.enabled !== false && connection.syncIssues !== false) {
+      if (!connection.baseUrl.trim()) throw new ProjectConnectionValidationError(`${connectionLabel(connection, 'JIRA')} requires a base URL while sync is enabled.`);
+      if (!hasJiraAuthMaterial(connection)) throw new ProjectConnectionValidationError(`${connectionLabel(connection, 'JIRA')} requires authentication or session material while sync is enabled.`);
+    }
+    const keys = [...new Set((connection.projectKeys || []).map(normalizeSourceProjectKey).filter(Boolean))];
     const allowed = projectSourceKeys(project);
     const allowedSet = new Set(allowed);
     if (keys.length !== allowed.length || keys.some((key) => !allowedSet.has(key))) {
@@ -130,8 +191,12 @@ export function validateProjectConnections(
     }
     return { ...connection, workspaceProjectId: project.id, workspaceProjectKey: project.key, projectKeys: allowed, jql: scopedJiraJql(connection.jql, project) };
   });
-  const qmetry = validateOnePerProject(connections.qmetry, 'QMetry', projectsById, projectsByKey, (connection, project) => {
-    const projectKey = canonicalProjectKey(connection.projectKey);
+  const qmetry = validateOnePerProject(qmetryConnections, 'QMetry', projectsById, projectsByKey, (connection, project) => {
+    if (connection.enabled !== false && connection.syncExecutions !== false) {
+      if (!connection.baseUrl.trim()) throw new ProjectConnectionValidationError(`${connectionLabel(connection, 'QMetry')} requires a base URL while sync is enabled.`);
+      if (!hasQmetryAuthMaterial(connection)) throw new ProjectConnectionValidationError(`${connectionLabel(connection, 'QMetry')} requires authentication or session material while sync is enabled.`);
+    }
+    const projectKey = normalizeSourceProjectKey(connection.projectKey);
     const allowed = projectSourceKeys(project);
     if (!allowed.includes(projectKey)) {
       throw new ProjectConnectionValidationError(
@@ -146,7 +211,7 @@ export function validateProjectConnections(
 /** Consolidates external source keys into the owning dashboard project's primary key. */
 export function normalizeDatasetProjectOwnership(dataset: Dataset, projects: ProjectRecord[]): Dataset {
   const owners = new Map(projects.flatMap((project) => projectSourceKeys(project).map((key) => [key, project.key] as const)));
-  const ownerKey = (value?: string) => owners.get(canonicalProjectKey(value)) || canonicalProjectKey(value);
+  const ownerKey = (value?: string) => owners.get(normalizeSourceProjectKey(value)) || canonicalProjectKey(value);
   const executions = dataset.executions.map((row) => ({ ...row, project: ownerKey(row.project) }));
   const issues = dataset.issues.map((row) => ({ ...row, project: ownerKey(row.project) }));
   const uat = dataset.uat.map((row) => ({ ...row, project: ownerKey(row.project) }));

@@ -146,7 +146,7 @@ export function WonderMilesExportPage({ dashboard, kpiStyle, searchQuery }: Wond
     <QaPageShell
       title="Wonder Miles Export Data"
       subtitle={`${fmt(allStories.length)} stories · ${fmt(allBugs.length)} bugs`}
-      intro="DTTRV Wonder Miles Story and Bug data from uploaded spreadsheets only. Live Jira and QMetry connection data is excluded; search is instant and Apply dates refilters the stored upload without calling either API."
+      intro="Wonder Miles Story and Bug data from uploaded spreadsheets only. Live Jira and QMetry connection data is excluded; search is instant and Apply dates refilters the stored upload without calling either API."
     >
       <QaKpiGrid cols={4}>
         <QaKpiCard kpiStyle={kpiStyle} label="Stories" value={fmt(allStories.length)} sub="uploaded rows in scope" color={QA.accent} />
@@ -155,11 +155,11 @@ export function WonderMilesExportPage({ dashboard, kpiStyle, searchQuery }: Wond
         <QaKpiCard kpiStyle={kpiStyle} label="Open Bugs" value={fmt(allBugs.filter((row) => row.status === 'open').length)} sub="awaiting resolution" color={QA.FAIL} />
       </QaKpiGrid>
 
-      <QaSection title="Uploaded Wonder Miles files" subtitle="Only synchronized Jira-style Story/Bug exports owned by DTTRV are included" className="mb-[22px]">
+      <QaSection title="Uploaded Wonder Miles files" subtitle="Only synchronized Jira-style Story/Bug exports owned by the selected project are included" className="mb-[22px]">
         {sourceFiles.length ? (
           <div className="flex flex-wrap gap-2">{sourceFiles.map((name) => <span key={name} className="border border-qa-border bg-[#f7f5ef] px-2.5 py-1.5 font-mono-qa text-[10.5px] text-qa-muted">{displaySourceName(name)}</span>)}</div>
         ) : (
-          <div className="text-[13px] text-qa-muted-light">No Wonder Miles Story/Bug export is loaded for this period. Upload the spreadsheet under DTTRV; it will synchronize automatically.</div>
+          <div className="text-[13px] text-qa-muted-light">No Wonder Miles Story/Bug export is loaded for this period. Upload the spreadsheet under the selected project; it will synchronize automatically.</div>
         )}
       </QaSection>
 

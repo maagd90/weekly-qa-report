@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { QueryClient, QueryClientProvider, useMutation, useQuery } from '@tanstack/react-query';
 import clsx from 'clsx';
 import { QaMasthead } from './components/layout/QaMasthead';
@@ -48,7 +48,7 @@ function AppContent() {
     ...defaultPeriod,
     project: storedProject,
   };
-  const { data: initialDashboard, isLoading } = useQuery<DashboardPayload | null>({
+  const { data: initialDashboard, isLoading, error: initialDashboardError } = useQuery<DashboardPayload | null>({
     queryKey: ['dashboard-init', storedProject || 'all', defaultPeriod.startDate, defaultPeriod.endDate],
     queryFn: () => batchApi.getDashboard(initialFilter),
     retry: false,
@@ -58,16 +58,25 @@ function AppContent() {
     queryFn: batchApi.listProjects,
   });
 
+  const activeProjectRef = useRef(storedProject || 'all');
+  const projectRequestSequence = useRef(0);
+  const dateRequestSequence = useRef(0);
   const projectBaseFetch = useMutation({
-    mutationFn: (project: string) => batchApi.getDashboard({
+    mutationFn: (request: { project: string; sequence: number }) => batchApi.getDashboard({
       ...defaultReportingPeriod(),
-      project: project === 'all' ? undefined : project,
+      project: request.project === 'all' ? undefined : request.project,
     }),
-    onSuccess: (d) => { if (d) { setBaseDashboard(d); setFilteredByTab({}); } },
+    onSuccess: (d, request) => {
+      if (request.sequence !== projectRequestSequence.current || request.project !== activeProjectRef.current) return;
+      setBaseDashboard(d);
+      setFilteredByTab({});
+    },
   });
 
   const isProjectLoading = projectBaseFetch.isPending;
-  const base = isProjectLoading ? undefined : (baseDashboard ?? initialDashboard ?? undefined);
+  const base = isProjectLoading || projectBaseFetch.isError
+    ? undefined
+    : (baseDashboard ?? (activeProjectRef.current === (storedProject || 'all') ? initialDashboard : null) ?? undefined);
   const filters = usePerTabFilters(activeTab, base);
   const availableProjects = ['all', ...uniqueCanonicalProjects([
     ...filters.projects,
@@ -75,7 +84,7 @@ function AppContent() {
   ])];
   const projectNames = Object.fromEntries(registeredProjects.map((project) => [project.key, project.name === project.key ? projectDisplayName(project.key) : project.name]));
   const selectedProjectRecord = registeredProjects.find((project) => project.key === filters.project);
-  const wonderMilesProject = selectedProjectRecord?.key === 'DTTRV' ? selectedProjectRecord : undefined;
+  const wonderMilesProject = selectedProjectRecord?.capabilities.wonderMilesExport ? selectedProjectRecord : undefined;
   const { data: wonderMilesDashboard, isLoading: isWonderMilesLoading } = useQuery<DashboardPayload>({
     queryKey: ['wonder-miles-imports', wonderMilesProject?.id || 'none', defaultPeriod.startDate, defaultPeriod.endDate],
     queryFn: () => batchApi.getUploadedIssueDashboard(wonderMilesProject!.id, { ...defaultPeriod, project: wonderMilesProject!.key }),
@@ -92,27 +101,29 @@ function AppContent() {
   };
 
   const applyDateRange = useMutation({
-    mutationFn: (vars: { params: Partial<FilterParams>; tab: QaTab }) => {
+    mutationFn: (vars: { params: Partial<FilterParams>; tab: QaTab; project: string; sequence: number }) => {
       // Vendor Portal and Wonder Miles rows come from project-owned spreadsheet
       // imports. Their date actions only refilter cached imports; the shared live
       // search endpoint intentionally refreshes Jira and QMetry for other tabs.
       const request = vars.tab === 'wonder-miles'
         ? wonderMilesProject
           ? batchApi.getUploadedIssueDashboard(wonderMilesProject.id, { ...vars.params, project: wonderMilesProject.key })
-          : Promise.reject(new Error('Select the DTTRV project to filter Wonder Miles export data.'))
+          : Promise.reject(new Error('Select a project with Wonder Miles export enabled.'))
         : vars.tab === 'uat'
           ? batchApi.getDashboard(vars.params)
           : batchApi.searchDashboardByDates(vars.params);
-      return request.then((d) => ({ d, tab: vars.tab }));
+      return request.then((d) => ({ d, ...vars }));
     },
-    onSuccess: ({ d, tab }) => setFilteredView(d, tab),
+    onSuccess: ({ d, tab, project, sequence }) => {
+      if (sequence !== dateRequestSequence.current || project !== activeProjectRef.current || tab !== activeTab) return;
+      setFilteredView(d, tab);
+    },
   });
 
-  const supportsVendorPortal = (project: (typeof registeredProjects)[number]) => project.key === 'DLM';
   const showVendorPortalBugs = Boolean(
-    base?.uat
-    || filters.project === 'DLM'
-    || (filters.project === 'all' ? registeredProjects.some(supportsVendorPortal) : selectedProjectRecord && supportsVendorPortal(selectedProjectRecord)),
+    filters.project === 'all'
+      ? registeredProjects.some((project) => project.capabilities.vendorPortal)
+      : selectedProjectRecord?.capabilities.vendorPortal,
   );
   const showWonderMilesExport = Boolean(wonderMilesProject);
   const tabs = buildTabs(showVendorPortalBugs, showWonderMilesExport);
@@ -125,23 +136,35 @@ function AppContent() {
   const showFilters = !currentTab.hideFilters;
   const hasDashboard = !!display;
   const showRuntimeSearch = activeTab === 'testers' || activeTab === 'cycles' || activeTab === 'trace' || activeTab === 'uat' || activeTab === 'wonder-miles';
+  const showInitialDashboardError = Boolean(
+    initialDashboardError
+    && activeProjectRef.current === (storedProject || 'all')
+    && projectRequestSequence.current === 0
+    && !baseDashboard,
+  );
   const datesChanged = Boolean(display && (
     filters.startDate !== (display.scope.startDate || '')
     || filters.endDate !== (display.scope.endDate || '')
   ));
 
   const handleTabChange = (tab: QaTab) => {
+    dateRequestSequence.current += 1;
+    applyDateRange.reset();
     setActiveTab(tab);
     ui.clearSelectedCycle();
   };
 
   const handleProjectChange = (project: string) => {
     const nextProject = project || 'all';
+    activeProjectRef.current = nextProject;
+    projectRequestSequence.current += 1;
+    dateRequestSequence.current += 1;
+    applyDateRange.reset();
     filters.setProject(nextProject);
     ui.clearSelectedCycle();
     setFilteredByTab({});
     setBaseDashboard(null);
-    projectBaseFetch.mutate(nextProject);
+    projectBaseFetch.mutate({ project: nextProject, sequence: projectRequestSequence.current });
   };
 
   const goGenerate = () => setActiveTab('ai');
@@ -150,6 +173,8 @@ function AppContent() {
     // Project import sync returns the dashboard it just rebuilt. Replace the
     // in-memory snapshot immediately; query invalidation alone is insufficient
     // because baseDashboard intentionally takes precedence over query data.
+    dateRequestSequence.current += 1;
+    applyDateRange.reset();
     setBaseDashboard(freshDashboard);
     setFilteredByTab({});
   };
@@ -173,7 +198,7 @@ function AppContent() {
           dataMin={display?.meta.dataMin}
           dataMax={display?.meta.dataMax}
           showSearch={showRuntimeSearch}
-          onApplyDates={() => applyDateRange.mutate({ params: { ...filters.filterParams }, tab: activeTab })}
+          onApplyDates={() => { dateRequestSequence.current += 1; applyDateRange.mutate({ params: { ...filters.filterParams }, tab: activeTab, project: activeProjectRef.current, sequence: dateRequestSequence.current }); }}
           datesChanged={datesChanged}
           isApplyingDates={applyDateRange.isPending}
         />
@@ -183,6 +208,13 @@ function AppContent() {
         <div className="max-w-qa mx-auto w-full px-4 pt-3 sm:px-6 lg:px-8 print:hidden">
           <div className="p-3 border border-[#ecccc2] bg-[#f8ece8] text-[#a13d2c] text-sm">
             {(applyDateRange.error as Error).message}
+          </div>
+        </div>
+      )}
+      {(showInitialDashboardError || projectBaseFetch.isError) && showFilters && (
+        <div className="max-w-qa mx-auto w-full px-4 pt-3 sm:px-6 lg:px-8 print:hidden">
+          <div className="p-3 border border-[#ecccc2] bg-[#f8ece8] text-[#a13d2c] text-sm">
+            {(projectBaseFetch.error as Error | null)?.message || (showInitialDashboardError ? (initialDashboardError as Error).message : '') || 'Could not load the selected project dashboard.'}
           </div>
         </div>
       )}
@@ -198,7 +230,7 @@ function AppContent() {
         {display && activeTab === 'wonder-miles' && showWonderMilesExport && <WonderMilesExportPage dashboard={display} kpiStyle={ui.kpiStyle} searchQuery={filters.search} />}
         {activeTab === 'import' && <ImportStatusPage selectedProject={filters.project} projects={registeredProjects} onProjectChange={handleProjectChange} onImportedDataChanged={handleImportedDataChanged} />}
         {activeTab === 'ai' && <AiReportPage dashboard={display} kpiStyle={ui.kpiStyle} project={filters.project} />}
-        {activeTab === 'settings' && <SettingsPage selectedProject={filters.project} onProjectChange={handleProjectChange} />}
+        {activeTab === 'settings' && <SettingsPage selectedProject={filters.project} onProjectChange={handleProjectChange} onLiveDataChanged={handleImportedDataChanged} />}
       </div>
 
       <QaFooter />

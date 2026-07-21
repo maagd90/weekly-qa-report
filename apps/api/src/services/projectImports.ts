@@ -8,6 +8,8 @@ import {
   inspectImportFile,
   issueIdentity,
   mergeDatasets,
+  normalizeSourceProjectKey,
+  projectSourceKeys,
   readJsonFile,
   uatIdentity,
 } from 'qa-dashboard-batch';
@@ -20,8 +22,14 @@ export interface ProjectRecord {
   /** External JIRA/QMetry keys consolidated into this dashboard workspace. */
   sourceKeys: string[];
   name: string;
+  capabilities?: ProjectCapabilities;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface ProjectCapabilities {
+  vendorPortal: boolean;
+  wonderMilesExport: boolean;
 }
 
 export interface ProjectDeletionResult {
@@ -60,6 +68,7 @@ export interface ImportFileReport {
   successfullyImportedRows: number;
   createdRecords: number;
   updatedRecords: number;
+  unchangedRecords: number;
   duplicateOrSkippedRows: number;
   rejectedRows: number;
   rejections: Array<{ rowNumber: number; reference: string; reason: string }>;
@@ -96,14 +105,28 @@ function unique(values: string[]): string[] {
 
 function normalizeSourceKeys(primaryKey: string, values?: string[], previousPrimaryKey?: string): string[] {
   const aliases = (values || [])
-    .map(canonicalProjectKey)
-    .filter((key) => key && key !== 'all' && key !== previousPrimaryKey && key !== primaryKey);
+    .map(normalizeSourceProjectKey)
+    .filter((key) => key && key !== 'ALL' && key !== previousPrimaryKey && key !== primaryKey);
   return [primaryKey, ...unique(aliases).sort()];
+}
+
+function inferredCapabilities(project: Pick<ProjectRecord, 'key' | 'sourceKeys'>): ProjectCapabilities {
+  const sourceKeys = new Set(projectSourceKeys(project));
+  return {
+    vendorPortal: project.key === 'DLM',
+    wonderMilesExport: project.key === 'DTTRV' || sourceKeys.has('DP') || sourceKeys.has('DTTRV'),
+  };
 }
 
 function normalizedProject(project: ProjectRecord): ProjectRecord {
   const key = canonicalProjectKey(project.key);
-  return { ...project, key, sourceKeys: normalizeSourceKeys(key, project.sourceKeys) };
+  const sourceKeys = normalizeSourceKeys(key, project.sourceKeys);
+  return {
+    ...project,
+    key,
+    sourceKeys,
+    capabilities: { ...inferredCapabilities({ key, sourceKeys }), ...(project.capabilities || {}) },
+  };
 }
 
 function validateProjectKeys(key: string, sourceKeys: string[]): void {
@@ -196,6 +219,7 @@ export class ProjectImportStore {
   private readonly syncReportDir: string;
   private readonly importedCacheFile: string;
   private readonly liveCacheFile: string;
+  private operationQueue: Promise<void> = Promise.resolve();
 
   constructor(paths: RuntimePaths) {
     this.projectsFile = path.join(paths.configDir, 'projects.json');
@@ -209,8 +233,10 @@ export class ProjectImportStore {
   }
 
   listProjects(): ProjectRecord[] {
-    return [...(readJsonFile<ProjectRegistryFile>(this.projectsFile)?.projects || [])].map(normalizedProject)
-      .sort((left, right) => left.name.localeCompare(right.name));
+    const stored = [...(readJsonFile<ProjectRegistryFile>(this.projectsFile)?.projects || [])];
+    const normalized = stored.map(normalizedProject);
+    if (JSON.stringify(stored) !== JSON.stringify(normalized)) this.saveProjects(normalized);
+    return normalized.sort((left, right) => left.name.localeCompare(right.name));
   }
 
   ensureProjectsForKeys(keys: string[]): ProjectRecord[] {
@@ -221,7 +247,16 @@ export class ProjectImportStore {
       const key = canonicalProjectKey(rawKey);
       if (!key || key === 'all' || existing.has(key)) continue;
       const timestamp = now();
-      const project = { id: crypto.randomUUID(), key, sourceKeys: [key], name: key, createdAt: timestamp, updatedAt: timestamp };
+      const sourceKeys = normalizeSourceKeys(key, [normalizeSourceProjectKey(rawKey)]);
+      const project: ProjectRecord = {
+        id: crypto.randomUUID(),
+        key,
+        sourceKeys,
+        name: key,
+        capabilities: inferredCapabilities({ key, sourceKeys }),
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      };
       registry.push(project);
       existing.set(key, project);
       changed = true;
@@ -230,7 +265,7 @@ export class ProjectImportStore {
     return registry.sort((left, right) => left.name.localeCompare(right.name));
   }
 
-  createProject(input: { key?: string; sourceKeys?: string[]; name?: string }): ProjectRecord {
+  createProject(input: { key?: string; sourceKeys?: string[]; name?: string; capabilities?: Partial<ProjectCapabilities> }): ProjectRecord {
     const key = canonicalProjectKey(input.key);
     const sourceKeys = normalizeSourceKeys(key, input.sourceKeys);
     const name = (input.name || '').trim();
@@ -238,7 +273,15 @@ export class ProjectImportStore {
     if (name.length < 2 || name.length > 100) throw new Error('Project name must contain 2-100 characters.');
     const projects = this.listProjects();
     const timestamp = now();
-    const project: ProjectRecord = { id: crypto.randomUUID(), key, sourceKeys, name, createdAt: timestamp, updatedAt: timestamp };
+    const project: ProjectRecord = {
+      id: crypto.randomUUID(),
+      key,
+      sourceKeys,
+      name,
+      capabilities: { ...inferredCapabilities({ key, sourceKeys }), ...(input.capabilities || {}) },
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    };
     assertUniqueSourceKeys(projects, project);
     projects.push(project);
     this.saveProjects(projects);
@@ -252,7 +295,7 @@ export class ProjectImportStore {
     return project;
   }
 
-  updateProject(projectId: string, input: { key?: string; sourceKeys?: string[]; name?: string }): ProjectRecord {
+  updateProject(projectId: string, input: { key?: string; sourceKeys?: string[]; name?: string; capabilities?: Partial<ProjectCapabilities> }): ProjectRecord {
     const projects = this.listProjects();
     const index = projects.findIndex((project) => project.id === projectId);
     if (index < 0) throw new Error('Project not found.');
@@ -262,7 +305,16 @@ export class ProjectImportStore {
     const name = input.name === undefined ? current.name : input.name.trim();
     validateProjectKeys(key, sourceKeys);
     if (name.length < 2 || name.length > 100) throw new Error('Project name must contain 2-100 characters.');
-    const updated = { ...current, key, sourceKeys, name, updatedAt: now() };
+    const updated = {
+      ...current,
+      key,
+      sourceKeys,
+      name,
+      capabilities: input.capabilities === undefined
+        ? (current.capabilities || inferredCapabilities(current))
+        : { ...(current.capabilities || inferredCapabilities(current)), ...input.capabilities },
+      updatedAt: now(),
+    };
     assertUniqueSourceKeys(projects, updated);
     projects[index] = updated;
     this.saveProjects(projects);
@@ -402,6 +454,7 @@ export class ProjectImportStore {
       }
       let createdRecords = 0;
       let updatedRecords = 0;
+      let unchangedRecords = 0;
       let duplicateOrSkippedRows = 0;
       const classify = <T>(rows: T[], identity: (row: T) => string, category: keyof typeof seen) => {
         const accepted: T[] = [];
@@ -415,7 +468,7 @@ export class ProjectImportStore {
           accepted.push(row);
           const previous = previousRows[category].get(id);
           if (previous === undefined) createdRecords += 1;
-          else if (previous === JSON.stringify(row)) duplicateOrSkippedRows += 1;
+          else if (previous === JSON.stringify(row)) unchangedRecords += 1;
           else updatedRecords += 1;
         }
         return accepted;
@@ -431,9 +484,10 @@ export class ProjectImportStore {
         detectedType: inspected.inspection.detectedType,
         sheet: inspected.inspection.sheetName,
         totalRowsFound: inspected.inspection.rowsFound,
-        successfullyImportedRows: createdRecords + updatedRecords,
+        successfullyImportedRows: createdRecords + updatedRecords + unchangedRecords,
         createdRecords,
         updatedRecords,
+        unchangedRecords,
         duplicateOrSkippedRows,
         rejectedRows: inspected.inspection.rejectedRows,
         rejections: inspected.inspection.rejections,
@@ -484,6 +538,12 @@ export class ProjectImportStore {
     return report;
   }
 
+  syncProjectSerialized(projectId: string, initiatedBy = 'Local user'): Promise<ProjectSyncReport> {
+    const result = this.operationQueue.then(() => this.syncProject(projectId, initiatedBy));
+    this.operationQueue = result.then(() => undefined, () => undefined);
+    return result;
+  }
+
   getSyncReport(projectId: string, syncId: string): ProjectSyncReport {
     this.getProject(projectId);
     const report = readJsonFile<ProjectSyncReport>(this.reportPath(path.basename(syncId)));
@@ -493,12 +553,12 @@ export class ProjectImportStore {
 
   reconciliationCsv(projectId: string, syncId: string): string {
     const report = this.getSyncReport(projectId, syncId);
-    const headers = ['Project Key', 'Project Name', 'Sync ID', 'Status', 'Filename', 'Detected Type', 'Sheet', 'Rows Found', 'Imported', 'Created', 'Updated', 'Duplicate/Skipped', 'Rejected', 'Rejected Row', 'Reference', 'Rejection Reason', 'Warnings', 'Errors'];
+    const headers = ['Project Key', 'Project Name', 'Sync ID', 'Status', 'Filename', 'Detected Type', 'Sheet', 'Rows Found', 'Imported', 'Created', 'Updated', 'Unchanged', 'Duplicate/Skipped', 'Rejected', 'Rejected Row', 'Reference', 'Rejection Reason', 'Warnings', 'Errors'];
     const rows = report.files.flatMap((file) => {
       const rejections = file.rejections.length ? file.rejections : [{ rowNumber: '', reference: '', reason: '' }];
       return rejections.map((rejection) => [
         report.project.key, report.project.name, report.id, report.status, file.filename, file.detectedType,
-        file.sheet, file.totalRowsFound, file.successfullyImportedRows, file.createdRecords, file.updatedRecords,
+        file.sheet, file.totalRowsFound, file.successfullyImportedRows, file.createdRecords, file.updatedRecords, file.unchangedRecords,
         file.duplicateOrSkippedRows, file.rejectedRows, rejection.rowNumber, rejection.reference, rejection.reason,
         file.warnings, file.errors,
       ]);

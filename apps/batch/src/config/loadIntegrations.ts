@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import type { JiraConnectionInput, QmetryConnectionInput } from '../types/connections';
-import { canonicalProjectKey, uniqueCanonicalProjects } from '../projects/projectKey';
+import { normalizeSourceProjectKey, uniqueSourceProjectKeys } from '../projects/projectKey';
 
 const JIRA_SEARCH_PATH = '/rest/api/2/search';
 const QMETRY_TEST_CYCLES_SEARCH_PATH = '/testcycles/search';
@@ -137,8 +137,8 @@ const DEFAULTS: IntegrationsConfig = {
   },
 };
 
-function canonicalProjectKeys(values?: string[]): string[] {
-  const keys = uniqueCanonicalProjects(values || []);
+function sourceProjectKeys(values?: string[]): string[] {
+  const keys = uniqueSourceProjectKeys(values || []);
   return keys.length ? keys : [];
 }
 
@@ -148,7 +148,7 @@ function jiraJqlForProjects(projectKeys: string[]): string {
 
 function mergeJira(raw: Partial<JiraIntegrationConfig> | undefined, idx = 0): JiraIntegrationConfig {
   const cfg = { ...DEFAULT_JIRA, ...(raw || {}) };
-  const projectKeys = canonicalProjectKeys(cfg.projectKeys);
+  const projectKeys = sourceProjectKeys(cfg.projectKeys);
   const jql = cfg.jql || jiraJqlForProjects(projectKeys);
   return { ...cfg, name: cfg.name || `JIRA ${idx + 1}`, searchPath: cfg.searchPath || JIRA_SEARCH_PATH, fields: cfg.fields?.length ? cfg.fields : DEFAULT_JIRA_FIELDS, projectKeys, jql };
 }
@@ -163,7 +163,7 @@ function mergeQmetry(raw: Partial<QmetryIntegrationConfig> | undefined): QmetryI
   const cfg = { ...DEFAULTS.qmetry, ...(raw || {}) };
   return {
     ...cfg,
-    projectKey: canonicalProjectKey(cfg.projectKey) || 'DLM',
+    projectKey: normalizeSourceProjectKey(cfg.projectKey) || 'DLM',
     testCyclesSearchPath: cfg.testCyclesSearchPath || QMETRY_TEST_CYCLES_SEARCH_PATH,
     testCasesSearchPath: cfg.testCasesSearchPath || DEFAULTS.qmetry.testCasesSearchPath,
     testCaseFields: cleanQmetryTestCaseFields(cfg.testCaseFields),
@@ -195,7 +195,7 @@ function qmetryRuntimeSearchBody(projectId: string | null, folderId?: string): R
 function runtimeJiraOverride(runtime: RuntimeConfig): Partial<JiraIntegrationConfig> {
   const jira = runtime.jira || {};
   const secret = jira.onPremSecret || jira.apiToken;
-  const projectKeys = canonicalProjectKeys(jira.projectKeys);
+  const projectKeys = sourceProjectKeys(jira.projectKeys);
   return {
     ...(jira.enabled !== undefined ? { enabled: jira.enabled } : {}),
     ...(jira.deploymentType ? { deploymentType: jira.deploymentType } : {}),
@@ -218,7 +218,7 @@ function runtimeQmetryOverride(runtime: RuntimeConfig): Partial<QmetryIntegratio
     ...(qmetry.enabled !== undefined ? { enabled: qmetry.enabled } : {}),
     ...(qmetry.baseUrl ? { baseUrl: qmetry.baseUrl } : {}),
     ...(qmetry.apiPrefix ? { apiPrefix: qmetry.apiPrefix } : {}),
-    ...(qmetry.projectKey ? { projectKey: canonicalProjectKey(qmetry.projectKey) } : {}),
+    ...(qmetry.projectKey ? { projectKey: normalizeSourceProjectKey(qmetry.projectKey) } : {}),
     ...(projectId ? { projectId } : {}),
     ...(qmetry.basicAuth || qmetry.email || qmetry.apiToken ? { auth: { type: 'basic' as const, email: qmetry.email, token: qmetry.basicAuth || qmetry.apiToken }, authEncodedEnv: '' } : {}),
     ...(projectId || qmetry.folderId ? { testCyclesSearchBody: qmetryRuntimeSearchBody(projectId, qmetry.folderId) } : {}),
@@ -310,7 +310,7 @@ export function getAuthHeader(cfg: BasicAuthConfig): string | null {
 function connectionSecret(conn: { apiToken?: string; credential?: string }): string { return conn.apiToken || conn.credential || ''; }
 
 export function jiraConfigFromConnection(conn: JiraConnectionInput): JiraIntegrationConfig {
-  const projectKeys = canonicalProjectKeys(conn.projectKeys);
+  const projectKeys = sourceProjectKeys(conn.projectKeys);
   const jql = conn.jql?.trim() || jiraJqlForProjects(projectKeys);
   const deploymentType = conn.deploymentType || 'on-prem';
   return {
@@ -347,7 +347,7 @@ export function qmetryConfigFromConnection(conn: QmetryConnectionInput): QmetryI
     baseUrl: conn.baseUrl.replace(/\/+$/, ''),
     auth: { type: 'basic', email: conn.email, token: connectionSecret(conn) },
     authEncodedEnv: '',
-    projectKey: canonicalProjectKey(conn.projectKey) || 'DLM',
+    projectKey: normalizeSourceProjectKey(conn.projectKey) || 'DLM',
     projectId,
     testCyclesSearchPath: QMETRY_TEST_CYCLES_SEARCH_PATH,
     testCyclesSearchBody: qmetryCycleSearchBody(projectId, conn.folderId),

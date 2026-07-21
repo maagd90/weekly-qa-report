@@ -26,7 +26,7 @@ type BugView = 'uat' | 'production' | 'unclassified';
 const PHASE_FILTER_LABELS: Record<VendorPortalPhaseCategory, string> = {
   'phase1-uat': 'Phase 1 UAT',
   'phase2-uat': 'Phase 2 UAT',
-  'other-uat': 'Phase 1 UAT',
+  'other-uat': 'Other UAT',
   production: 'Production',
   unclassified: 'Unclassified',
 };
@@ -131,7 +131,7 @@ export function UatPage({ dashboard, kpiStyle, searchQuery }: UatPageProps) {
     <QaPageShell
       title="Vendor Portal Bugs"
       subtitle={`${fmt(uat.total)} bugs · ${uat.open} open`}
-      intro="DLM Vendor Portal bug logs — INC subjects are separated as Production; all remaining non-empty subjects stay in the UAT view. Search filters the bug rows instantly; apply dates only when the reporting period changes."
+      intro="Vendor Portal bug logs — INC subjects are separated as Production; all remaining non-empty subjects stay in the UAT view. Search filters the bug rows instantly; apply dates only when the reporting period changes."
     >
       <QaKpiGrid cols={4}>
         <QaKpiCard kpiStyle={kpiStyle} label="Total Vendor Portal Bugs" value={fmt(uat.total)}
