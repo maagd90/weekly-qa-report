@@ -487,12 +487,12 @@ A project does not need both Jira and QMetry. Missing source types are shown as 
 .xls
 ```
 
-For the web application, create and manage projects in **Settings**. Then select an existing project in **Import Data** and upload files there. The API stores every file beneath that project's own directory and records ownership in the import manifest. The standalone batch CLI can still read files copied directly into its configured input directory.
+For the web application, create and manage projects in **Settings**. When **All Projects** is selected, Settings shows every project's Jira and QMetry connection, allows connection editing, and can test or synchronize all enabled live connections. File import is intentionally different: select one existing project in **Import Data** before uploading or synchronizing files. The API stores every file beneath that project's own directory and records ownership in the import manifest. The standalone batch CLI can still read files copied directly into its configured input directory.
 
 ### Project-scoped import workflow
 
-1. Choose **All Projects** in the main dropdown, then create or maintain projects in **Settings**. Each logical dashboard project has one primary key plus optional associated source keys. For example, primary `DTTRV` with associated key `DP` consolidates both sources into one project. Keys and names can be updated; changes are migrated across project-owned imported data and browser connection mappings.
-2. Select the existing project in **Import Data** and upload Excel files. Only files owned by the selected project are listed.
+1. Choose **All Projects** in the main dropdown, then create or maintain projects and review all live Jira/QMetry connections in **Settings**. Each logical dashboard project has one primary key plus optional associated source keys. For example, primary `DTTRV` with associated key `DP` consolidates both sources into one project. Keys and names can be updated; changes are migrated across project-owned imported data and browser connection mappings.
+2. Select one existing project in **Import Data** and upload Excel files. Only files owned by the selected project are listed. If **All Projects** is selected, upload, file listing, removal, and **Sync imported data** are not rendered.
 3. Click **Sync imported data**. Only the selected project's directory is parsed.
 4. Review the reconciliation job: status, timing, initiator, per-file type/sheet, rows found, created/updated/skipped/rejected rows, row-level rejection reasons, validation messages, category totals, and previous-versus-new totals.
 5. Download the reconciliation CSV when evidence or row-level failure follow-up is required.
@@ -747,9 +747,9 @@ Filterable areas:
 | Test Cycles | Cycle totals, execution split, coverage, and cycle status |
 | Traceability | Story, bug, and test evidence |
 | Vendor Portal Bugs | DLM-only vendor bug totals, phase/environment, status, priority, ownership, and source-file traceability. The tab remains available for a configured DLM project even when the selected period contains no rows. |
-| Import Data | Existing-project selection, isolated project files, synchronization, and detailed reconciliation |
+| Import Data | Single-project selection, isolated project files, synchronization, and detailed reconciliation. All Projects is blocked for file operations. |
 | QA Report | Report generation and PDF download |
-| Settings | Project creation/update/deletion, associated source-key mapping, one Jira and one QMetry connection per project, AI provider, branding, and connection tests |
+| Settings | Project creation/update/deletion, associated source-key mapping, one Jira and one QMetry connection per project, aggregate All Projects connection editing/testing/live sync, AI provider, and branding |
 
 ### 5. Generate a report
 

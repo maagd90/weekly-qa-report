@@ -103,13 +103,16 @@ export function ImportStatusPage({ selectedProject, projects, onProjectChange }:
 
   const { data: files = [], isLoading } = useQuery({
     queryKey: ['input-files', selected?.id || 'none'],
-    queryFn: () => batchApi.listInputFiles(selected!.id),
+    queryFn: () => selected ? batchApi.listInputFiles(selected.id) : Promise.resolve([]),
     enabled: Boolean(selected),
     refetchInterval: selected ? 15_000 : false,
   });
 
   const uploadMutation = useMutation({
-    mutationFn: (selectedFiles: File[]) => Promise.all(selectedFiles.map((file) => batchApi.upload(selected!.id, file))),
+    mutationFn: (selectedFiles: File[]) => {
+      if (!selected) throw new Error('Select one project before uploading files.');
+      return Promise.all(selectedFiles.map((file) => batchApi.upload(selected.id, file)));
+    },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['input-files', selected?.id] }),
   });
 
@@ -122,12 +125,18 @@ export function ImportStatusPage({ selectedProject, projects, onProjectChange }:
   ]);
 
   const syncMutation = useMutation({
-    mutationFn: () => batchApi.syncInputFiles(selected!.id, { project: selected!.key }),
+    mutationFn: () => {
+      if (!selected) throw new Error('All Projects cannot run an imported-data sync. Select one project first.');
+      return batchApi.syncInputFiles(selected.id, { project: selected.key });
+    },
     onSuccess: async (result) => { setLastReconciliation(result.reconciliation); await invalidateData(); },
   });
 
   const deleteMutation = useMutation({
-    mutationFn: (fileId: string) => batchApi.deleteInputFile(selected!.id, fileId),
+    mutationFn: (fileId: string) => {
+      if (!selected) throw new Error('Select one project before removing an imported file.');
+      return batchApi.deleteInputFile(selected.id, fileId);
+    },
     onSuccess: async (result) => { setLastReconciliation(result.reconciliation); await invalidateData(); },
   });
 
@@ -149,14 +158,20 @@ export function ImportStatusPage({ selectedProject, projects, onProjectChange }:
   };
 
   return (
-    <QaPageShell title="Import Data" intro="Select an existing project, upload files into that project, then sync. Create and manage projects from Settings.">
+    <QaPageShell title="Import Data" intro="File upload and imported-data sync are available only for one selected project. All Projects is an aggregate dashboard and live-connection scope only.">
       <QaSection title="Project selection" subtitle="Only the selected project's files are listed and processed" className="mb-[22px]">
         <div className="max-w-xl">
-          <label className="text-[11px] font-mono-qa uppercase tracking-wide text-qa-muted">Project<select value={selected?.key || 'all'} onChange={(event) => { setLastReconciliation(null); onProjectChange(event.target.value); }} className="block w-full mt-1.5 border border-qa-ink bg-white px-3 py-2.5 text-[13px] normal-case font-sans"><option value="all">Choose a project…</option>{projects.map((project) => <option key={project.id} value={project.key}>{projectLabel(project)} ({project.key})</option>)}</select></label>
+          <label className="text-[11px] font-mono-qa uppercase tracking-wide text-qa-muted">Project<select value={selected?.key || 'all'} onChange={(event) => { setLastReconciliation(null); onProjectChange(event.target.value); }} className="block w-full mt-1.5 border border-qa-ink bg-white px-3 py-2.5 text-[13px] normal-case font-sans"><option value="all">All Projects — import disabled</option>{projects.map((project) => <option key={project.id} value={project.key}>{projectLabel(project)} ({project.key})</option>)}</select></label>
           {!projects.length && <div className="mt-3 p-3 text-[13px] border border-[#e6d6b8] bg-[#fff8e8] text-[#7a5612]">No projects exist yet. Open Settings to create the first project.</div>}
         </div>
       </QaSection>
 
+      {!selected ? <QaSection title="Select one project to import" subtitle="All Projects cannot own files or run an imported-data sync">
+        <div className="border border-[#e6d6b8] bg-[#fff8e8] p-4 text-[13px] text-[#7a5612]">
+          <p className="m-0 font-semibold">Import is unavailable while All Projects is selected.</p>
+          <p className="mb-0 mt-1.5">Choose a specific project above. Its upload area, owned file list, remove actions, and Sync imported data control will then become available. Live Jira/QMetry synchronization for all projects remains available in Settings.</p>
+        </div>
+      </QaSection> : <>
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-[22px] items-start">
         <div>
           <div onDragOver={(event) => { event.preventDefault(); if (selected) setIsDragging(true); }} onDragLeave={() => setIsDragging(false)} onDrop={handleDrop} onClick={() => selected && fileInputRef.current?.click()} className={clsx('border-2 border-dashed p-10 text-center transition mb-5', selected ? 'cursor-pointer hover:border-qa-ink hover:bg-[#faf8f2]' : 'cursor-not-allowed opacity-60', isDragging ? 'border-qa-ink bg-[#faf8f2]' : 'border-qa-border-mid')}>
@@ -179,6 +194,7 @@ export function ImportStatusPage({ selectedProject, projects, onProjectChange }:
         </div>
       </div>
       {lastReconciliation && <ReconciliationPanel report={lastReconciliation} onDownload={downloadReconciliation} />}
+      </>}
     </QaPageShell>
   );
 }

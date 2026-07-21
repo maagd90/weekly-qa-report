@@ -96,6 +96,14 @@ function qmetryProject(conn: QmetryConnectionInput, projects: ProjectRecord[]): 
     || projects.find((project) => projectSourceKeys(project).includes(conn.projectKey?.trim().toUpperCase()));
 }
 
+function jiraConnectionForProject(project: ProjectRecord, connections: JiraConnectionInput[], projects: ProjectRecord[]): JiraConnectionInput {
+  return connections.find((connection) => jiraProject(connection, projects)?.id === project.id) || blankJiraConnection(project);
+}
+
+function qmetryConnectionForProject(project: ProjectRecord, connections: QmetryConnectionInput[], projects: ProjectRecord[]): QmetryConnectionInput {
+  return connections.find((connection) => qmetryProject(connection, projects)?.id === project.id) || blankQmetryConnection(project);
+}
+
 function JiraConnectionCard({ conn, onChange, project }: { conn: JiraConnectionInput; onChange: (next: JiraConnectionInput) => void; project: ProjectRecord }) {
   const [testResult, setTestResult] = useState<TestResult | null>(null);
   const [showSecret, setShowSecret] = useState(false);
@@ -245,11 +253,11 @@ export function SettingsPage({ selectedProject: selectedProjectKey, onProjectCha
   const projects = projectsData || [];
   const selectedProject = projects.find((project) => project.key === selectedProjectKey) || null;
   const allProjectsSelected = !selectedProjectKey || selectedProjectKey === 'all';
-  const selectedJiraConnection = useMemo(() => selectedProject
-    ? jiraConnections.find((connection) => jiraProject(connection, projects)?.id === selectedProject.id) || blankJiraConnection(selectedProject)
-    : null, [jiraConnections, projects, selectedProject]);
+  const connectionProjects = selectedProject ? [selectedProject] : projects;
+  const hasConnectionScope = connectionProjects.length > 0;
+  const connectionScopeLabel = selectedProject ? selectedProject.key : 'all projects';
   const selectedQmetryConnection = useMemo(() => selectedProject
-    ? qmetryConnections.find((connection) => qmetryProject(connection, projects)?.id === selectedProject.id) || blankQmetryConnection(selectedProject)
+    ? qmetryConnectionForProject(selectedProject, qmetryConnections, projects)
     : null, [qmetryConnections, projects, selectedProject]);
   const { data: cycles, refetch: loadCycles, isFetching: cyclesFetching, isFetched: cyclesFetched } = useQuery({ queryKey: ['cycles-folders', selectedQmetryConnection?.id || 'none'], queryFn: () => batchApi.getCycleFolders(selectedQmetryConnection?.id), retry: false, enabled: false });
 
@@ -288,25 +296,23 @@ export function SettingsPage({ selectedProject: selectedProjectKey, onProjectCha
   }
   function selectedProjectFilter() { return selectedProject ? { project: selectedProject.key } : {}; }
 
-  function updateSelectedJira(next: JiraConnectionInput) {
-    if (!selectedProject) return;
+  function updateProjectJira(project: ProjectRecord, next: JiraConnectionInput) {
     setConnectionError(null);
     setJiraConnectionsState((current) => {
-      const index = current.findIndex((connection) => jiraProject(connection, projects)?.id === selectedProject.id);
-      const sourceKeys = projectSourceKeys(selectedProject);
-      const scoped = { ...next, workspaceProjectId: selectedProject.id, workspaceProjectKey: selectedProject.key, projectKeys: sourceKeys, jql: next.jql ?? jiraProjectJql(sourceKeys) };
+      const index = current.findIndex((connection) => jiraProject(connection, projects)?.id === project.id);
+      const sourceKeys = projectSourceKeys(project);
+      const scoped = { ...next, workspaceProjectId: project.id, workspaceProjectKey: project.key, projectKeys: sourceKeys, jql: next.jql ?? jiraProjectJql(sourceKeys) };
       if (index < 0) return [...current, scoped];
       return current.map((connection, currentIndex) => currentIndex === index ? scoped : connection);
     });
   }
 
-  function updateSelectedQmetry(next: QmetryConnectionInput) {
-    if (!selectedProject) return;
+  function updateProjectQmetry(project: ProjectRecord, next: QmetryConnectionInput) {
     setConnectionError(null);
     setQmetryConnectionsState((current) => {
-      const index = current.findIndex((connection) => qmetryProject(connection, projects)?.id === selectedProject.id);
-      const selectedSourceKey = projectSourceKeys(selectedProject).includes(next.projectKey) ? next.projectKey : selectedProject.key;
-      const scoped = { ...next, workspaceProjectId: selectedProject.id, workspaceProjectKey: selectedProject.key, projectKey: selectedSourceKey, cycleIds: [] };
+      const index = current.findIndex((connection) => qmetryProject(connection, projects)?.id === project.id);
+      const selectedSourceKey = projectSourceKeys(project).includes(next.projectKey) ? next.projectKey : project.key;
+      const scoped = { ...next, workspaceProjectId: project.id, workspaceProjectKey: project.key, projectKey: selectedSourceKey, cycleIds: [] };
       if (index < 0) return [...current, scoped];
       return current.map((connection, currentIndex) => currentIndex === index ? scoped : connection);
     });
@@ -330,7 +336,7 @@ export function SettingsPage({ selectedProject: selectedProjectKey, onProjectCha
       setQmetryConnectionsState(normalized.qmetry);
       setConnectionError(null);
       const removedMessage = normalized.removed.length ? ` Removed orphaned connection${normalized.removed.length === 1 ? '' : 's'}: ${normalized.removed.join(', ')}.` : '';
-      setSavedMsg(selectedProject ? `${selectedProject.key} connections saved. This project has one JIRA slot and one QMetry slot.${removedMessage}` : `Connections saved.${removedMessage}`);
+      setSavedMsg(selectedProject ? `${selectedProject.key} connections saved. This project has one JIRA slot and one QMetry slot.${removedMessage}` : `All project connections saved. Each project has one JIRA slot and one QMetry slot.${removedMessage}`);
       queryClient.invalidateQueries({ queryKey: ['integrations'] });
       queryClient.invalidateQueries({ queryKey: ['dashboard-init'] });
       setTimeout(() => setSavedMsg(null), 3500);
@@ -507,13 +513,19 @@ export function SettingsPage({ selectedProject: selectedProjectKey, onProjectCha
           <button type="button" onClick={saveBranding} className="mt-3 font-mono-qa text-xs font-semibold tracking-wider uppercase px-4 py-2.5 border-none cursor-pointer text-white" style={{ background: QA.accent }}>Save branding</button>
           {brandingSavedMsg && <div className="mt-3 p-3 text-[13px] border border-[#cfe0d4] bg-[#eef4ef] text-[#2f6a48]">{brandingSavedMsg}</div>}
         </QaSection>
-        <QaSection title="Selected project connection summary">
-          {selectedProject ? <div className="grid grid-cols-1 gap-3 mb-4 sm:grid-cols-2"><div className="min-w-0 border border-qa-border p-3 bg-[#faf8f2]"><p className="font-semibold text-[13px] m-0">JIRA · {selectedProject.key}</p><p className="font-mono-qa text-[10px] text-qa-muted-light mt-1 m-0 break-words">{jiraConnections.some((connection) => jiraProject(connection, projects)?.id === selectedProject.id) ? (selectedJiraConnection?.enabled === false ? 'Configured · disabled' : 'Configured · enabled') : 'Not configured'}</p></div><div className="min-w-0 border border-qa-border p-3 bg-[#faf8f2]"><p className="font-semibold text-[13px] m-0">QMetry · {selectedProject.key}</p><p className="font-mono-qa text-[10px] text-qa-muted-light mt-1 m-0 break-words">{qmetryConnections.some((connection) => qmetryProject(connection, projects)?.id === selectedProject.id) ? (selectedQmetryConnection?.enabled === false ? 'Configured · disabled' : 'Configured · enabled') : 'Not configured'}</p></div></div> : <div className="mb-3 p-3 text-[13px] border border-[#e6d6b8] bg-[#fff8e8] text-[#7a5612]">Select a specific project from the main Project dropdown to configure, test, or sync its connections.</div>}
-          <p className="text-[11.5px] text-qa-muted-light mt-0">Sync scope: {selectedProject ? `${selectedProject.key} only` : 'no project selected'}</p>
+        <QaSection title={selectedProject ? 'Selected project connection summary' : 'All project connection summary'} className="lg:col-span-2">
+          {connectionProjects.length ? <div className="grid grid-cols-1 gap-3 mb-4 md:grid-cols-2 xl:grid-cols-3">{connectionProjects.map((project) => {
+            const jira = jiraConnectionForProject(project, jiraConnections, projects);
+            const qmetry = qmetryConnectionForProject(project, qmetryConnections, projects);
+            const hasJira = jiraConnections.some((connection) => jiraProject(connection, projects)?.id === project.id);
+            const hasQmetry = qmetryConnections.some((connection) => qmetryProject(connection, projects)?.id === project.id);
+            return <div key={project.id} className="min-w-0 border border-qa-border p-3 bg-[#faf8f2]"><p className="font-semibold text-[13px] m-0">{project.name} · {project.key}</p><div className="grid grid-cols-1 gap-1 mt-2 text-[10px] font-mono-qa text-qa-muted-light sm:grid-cols-2"><span>JIRA: {hasJira ? (jira.enabled === false ? 'configured · disabled' : 'configured · enabled') : 'not configured'}</span><span>QMetry: {hasQmetry ? (qmetry.enabled === false ? 'configured · disabled' : 'configured · enabled') : 'not configured'}</span></div></div>;
+          })}</div> : <div className="mb-3 p-3 text-[13px] border border-[#e6d6b8] bg-[#fff8e8] text-[#7a5612]">No projects exist. Create a project before configuring live connections.</div>}
+          <p className="text-[11.5px] text-qa-muted-light mt-0">Live connection scope: {selectedProject ? `${selectedProject.key} only` : 'all configured projects'}. Uploaded Excel files are never processed from Settings.</p>
           <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-            <div className="flex min-h-[132px] flex-col border border-qa-border bg-[#faf8f2] p-3"><p className="m-0 text-[12px] font-semibold">Save configuration</p><p className="mt-1 mb-3 text-[11px] leading-relaxed text-qa-muted">Stores the selected project’s Jira and QMetry settings in this browser. It makes no external API call.</p><button type="button" onClick={saveConnections} disabled={!selectedProject} className="mt-auto w-full font-mono-qa text-xs font-semibold tracking-wider uppercase px-4 py-2.5 border border-qa-border bg-white cursor-pointer disabled:opacity-50">Save connections</button></div>
-            <div className="flex min-h-[132px] flex-col border border-qa-border bg-[#faf8f2] p-3"><p className="m-0 text-[12px] font-semibold">Validate configuration</p><p className="mt-1 mb-3 text-[11px] leading-relaxed text-qa-muted">Saves the current values, calls only the selected project’s enabled APIs, and displays sample counts without updating dashboard data.</p><button type="button" onClick={() => { if (saveConnections()) testMutation.mutate(); }} disabled={!selectedProject || testMutation.isPending} className="mt-auto w-full font-mono-qa text-xs font-semibold tracking-wider uppercase px-4 py-2.5 border border-qa-border bg-white cursor-pointer disabled:opacity-50">{testMutation.isPending ? 'Testing...' : 'Save & test'}</button></div>
-            <div className="flex min-h-[132px] flex-col border border-qa-border bg-[#faf8f2] p-3"><p className="m-0 text-[12px] font-semibold">Refresh dashboard data</p><p className="mt-1 mb-3 text-[11px] leading-relaxed text-qa-muted">Saves the current values, imports live Jira/QMetry data for this project, and rebuilds its dashboard dataset.</p><button type="button" onClick={() => { if (saveConnections()) syncLiveMutation.mutate(); }} disabled={!selectedProject || syncLiveMutation.isPending} className="mt-auto w-full font-mono-qa text-xs font-semibold tracking-wider uppercase px-4 py-2.5 border-none cursor-pointer text-white disabled:opacity-50" style={{ background: QA.accent }}>{syncLiveMutation.isPending ? 'Syncing...' : 'Save & sync data'}</button></div>
+            <div className="flex min-h-[132px] flex-col border border-qa-border bg-[#faf8f2] p-3"><p className="m-0 text-[12px] font-semibold">Save configuration</p><p className="mt-1 mb-3 text-[11px] leading-relaxed text-qa-muted">Stores the current Jira and QMetry settings for {connectionScopeLabel} in this browser. It makes no external API call.</p><button type="button" onClick={saveConnections} disabled={!hasConnectionScope} className="mt-auto w-full font-mono-qa text-xs font-semibold tracking-wider uppercase px-4 py-2.5 border border-qa-border bg-white cursor-pointer disabled:opacity-50">Save connections</button></div>
+            <div className="flex min-h-[132px] flex-col border border-qa-border bg-[#faf8f2] p-3"><p className="m-0 text-[12px] font-semibold">Validate configuration</p><p className="mt-1 mb-3 text-[11px] leading-relaxed text-qa-muted">Saves the current values, calls the enabled APIs for {connectionScopeLabel}, and displays sample counts without updating dashboard data.</p><button type="button" onClick={() => { if (saveConnections()) testMutation.mutate(); }} disabled={!hasConnectionScope || testMutation.isPending} className="mt-auto w-full font-mono-qa text-xs font-semibold tracking-wider uppercase px-4 py-2.5 border border-qa-border bg-white cursor-pointer disabled:opacity-50">{testMutation.isPending ? 'Testing...' : 'Save & test'}</button></div>
+            <div className="flex min-h-[132px] flex-col border border-qa-border bg-[#faf8f2] p-3"><p className="m-0 text-[12px] font-semibold">Refresh live dashboard data</p><p className="mt-1 mb-3 text-[11px] leading-relaxed text-qa-muted">Saves and syncs Jira/QMetry for {connectionScopeLabel}. This never processes uploaded Excel files.</p><button type="button" onClick={() => { if (saveConnections()) syncLiveMutation.mutate(); }} disabled={!hasConnectionScope || syncLiveMutation.isPending} className="mt-auto w-full font-mono-qa text-xs font-semibold tracking-wider uppercase px-4 py-2.5 border-none cursor-pointer text-white disabled:opacity-50" style={{ background: QA.accent }}>{syncLiveMutation.isPending ? 'Syncing...' : 'Save & sync data'}</button></div>
           </div>
           {syncCounts && <div className="mt-3 p-3 text-[13px] border border-[#cfe0d4] bg-[#eef4ef] text-[#2f6a48]">Synced executions {syncCounts.executions} · issues {syncCounts.issues} · uat {syncCounts.uat}{syncWarnings.length ? ` · warnings: ${syncWarnings.join('; ')}` : ''}</div>}
           {syncLiveMutation.isError && <div className="mt-3 p-3 text-[13px] border border-[#ecccc2] bg-[#f8ece8] text-[#a13d2c]">{(syncLiveMutation.error as Error).message}</div>}
@@ -524,18 +536,26 @@ export function SettingsPage({ selectedProject: selectedProjectKey, onProjectCha
           {connectionError && <div className="mt-3 p-3 text-[13px] border border-[#ecccc2] bg-[#f8ece8] text-[#a13d2c]">{connectionError}</div>}
         </QaSection>
         <QaSection title="JIRA connection" className="lg:col-span-2">
-          <p className="text-[13px] text-qa-muted m-0 mb-3">The selected project has one JIRA configuration slot. Its JQL remains editable but must include all source keys configured in Project Management.</p>
-          {selectedProject && selectedJiraConnection ? <JiraConnectionCard key={`${selectedProject.id}-jira`} conn={selectedJiraConnection} project={selectedProject} onChange={updateSelectedJira} /> : <div className="p-3 text-[13px] border border-[#e6d6b8] bg-[#fff8e8] text-[#7a5612]">Select a specific project from the main Project dropdown to configure JIRA.</div>}
+          <p className="text-[13px] text-qa-muted m-0 mb-3">Each project has one JIRA configuration slot. Under All Projects, expand any project to edit its connection. JQL remains editable but must include all source keys configured in Project Management.</p>
+          {connectionProjects.length ? <div className="space-y-3">{connectionProjects.map((project) => {
+            const connection = jiraConnectionForProject(project, jiraConnections, projects);
+            const configured = jiraConnections.some((candidate) => jiraProject(candidate, projects)?.id === project.id);
+            return <details key={`${selectedProject ? 'single' : 'all'}-${project.id}-jira`} open={selectedProject ? true : undefined} className="border border-qa-border bg-white"><summary className="flex cursor-pointer flex-wrap items-center justify-between gap-2 px-3.5 py-3 text-[13px] font-semibold"><span>JIRA · {project.name} ({project.key})</span><span className="font-mono-qa text-[10px] font-normal text-qa-muted-light">{configured ? (connection.enabled === false ? 'Configured · disabled' : 'Configured · enabled') : 'Not configured'}</span></summary><div className="border-t border-qa-border p-3"><JiraConnectionCard conn={connection} project={project} onChange={(next) => updateProjectJira(project, next)} /></div></details>;
+          })}</div> : <div className="p-3 text-[13px] border border-[#e6d6b8] bg-[#fff8e8] text-[#7a5612]">Create a dashboard project before configuring JIRA.</div>}
         </QaSection>
         <QaSection title="QMetry connection" className="lg:col-span-2">
-          <p className="text-[13px] text-qa-muted m-0 mb-3">The selected project has one QMetry configuration slot. Choose the applicable QMetry key from this project's configured source keys; the numeric Project ID and folder remain configurable.</p>
-          {selectedProject && selectedQmetryConnection ? <QmetryConnectionCard key={`${selectedProject.id}-qmetry`} conn={selectedQmetryConnection} project={selectedProject} onChange={updateSelectedQmetry} /> : <div className="p-3 text-[13px] border border-[#e6d6b8] bg-[#fff8e8] text-[#7a5612]">Select a specific project from the main Project dropdown to configure QMetry.</div>}
+          <p className="text-[13px] text-qa-muted m-0 mb-3">Each project has one QMetry configuration slot. Under All Projects, expand any project to edit its connection. Choose the applicable QMetry key from that project's configured source keys.</p>
+          {connectionProjects.length ? <div className="space-y-3">{connectionProjects.map((project) => {
+            const connection = qmetryConnectionForProject(project, qmetryConnections, projects);
+            const configured = qmetryConnections.some((candidate) => qmetryProject(candidate, projects)?.id === project.id);
+            return <details key={`${selectedProject ? 'single' : 'all'}-${project.id}-qmetry`} open={selectedProject ? true : undefined} className="border border-qa-border bg-white"><summary className="flex cursor-pointer flex-wrap items-center justify-between gap-2 px-3.5 py-3 text-[13px] font-semibold"><span>QMetry · {project.name} ({project.key})</span><span className="font-mono-qa text-[10px] font-normal text-qa-muted-light">{configured ? (connection.enabled === false ? 'Configured · disabled' : 'Configured · enabled') : 'Not configured'}</span></summary><div className="border-t border-qa-border p-3"><QmetryConnectionCard conn={connection} project={project} onChange={(next) => updateProjectQmetry(project, next)} /></div></details>;
+          })}</div> : <div className="p-3 text-[13px] border border-[#e6d6b8] bg-[#fff8e8] text-[#7a5612]">Create a dashboard project before configuring QMetry.</div>}
         </QaSection>
-        <QaSection title="Cycle / Folder list" className="lg:col-span-2">
+        {selectedProject && <QaSection title="Cycle / Folder list" className="lg:col-span-2">
           <p className="text-[13px] text-qa-muted m-0 mb-3">Live QMetry cycles are shown only after you click Load cycles/folders.</p>
           <div className="flex flex-wrap items-center gap-2 mb-3"><button type="button" onClick={() => loadCycles()} disabled={!selectedProject || cyclesFetching} className="font-mono-qa text-[10px] px-3 py-1.5 border border-qa-border bg-white cursor-pointer disabled:opacity-50">{cyclesFetching ? 'Loading...' : cyclesFetched ? 'Refresh cycles/folders' : 'Load cycles/folders'}</button><span className="min-w-0 break-words text-[12px] text-qa-muted">Source: <span className="font-mono-qa text-qa-ink">{cycles?.source || 'not loaded'}</span>{cycles?.connection ? ` - ${cycles.connection}` : ''}</span></div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-2 max-h-72 overflow-y-auto">{(cycles?.cycles || []).map((c) => <div key={c.id} className="border border-qa-border bg-[#faf8f2] px-3 py-2 font-mono-qa text-[11px]"><span className="text-qa-muted-light">{c.id}</span> · {c.name}</div>)}{!cycles?.cycles?.length && <div className="text-[13px] text-qa-muted">No cycles loaded. Click Load cycles/folders after saving QMetry.</div>}</div>
-        </QaSection>
+        </QaSection>}
         <QaSection title="Folder paths">
           <ul className="text-[13px] text-qa-muted m-0 p-0 list-none space-y-2 font-mono-qa"><li><span className="text-qa-ink">input/</span> - staged Excel exports</li><li><span className="text-qa-ink">output/</span> - dashboard-data.json, report.md</li><li><span className="text-qa-ink">config/</span> - fallback runtime config</li></ul>
         </QaSection>

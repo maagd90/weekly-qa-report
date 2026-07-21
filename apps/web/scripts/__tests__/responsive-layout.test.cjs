@@ -95,6 +95,10 @@ hasAll('src/pages/SettingsPage.tsx', [
   'Additional source keys',
   'JIRA source project keys',
   'Choose the applicable QMetry key',
+  'All project connection summary',
+  'all configured projects',
+  'Under All Projects, expand any project to edit its connection.',
+  'This never processes uploaded Excel files.',
 ]);
 hasNone('src/pages/SettingsPage.tsx', ['saveAll', '+ Add JIRA connection', '+ Add QMetry connection']);
 
@@ -210,7 +214,11 @@ hasAll('src/pages/ImportStatusPage.tsx', [
   'Promise.all(selectedFiles.map',
   'multiple className="hidden"',
   'handleFiles(e.dataTransfer.files)',
-  'Create and manage projects from Settings.',
+  'All Projects — import disabled',
+  'Import is unavailable while All Projects is selected.',
+  'All Projects cannot own files or run an imported-data sync',
+  'Live Jira/QMetry synchronization for all projects remains available in Settings.',
+  '!selected ?',
 ]);
 hasNone('src/pages/ImportStatusPage.tsx', ['New project key', 'New project name', 'Create project']);
 
