@@ -12,10 +12,13 @@ import {
   uatIdentity,
 } from 'qa-dashboard-batch';
 import type { Dataset, RuntimePaths } from 'qa-dashboard-batch';
+import { normalizeDatasetProjectOwnership } from './projectConnections';
 
 export interface ProjectRecord {
   id: string;
   key: string;
+  /** External JIRA/QMetry keys consolidated into this dashboard workspace. */
+  sourceKeys: string[];
   name: string;
   createdAt: string;
   updatedAt: string;
@@ -91,6 +94,39 @@ function unique(values: string[]): string[] {
   return [...new Set(values.filter(Boolean))];
 }
 
+function normalizeSourceKeys(primaryKey: string, values?: string[], previousPrimaryKey?: string): string[] {
+  const aliases = (values || [])
+    .map(canonicalProjectKey)
+    .filter((key) => key && key !== 'all' && key !== previousPrimaryKey && key !== primaryKey);
+  return [primaryKey, ...unique(aliases).sort()];
+}
+
+function normalizedProject(project: ProjectRecord): ProjectRecord {
+  const key = canonicalProjectKey(project.key);
+  return { ...project, key, sourceKeys: normalizeSourceKeys(key, project.sourceKeys) };
+}
+
+function validateProjectKeys(key: string, sourceKeys: string[]): void {
+  for (const candidate of sourceKeys) {
+    if (!/^[A-Z0-9][A-Z0-9_-]{1,31}$/.test(candidate) || candidate === 'all') {
+      throw new Error('Project and associated source keys must contain 2-32 letters, numbers, underscores, or hyphens.');
+    }
+  }
+  if (!sourceKeys.includes(key)) throw new Error(`Associated source keys must include the primary project key ${key}.`);
+}
+
+function assertUniqueSourceKeys(projects: ProjectRecord[], candidate: ProjectRecord): void {
+  const existing = new Map<string, ProjectRecord>();
+  for (const project of projects) {
+    if (project.id === candidate.id) continue;
+    for (const key of project.sourceKeys) existing.set(key, project);
+  }
+  const duplicate = candidate.sourceKeys.find((key) => existing.has(key));
+  if (duplicate) {
+    throw new Error(`Source key ${duplicate} is already assigned to project ${existing.get(duplicate)!.key}.`);
+  }
+}
+
 function writeJsonAtomic(filePath: string, value: unknown): void {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   const tempPath = `${filePath}.${process.pid}.${crypto.randomUUID()}.tmp`;
@@ -134,6 +170,19 @@ function normalizeProjectDataset(dataset: Dataset, project: ProjectRecord, filen
   return { dataset: normalized, reassignedRows };
 }
 
+function renameDatasetProject(dataset: Dataset, previousKey: string, nextKey: string): Dataset {
+  const isRenamedProject = (value?: string) => canonicalProjectKey(value) === previousKey;
+  return {
+    ...dataset,
+    executions: dataset.executions.map((row) => isRenamedProject(row.project) ? { ...row, project: nextKey } : row),
+    issues: dataset.issues.map((row) => isRenamedProject(row.project) ? { ...row, project: nextKey } : row),
+    uat: dataset.uat.map((row) => isRenamedProject(row.project) ? { ...row, project: nextKey } : row),
+    files: dataset.files.map((file) => isRenamedProject(file.project) ? { ...file, project: nextKey } : file),
+    projects: unique(dataset.projects.map((key) => canonicalProjectKey(key) === previousKey ? nextKey : canonicalProjectKey(key))),
+    meta: { ...dataset.meta, parsedAt: now() },
+  };
+}
+
 function csvCell(value: unknown): string {
   const text = Array.isArray(value) ? value.join(' | ') : String(value ?? '');
   return `"${text.replace(/"/g, '""')}"`;
@@ -160,19 +209,19 @@ export class ProjectImportStore {
   }
 
   listProjects(): ProjectRecord[] {
-    return [...(readJsonFile<ProjectRegistryFile>(this.projectsFile)?.projects || [])]
+    return [...(readJsonFile<ProjectRegistryFile>(this.projectsFile)?.projects || [])].map(normalizedProject)
       .sort((left, right) => left.name.localeCompare(right.name));
   }
 
   ensureProjectsForKeys(keys: string[]): ProjectRecord[] {
     const registry = this.listProjects();
-    const existing = new Map(registry.map((project) => [project.key, project]));
+    const existing = new Map(registry.flatMap((project) => project.sourceKeys.map((key) => [key, project] as const)));
     let changed = false;
     for (const rawKey of keys) {
       const key = canonicalProjectKey(rawKey);
       if (!key || key === 'all' || existing.has(key)) continue;
       const timestamp = now();
-      const project = { id: crypto.randomUUID(), key, name: key, createdAt: timestamp, updatedAt: timestamp };
+      const project = { id: crypto.randomUUID(), key, sourceKeys: [key], name: key, createdAt: timestamp, updatedAt: timestamp };
       registry.push(project);
       existing.set(key, project);
       changed = true;
@@ -181,17 +230,16 @@ export class ProjectImportStore {
     return registry.sort((left, right) => left.name.localeCompare(right.name));
   }
 
-  createProject(input: { key?: string; name?: string }): ProjectRecord {
+  createProject(input: { key?: string; sourceKeys?: string[]; name?: string }): ProjectRecord {
     const key = canonicalProjectKey(input.key);
+    const sourceKeys = normalizeSourceKeys(key, input.sourceKeys);
     const name = (input.name || '').trim();
-    if (!/^[A-Z0-9][A-Z0-9_-]{1,31}$/.test(key) || key === 'all') {
-      throw new Error('Project key must contain 2-32 letters, numbers, underscores, or hyphens.');
-    }
+    validateProjectKeys(key, sourceKeys);
     if (name.length < 2 || name.length > 100) throw new Error('Project name must contain 2-100 characters.');
     const projects = this.listProjects();
-    if (projects.some((project) => project.key === key)) throw new Error(`Project ${key} already exists.`);
     const timestamp = now();
-    const project: ProjectRecord = { id: crypto.randomUUID(), key, name, createdAt: timestamp, updatedAt: timestamp };
+    const project: ProjectRecord = { id: crypto.randomUUID(), key, sourceKeys, name, createdAt: timestamp, updatedAt: timestamp };
+    assertUniqueSourceKeys(projects, project);
     projects.push(project);
     this.saveProjects(projects);
     fs.mkdirSync(this.projectDirectory(project.id), { recursive: true });
@@ -204,15 +252,27 @@ export class ProjectImportStore {
     return project;
   }
 
-  updateProject(projectId: string, input: { name?: string }): ProjectRecord {
-    const name = (input.name || '').trim();
-    if (name.length < 2 || name.length > 100) throw new Error('Project name must contain 2-100 characters.');
+  updateProject(projectId: string, input: { key?: string; sourceKeys?: string[]; name?: string }): ProjectRecord {
     const projects = this.listProjects();
     const index = projects.findIndex((project) => project.id === projectId);
     if (index < 0) throw new Error('Project not found.');
-    const updated = { ...projects[index], name, updatedAt: now() };
+    const current = projects[index];
+    const key = input.key === undefined ? current.key : canonicalProjectKey(input.key);
+    const sourceKeys = normalizeSourceKeys(key, input.sourceKeys === undefined ? current.sourceKeys : input.sourceKeys, current.key !== key ? current.key : undefined);
+    const name = input.name === undefined ? current.name : input.name.trim();
+    validateProjectKeys(key, sourceKeys);
+    if (name.length < 2 || name.length > 100) throw new Error('Project name must contain 2-100 characters.');
+    const updated = { ...current, key, sourceKeys, name, updatedAt: now() };
+    assertUniqueSourceKeys(projects, updated);
     projects[index] = updated;
     this.saveProjects(projects);
+
+    const projectDataset = this.loadProjectDataset(projectId);
+    if (projectDataset && current.key !== key) this.saveProjectDataset(projectId, renameDatasetProject(projectDataset, current.key, key));
+    if (current.key !== key) this.renameProjectInLiveCache(current.key, key);
+    this.normalizeLiveCacheProjectOwnership();
+    this.updateProjectSyncReports(updated);
+    this.rebuildAggregateDataset();
     return updated;
   }
 
@@ -243,7 +303,7 @@ export class ProjectImportStore {
     }
 
     this.saveProjects(this.listProjects().filter((candidate) => candidate.id !== projectId));
-    this.removeProjectFromLiveCache(project.key);
+    this.removeProjectFromLiveCache(project.sourceKeys);
     this.rebuildAggregateDataset();
     return { project, filesDeleted: projectFiles.length, syncReportsDeleted };
   }
@@ -452,20 +512,43 @@ export class ProjectImportStore {
     return aggregate;
   }
 
-  private removeProjectFromLiveCache(projectKey: string): void {
+  private removeProjectFromLiveCache(projectKeys: string[]): void {
     const live = readJsonFile<Dataset>(this.liveCacheFile);
     if (!live) return;
-    const belongsToProject = (value?: string) => canonicalProjectKey(value) === projectKey;
+    const ownedKeys = new Set(projectKeys.map(canonicalProjectKey));
+    const belongsToProject = (value?: string) => ownedKeys.has(canonicalProjectKey(value));
     const remaining: Dataset = {
       ...live,
       executions: live.executions.filter((row) => !belongsToProject(row.project)),
       issues: live.issues.filter((row) => !belongsToProject(row.project)),
       uat: live.uat.filter((row) => !belongsToProject(row.project)),
       files: live.files.filter((file) => !belongsToProject(file.project)),
-      projects: live.projects.map(canonicalProjectKey).filter((key) => key && key !== projectKey),
+      projects: live.projects.map(canonicalProjectKey).filter((key) => key && !ownedKeys.has(key)),
       meta: { ...live.meta, parsedAt: now() },
     };
     writeJsonAtomic(this.liveCacheFile, remaining);
+  }
+
+  private renameProjectInLiveCache(previousKey: string, nextKey: string): void {
+    const live = readJsonFile<Dataset>(this.liveCacheFile);
+    if (!live) return;
+    writeJsonAtomic(this.liveCacheFile, renameDatasetProject(live, previousKey, nextKey));
+  }
+
+  private normalizeLiveCacheProjectOwnership(): void {
+    const live = readJsonFile<Dataset>(this.liveCacheFile);
+    if (!live) return;
+    writeJsonAtomic(this.liveCacheFile, normalizeDatasetProjectOwnership(live, this.listProjects()));
+  }
+
+  private updateProjectSyncReports(project: ProjectRecord): void {
+    for (const filename of fs.readdirSync(this.syncReportDir)) {
+      if (!filename.endsWith('.json')) continue;
+      const reportPath = path.join(this.syncReportDir, filename);
+      const report = readJsonFile<ProjectSyncReport>(reportPath);
+      if (report?.project.id !== project.id) continue;
+      writeJsonAtomic(reportPath, { ...report, project: { id: project.id, key: project.key, name: project.name } });
+    }
   }
 
   private loadManifest(): ProjectFilesManifest {

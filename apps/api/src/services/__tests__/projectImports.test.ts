@@ -17,8 +17,10 @@ Object.values(paths).forEach((directory) => fs.mkdirSync(directory, { recursive:
 
 try {
   const store = new ProjectImportStore(paths);
-  const projectA = store.createProject({ key: 'PROJA', name: 'Project A' });
+  const projectA = store.createProject({ key: 'PROJA', sourceKeys: ['PROJA', 'PROJAUX'], name: 'Project A' });
   const projectB = store.createProject({ key: 'PROJB', name: 'Project B' });
+  assert.deepStrictEqual(projectA.sourceKeys, ['PROJA', 'PROJAUX']);
+  assert.throws(() => store.createProject({ key: 'PROJC', sourceKeys: ['PROJC', 'PROJAUX'], name: 'Duplicate alias' }), /Source key PROJAUX is already assigned/i);
   const fixtures = path.resolve(__dirname, '../../../../../fixtures/synthetic');
   const executionFile = fs.readFileSync(path.join(fixtures, 'zephyr-regression.xlsx'));
   const jiraFile = fs.readFileSync(path.join(fixtures, 'jira-regression.xlsx'));
@@ -60,16 +62,24 @@ try {
   assert.match(csv, /project-a-executions\.xlsx/);
   assert.match(csv, /Rejected Row/);
 
-  const updatedProjectA = store.updateProject(projectA.id, { name: 'Project A Updated' });
+  const liveCache = path.join(paths.outputDir, 'raw-dataset.live.json');
+  fs.writeFileSync(liveCache, JSON.stringify(aggregate));
+  const updatedProjectA = store.updateProject(projectA.id, { key: 'PROJX', name: 'Project A Updated' });
   assert.equal(updatedProjectA.name, 'Project A Updated');
-  assert.equal(updatedProjectA.key, projectA.key, 'project key must remain immutable during updates');
+  assert.equal(updatedProjectA.key, 'PROJX');
+  assert.deepStrictEqual(updatedProjectA.sourceKeys, ['PROJX', 'PROJAUX']);
+  const aggregateAfterProjectUpdate = readJsonFile<Dataset>(path.join(paths.outputDir, 'raw-dataset.imported.json'));
+  assert.deepStrictEqual(aggregateAfterProjectUpdate?.projects, ['PROJB', 'PROJX']);
+  assert.ok(aggregateAfterProjectUpdate?.executions.every((row) => row.project === 'PROJX'));
+  const liveAfterProjectUpdate = readJsonFile<Dataset>(liveCache);
+  assert.deepStrictEqual(liveAfterProjectUpdate?.projects, ['PROJB', 'PROJX']);
+  assert.equal(store.getSyncReport(projectA.id, syncA.id).project.key, 'PROJX');
+  assert.throws(() => store.updateProject(projectA.id, { key: 'PROJB', name: 'Duplicate key' }), /Source key PROJB is already assigned/i);
   assert.throws(() => store.deleteProject(projectB.id, 'WRONG'), /confirmation must match project key PROJB/i);
 
   const projectBDirectory = path.join(paths.inputDir, 'projects', projectB.id);
   const projectBCache = path.join(paths.outputDir, 'import-projects', `${projectB.id}.json`);
   const projectBReport = path.join(paths.outputDir, 'import-sync', `${syncB.id}.json`);
-  const liveCache = path.join(paths.outputDir, 'raw-dataset.live.json');
-  fs.writeFileSync(liveCache, JSON.stringify(aggregate));
   assert.equal(fs.existsSync(projectBDirectory), true);
   assert.equal(fs.existsSync(projectBCache), true);
   assert.equal(fs.existsSync(projectBReport), true);
@@ -82,10 +92,10 @@ try {
   assert.throws(() => store.getProject(projectB.id), /not found/i);
   const aggregateAfterProjectDelete = readJsonFile<Dataset>(path.join(paths.outputDir, 'raw-dataset.imported.json'));
   assert.ok(aggregateAfterProjectDelete);
-  assert.deepStrictEqual(aggregateAfterProjectDelete!.projects, ['PROJA']);
+  assert.deepStrictEqual(aggregateAfterProjectDelete!.projects, ['PROJX']);
   const liveAfterProjectDelete = readJsonFile<Dataset>(liveCache);
   assert.ok(liveAfterProjectDelete);
-  assert.deepStrictEqual(liveAfterProjectDelete!.projects, ['PROJA']);
+  assert.deepStrictEqual(liveAfterProjectDelete!.projects, ['PROJX']);
   assert.equal(liveAfterProjectDelete!.issues.length, 0, 'deleted project live rows must be removed');
 
   store.deleteFile(projectA.id, fileA.id);

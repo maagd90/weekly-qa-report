@@ -49,6 +49,7 @@ import { getEnvStatus } from '../loadRepoEnv';
 import { generateReportPdf, type ReportBrandingPayload } from '../services/reportPdf';
 import { ProjectImportStore } from '../services/projectImports';
 import {
+  normalizeDatasetProjectOwnership,
   ProjectConnectionValidationError,
   validateProjectConnections,
 } from '../services/projectConnections';
@@ -260,7 +261,10 @@ async function refreshGeneratedOutputs(req: Request, connections: UserConnection
   const options = buildOptions(mode, apiScope);
   const sourceConnections = mode === 'live' ? connections : emptyConnections();
   const fingerprint = computeFingerprint(INPUT_DIR, CONFIG_DIR, sourceConnections, options);
-  const freshSourceDataset = await buildDataset(INPUT_DIR, CONFIG_DIR, sourceConnections, options);
+  const builtSourceDataset = await buildDataset(INPUT_DIR, CONFIG_DIR, sourceConnections, options);
+  const freshSourceDataset = mode === 'live'
+    ? normalizeDatasetProjectOwnership(builtSourceDataset, projectImports.listProjects())
+    : builtSourceDataset;
   const sourceDataset = mode === 'live' ? preserveLiveCache(freshSourceDataset, options.apiScope) : freshSourceDataset;
   const sourceCacheFile = cacheFileForMode(mode);
   if (sourceCacheFile) saveDatasetFile(sourceCacheFile, sourceDataset);
@@ -352,7 +356,10 @@ async function ensureDataset(req: Request, connections: UserConnections, apiScop
   }
   if (mode === 'cached') return null;
   try {
-    const builtDataset = await buildDataset(INPUT_DIR, CONFIG_DIR, connections, options);
+    const rawBuiltDataset = await buildDataset(INPUT_DIR, CONFIG_DIR, connections, options);
+    const builtDataset = mode === 'live'
+      ? normalizeDatasetProjectOwnership(rawBuiltDataset, projectImports.listProjects())
+      : rawBuiltDataset;
     const sourceDataset = mode === 'live' ? preserveLiveCache(builtDataset, options.apiScope) : builtDataset;
     log(req, 'ensureDataset:built dataset', { executions: sourceDataset.executions.length, issues: sourceDataset.issues.length, uat: sourceDataset.uat.length, warnings: sourceDataset.meta.warnings, mode });
     if (totalRows(sourceDataset) === 0) return null;
@@ -697,7 +704,7 @@ router.get('/projects', (_req: Request, res: Response) => {
 
 router.post('/projects', (req: Request, res: Response) => {
   try {
-    const project = projectImports.createProject(req.body as { key?: string; name?: string });
+    const project = projectImports.createProject(req.body as { key?: string; sourceKeys?: string[]; name?: string });
     return res.status(201).json({ ok: true, project, requestId: requestId(req) });
   } catch (err) {
     return res.status(projectErrorStatus(err)).json({ ok: false, error: toErrorMessage(err), requestId: requestId(req) });
@@ -706,8 +713,9 @@ router.post('/projects', (req: Request, res: Response) => {
 
 router.patch('/projects/:projectId', (req: Request, res: Response) => {
   try {
-    const project = projectImports.updateProject(req.params.projectId, req.body as { name?: string });
-    return res.json({ ok: true, project, requestId: requestId(req) });
+    const project = projectImports.updateProject(req.params.projectId, req.body as { key?: string; sourceKeys?: string[]; name?: string });
+    const published = publishProjectImportOutputs(req);
+    return res.json({ ok: true, project, ...published, requestId: requestId(req) });
   } catch (err) {
     return res.status(projectErrorStatus(err)).json({ ok: false, error: toErrorMessage(err), requestId: requestId(req) });
   }

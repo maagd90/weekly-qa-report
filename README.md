@@ -491,7 +491,7 @@ For the web application, create and manage projects in **Settings**. Then select
 
 ### Project-scoped import workflow
 
-1. Create a project with a unique key and name in **Settings**. Project names can be updated later; project keys are immutable.
+1. Choose **All Projects** in the main dropdown, then create or maintain projects in **Settings**. Each logical dashboard project has one primary key plus optional associated source keys. For example, primary `DTTRV` with associated key `DP` consolidates both sources into one project. Keys and names can be updated; changes are migrated across project-owned imported data and browser connection mappings.
 2. Select the existing project in **Import Data** and upload Excel files. Only files owned by the selected project are listed.
 3. Click **Sync imported data**. Only the selected project's directory is parsed.
 4. Review the reconciliation job: status, timing, initiator, per-file type/sheet, rows found, created/updated/skipped/rejected rows, row-level rejection reasons, validation messages, category totals, and previous-versus-new totals.
@@ -746,10 +746,10 @@ Filterable areas:
 | Quality Assurance | Named members, attributed executions, unassigned executions, and pass rate |
 | Test Cycles | Cycle totals, execution split, coverage, and cycle status |
 | Traceability | Story, bug, and test evidence |
-| UAT/vendor issues | UAT totals, status, priority, and ownership |
-| Import Data | Project creation, isolated project files, synchronization, and detailed reconciliation |
+| Vendor Portal Bugs | DLM-only vendor bug totals, phase/environment, status, priority, ownership, and source-file traceability. The tab remains available for a configured DLM project even when the selected period contains no rows. |
+| Import Data | Existing-project selection, isolated project files, synchronization, and detailed reconciliation |
 | QA Report | Report generation and PDF download |
-| Settings | Connections, AI provider, branding, and connection tests |
+| Settings | Project creation/update/deletion, associated source-key mapping, one Jira and one QMetry connection per project, AI provider, branding, and connection tests |
 
 ### 5. Generate a report
 
@@ -1018,7 +1018,7 @@ Check:
 | `POST` | `/api/llm/test` | Validate the selected narrative provider |
 | `GET` | `/api/projects` | List project workspaces |
 | `POST` | `/api/projects` | Create a project workspace |
-| `PATCH` | `/api/projects/:projectId` | Update a project's display name |
+| `PATCH` | `/api/projects/:projectId` | Update a project's primary key, associated source keys, and/or display name, migrating project-owned cached data |
 | `DELETE` | `/api/projects/:projectId` | Permanently delete a confirmed project and its owned runtime data |
 | `GET` | `/api/projects/:projectId/files` | List only the selected project's staged files |
 | `POST` | `/api/projects/:projectId/files` | Upload an Excel file into the selected project |

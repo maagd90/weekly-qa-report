@@ -80,15 +80,21 @@ hasAll('src/pages/SettingsPage.tsx', [
   'function saveConnections()',
   'onClick={saveNarrativeProvider}',
   'onClick={saveBranding}',
-  'if (saveConnections()) syncLiveMutation.mutate();',
   'if (saveConnections()) testMutation.mutate();',
+  'if (saveConnections()) syncLiveMutation.mutate();',
   'Only one JIRA connection is allowed per project.',
   'Only one QMetry connection is allowed per project.',
   'Project management',
   'Update project',
   'Delete project',
-  'Save project connections',
-  'Sync selected project',
+  'Save connections',
+  'Save & test',
+  'Save & sync data',
+  'allProjectsSelected &&',
+  'Project-scoped JQL',
+  'Additional source keys',
+  'JIRA source project keys',
+  'Choose the applicable QMetry key',
 ]);
 hasNone('src/pages/SettingsPage.tsx', ['saveAll', '+ Add JIRA connection', '+ Add QMetry connection']);
 
@@ -110,6 +116,8 @@ hasAll('src/App.tsx', [
   'showSearch={showRuntimeSearch}',
   'datesChanged={datesChanged}',
   'searchQuery={filters.search}',
+  "filters.project === 'DLM'",
+  'registeredProjects.some(supportsVendorPortal)',
 ]);
 
 hasAll('src/pages/TestersPage.tsx', [

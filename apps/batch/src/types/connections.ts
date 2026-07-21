@@ -5,6 +5,8 @@ export interface JiraConnectionInput {
   id: string;
   /** Internal QA Dashboard project that owns this connection. */
   workspaceProjectId?: string;
+  /** Canonical dashboard key used to scope this connection after source-key consolidation. */
+  workspaceProjectKey?: string;
   name: string;
   baseUrl: string;
   enabled?: boolean;
@@ -28,6 +30,8 @@ export interface QmetryConnectionInput {
   id: string;
   /** Internal QA Dashboard project that owns this connection. */
   workspaceProjectId?: string;
+  /** Canonical dashboard key used to scope this connection after source-key consolidation. */
+  workspaceProjectKey?: string;
   name: string;
   baseUrl: string;
   enabled?: boolean;

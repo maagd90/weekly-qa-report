@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict';
 import type { JiraConnectionInput, QmetryConnectionInput, UserConnections } from 'qa-dashboard-batch';
+import { emptyDataset } from 'qa-dashboard-batch';
 import type { ProjectRecord } from '../projectImports';
-import { validateProjectConnections } from '../projectConnections';
+import { normalizeDatasetProjectOwnership, validateProjectConnections } from '../projectConnections';
 
 const projects: ProjectRecord[] = [
-  { id: 'project-a', key: 'AAA', name: 'Project A', createdAt: '2026-07-21T00:00:00.000Z', updatedAt: '2026-07-21T00:00:00.000Z' },
-  { id: 'project-b', key: 'BBB', name: 'Project B', createdAt: '2026-07-21T00:00:00.000Z', updatedAt: '2026-07-21T00:00:00.000Z' },
+  { id: 'project-a', key: 'AAA', sourceKeys: ['AAA'], name: 'Project A', createdAt: '2026-07-21T00:00:00.000Z', updatedAt: '2026-07-21T00:00:00.000Z' },
+  { id: 'project-b', key: 'BBB', sourceKeys: ['BBB', 'BBC'], name: 'Project B', createdAt: '2026-07-21T00:00:00.000Z', updatedAt: '2026-07-21T00:00:00.000Z' },
 ];
 
 function jira(id: string, workspaceProjectId: string, projectKey: string): JiraConnectionInput {
@@ -21,12 +22,14 @@ function expectValidationError(connections: UserConnections, expected: RegExp): 
 }
 
 const valid = validateProjectConnections({
-  jira: [jira('jira-a', 'project-a', 'aaa'), jira('jira-b', 'project-b', 'BBB')],
-  qmetry: [qmetry('qmetry-a', 'project-a', 'aaa'), qmetry('qmetry-b', 'project-b', 'BBB')],
+  jira: [{ ...jira('jira-a', 'project-a', 'aaa'), jql: 'project = AAA AND status != Closed ORDER BY updated DESC' }, { ...jira('jira-b', 'project-b', 'BBB'), projectKeys: ['BBB', 'BBC'], jql: 'project in (BBB, BBC) AND issuetype in (Story, Bug)' }],
+  qmetry: [qmetry('qmetry-a', 'project-a', 'aaa'), qmetry('qmetry-b', 'project-b', 'BBC')],
 }, projects);
-assert.deepEqual(valid.jira.map((connection) => connection.projectKeys), [['AAA'], ['BBB']]);
-assert.equal(valid.jira[0].jql, 'project = AAA AND issuetype in (Story, Bug) ORDER BY updated DESC');
-assert.deepEqual(valid.qmetry.map((connection) => connection.projectKey), ['AAA', 'BBB']);
+assert.deepEqual(valid.jira.map((connection) => connection.projectKeys), [['AAA'], ['BBB', 'BBC']]);
+assert.equal(valid.jira[0].jql, 'project = AAA AND status != Closed ORDER BY updated DESC');
+assert.equal(valid.jira[1].jql, 'project in (BBB, BBC) AND issuetype in (Story, Bug)');
+assert.deepEqual(valid.qmetry.map((connection) => connection.projectKey), ['AAA', 'BBC']);
+assert.deepEqual(valid.qmetry.map((connection) => connection.workspaceProjectKey), ['AAA', 'BBB']);
 
 expectValidationError(
   { jira: [jira('jira-a', 'project-a', 'AAA'), jira('jira-a-2', 'project-a', 'AAA')], qmetry: [] },
@@ -52,11 +55,30 @@ expectValidationError(
 );
 expectValidationError(
   { jira: [jira('jira-a', 'project-a', 'BBB')], qmetry: [] },
-  /must use the owning project key AAA/,
+  /configured source keys: AAA/,
+);
+expectValidationError(
+  { jira: [{ ...jira('jira-a', 'project-a', 'AAA'), jql: 'project = BBB AND status = Open' }], qmetry: [] },
+  /JIRA JQL for project AAA must be scoped/,
 );
 expectValidationError(
   { jira: [], qmetry: [qmetry('qmetry-a', 'project-a', 'BBB')] },
-  /must use the owning project key AAA/,
+  /configured source keys: AAA/,
 );
+
+expectValidationError(
+  { jira: [{ ...jira('jira-b', 'project-b', 'BBB'), projectKeys: ['BBB'], jql: 'project = BBB' }], qmetry: [] },
+  /configured source keys: BBB, BBC/,
+);
+
+const multiKeyDataset = emptyDataset();
+multiKeyDataset.issues = [
+  { project: 'BBB', key: 'BBB-1', area: 'A', issueType: 'Story', status: 'open', priority: 'High', assignee: 'QA', createdAt: '2026-07-01', resolvedAt: null, updatedAt: '2026-07-01', source: 'jira-api' },
+  { project: 'BBC', key: 'BBC-1', area: 'B', issueType: 'Bug', status: 'open', priority: 'High', assignee: 'QA', createdAt: '2026-07-01', resolvedAt: null, updatedAt: '2026-07-01', source: 'jira-api' },
+];
+multiKeyDataset.projects = ['BBB', 'BBC'];
+const consolidated = normalizeDatasetProjectOwnership(multiKeyDataset, projects);
+assert.deepEqual(consolidated.projects, ['BBB']);
+assert.ok(consolidated.issues.every((issue) => issue.project === 'BBB'));
 
 console.log('Project connection ownership tests passed');

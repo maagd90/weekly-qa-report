@@ -84,8 +84,14 @@ function AppContent() {
     onSuccess: ({ d, tab }) => setFilteredView(d, tab),
   });
 
-  const showUat = !!base?.uat;
-  const tabs = buildTabs(showUat);
+  const supportsVendorPortal = (project: (typeof registeredProjects)[number]) => [project.key, ...(project.sourceKeys || [])].includes('DLM');
+  const selectedProjectRecord = registeredProjects.find((project) => project.key === filters.project);
+  const showVendorPortalBugs = Boolean(
+    base?.uat
+    || filters.project === 'DLM'
+    || (filters.project === 'all' ? registeredProjects.some(supportsVendorPortal) : selectedProjectRecord && supportsVendorPortal(selectedProjectRecord)),
+  );
+  const tabs = buildTabs(showVendorPortalBugs);
   const currentTab = tabs.find((t) => t.id === activeTab) ?? tabs[0];
 
   useEffect(() => {
@@ -156,7 +162,7 @@ function AppContent() {
         {display && activeTab === 'testers' && <TestersPage dashboard={display} kpiStyle={ui.kpiStyle} searchQuery={filters.search} />}
         {display && activeTab === 'cycles' && <CyclesPage dashboard={display} kpiStyle={ui.kpiStyle} selectedCycle={ui.selectedCycle} onSelectCycle={ui.setSelectedCycle} filterParams={filters.filterParams} searchQuery={filters.search} />}
         {display && activeTab === 'trace' && <TraceabilityPage dashboard={display} kpiStyle={ui.kpiStyle} searchQuery={filters.search} />}
-        {display && activeTab === 'uat' && showUat && <UatPage dashboard={display} kpiStyle={ui.kpiStyle} searchQuery={filters.search} />}
+        {display && activeTab === 'uat' && showVendorPortalBugs && <UatPage dashboard={display} kpiStyle={ui.kpiStyle} searchQuery={filters.search} />}
         {activeTab === 'import' && <ImportStatusPage selectedProject={filters.project} projects={registeredProjects} onProjectChange={handleProjectChange} />}
         {activeTab === 'ai' && <AiReportPage dashboard={display} kpiStyle={ui.kpiStyle} project={filters.project} />}
         {activeTab === 'settings' && <SettingsPage selectedProject={filters.project} onProjectChange={handleProjectChange} />}
