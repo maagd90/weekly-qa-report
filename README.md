@@ -492,8 +492,8 @@ For the web application, create and manage projects in **Settings**. When **All 
 ### Project-scoped import workflow
 
 1. Choose **All Projects** in the main dropdown, then create or maintain projects and review all live Jira/QMetry connections in **Settings**. Each logical dashboard project has one primary key plus optional associated source keys. For example, primary `DTTRV` with associated key `DP` consolidates both sources into one project. Keys and names can be updated; changes are migrated across project-owned imported data and browser connection mappings.
-2. Select one existing project in **Import Data** and upload Excel files. Only files owned by the selected project are listed. If **All Projects** is selected, upload, file listing, removal, and **Sync imported data** are not rendered.
-3. Click **Sync imported data**. Only the selected project's directory is parsed.
+2. Select one existing project in **Import Data** and upload Excel files. Only files owned by the selected project are listed. If **All Projects** is selected, upload, file listing, removal, and synchronization controls are not rendered.
+3. The web application automatically synchronizes the selected project's files once the upload batch completes, replaces the in-memory dashboard snapshot with the rebuilt response, and refreshes the relevant tabs. **Re-sync imported data** remains available to rebuild from files already owned by that project.
 4. Review the reconciliation job: status, timing, initiator, per-file type/sheet, rows found, created/updated/skipped/rejected rows, row-level rejection reasons, validation messages, category totals, and previous-versus-new totals.
 5. Download the reconciliation CSV when evidence or row-level failure follow-up is required.
 
@@ -550,6 +550,8 @@ Sprint
 ```
 
 Enables story/bug counts, backlog, traceability, and Defects reports.
+
+For the `DTTRV` dashboard project, a Jira issue file is also treated as a **Wonder Miles Story/Bug export**. After upload, the web application synchronizes it automatically and its rows appear in **Wonder Miles Export Data**. That tab reads only `jira-file` rows from DTTRV's project-owned import cache; live Jira and QMetry data is excluded. Each row retains its original upload filename for traceability.
 
 ### UAT/vendor issue file
 
@@ -747,9 +749,12 @@ Filterable areas:
 | Test Cycles | Cycle totals, execution split, coverage, and cycle status |
 | Traceability | Story, bug, and test evidence |
 | Vendor Portal Bugs | DLM-only vendor bug totals, phase/environment, status, priority, ownership, and source-file traceability. The tab remains available for a configured DLM project even when the selected period contains no rows. |
+| Wonder Miles Export Data | DTTRV-only Story/Bug totals, status filters, detail tables, and source-file traceability from uploaded Wonder Miles issue exports. Live Jira/QMetry rows are excluded. |
 | Import Data | Single-project selection, isolated project files, synchronization, and detailed reconciliation. All Projects is blocked for file operations. |
 | QA Report | Report generation and PDF download |
 | Settings | Project creation/update/deletion, associated source-key mapping, one Jira and one QMetry connection per project, aggregate All Projects connection editing/testing/live sync, AI provider, and branding |
+
+Applying dates on **Vendor Portal Bugs** or **Wonder Miles Export Data** refilters cached, project-owned spreadsheet data only. It does not call Jira or QMetry. Date application on the live Jira/QMetry dashboard areas may refresh those configured APIs for the selected project and period.
 
 ### 5. Generate a report
 
@@ -1024,6 +1029,7 @@ Check:
 | `POST` | `/api/projects/:projectId/files` | Upload an Excel file into the selected project |
 | `DELETE` | `/api/projects/:projectId/files/:fileId` | Delete a file after verifying project ownership |
 | `POST` | `/api/projects/:projectId/imports/sync` | Sync only the selected project and return reconciliation details |
+| `GET` | `/api/projects/:projectId/imports/issues/dashboard` | Refilter only uploaded Story/Bug issue rows for one project without calling Jira/QMetry |
 | `GET` | `/api/projects/:projectId/imports/:syncId` | Read a project-owned reconciliation job |
 | `GET` | `/api/projects/:projectId/imports/:syncId/report.csv` | Download the reconciliation CSV |
 

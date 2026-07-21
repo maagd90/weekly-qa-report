@@ -781,6 +781,17 @@ router.delete('/projects/:projectId/files/:fileId', (req: Request, res: Response
   }
 });
 
+router.get('/projects/:projectId/imports/issues/dashboard', (req: Request, res: Response) => {
+  try {
+    const project = projectImports.getProject(req.params.projectId);
+    const dataset = projectImports.uploadedIssueDataset(project.id);
+    const filter = { ...parseFilterParams(req), project: project.key };
+    return res.json(refilterDashboard(dataset, filter));
+  } catch (err) {
+    return res.status(projectErrorStatus(err)).json({ error: toErrorMessage(err), requestId: requestId(req) });
+  }
+});
+
 router.get('/projects/:projectId/imports/:syncId', (req: Request, res: Response) => {
   try {
     return res.json(projectImports.getSyncReport(req.params.projectId, req.params.syncId));

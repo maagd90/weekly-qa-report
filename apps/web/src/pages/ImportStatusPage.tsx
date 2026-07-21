@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import clsx from 'clsx';
 import { batchApi } from '../lib/api';
-import type { ImportRecordCounts, ProjectRecord, ProjectSyncReport } from '../lib/api';
+import type { DashboardPayload, ImportRecordCounts, ProjectRecord, ProjectSyncReport, SyncInputResult } from '../lib/api';
 import { projectDisplayName } from '../lib/projectDisplay';
 import { QaPageShell, QaSection } from '../components/layout/QaPageShell';
 import { QA } from '../theme/qaTheme';
@@ -11,13 +11,19 @@ interface ImportStatusPageProps {
   selectedProject: string;
   projects: ProjectRecord[];
   onProjectChange: (projectKey: string) => void;
+  onImportedDataChanged?: (dashboard: DashboardPayload | null) => void;
 }
 
-const EXPECTED = [
+const STANDARD_EXPECTED = [
   { ext: 'XLSX', label: 'Test execution export', map: 'result, tester, cycle' },
   { ext: 'XLSX', label: 'JIRA issues export', map: 'Issue Type → Story/Bug' },
-  { ext: 'XLSX', label: 'Vendor Portal Bug logs', map: 'daily ODL + production files → merged and phase-separated' },
 ];
+
+function expectedFileTypes(projectKey?: string) {
+  if (projectKey === 'DLM') return [...STANDARD_EXPECTED, { ext: 'XLSX', label: 'Vendor Portal Bug logs', map: 'daily ODL + production files → merged and phase-separated' }];
+  if (projectKey === 'DTTRV') return [STANDARD_EXPECTED[0], { ext: 'XLSX', label: 'Wonder Miles Story/Bug export', map: 'uploaded Jira-style rows → Wonder Miles Export Data tab' }];
+  return STANDARD_EXPECTED;
+}
 
 const MAPPING_ROWS = [
   { source: 'Issue Type', target: 'work_item_type (Story / Bug)' },
@@ -88,13 +94,14 @@ function ReconciliationPanel({ report, onDownload }: { report: ProjectSyncReport
   );
 }
 
-export function ImportStatusPage({ selectedProject, projects, onProjectChange }: ImportStatusPageProps) {
+export function ImportStatusPage({ selectedProject, projects, onProjectChange, onImportedDataChanged }: ImportStatusPageProps) {
   const queryClient = useQueryClient();
   const [isDragging, setIsDragging] = useState(false);
   const [lastReconciliation, setLastReconciliation] = useState<ProjectSyncReport | null>(null);
   const [downloadError, setDownloadError] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const selected = useMemo(() => projects.find((project) => project.key === selectedProject) || null, [projects, selectedProject]);
+  const expectedFiles = useMemo(() => expectedFileTypes(selected?.key), [selected?.key]);
 
   useEffect(() => {
     setLastReconciliation(null);
@@ -108,28 +115,38 @@ export function ImportStatusPage({ selectedProject, projects, onProjectChange }:
     refetchInterval: selected ? 15_000 : false,
   });
 
-  const uploadMutation = useMutation({
-    mutationFn: (selectedFiles: File[]) => {
-      if (!selected) throw new Error('Select one project before uploading files.');
-      return Promise.all(selectedFiles.map((file) => batchApi.upload(selected.id, file)));
-    },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['input-files', selected?.id] }),
-  });
-
   const invalidateData = async () => Promise.all([
     queryClient.invalidateQueries({ queryKey: ['input-files', selected?.id] }),
     queryClient.invalidateQueries({ queryKey: ['projects'] }),
     queryClient.invalidateQueries({ queryKey: ['dashboard'] }),
     queryClient.invalidateQueries({ queryKey: ['dashboard-init'] }),
+    queryClient.invalidateQueries({ queryKey: ['wonder-miles-imports'] }),
     queryClient.invalidateQueries({ queryKey: ['report'] }),
   ]);
+
+  const publishImportedData = async (result: SyncInputResult) => {
+    setLastReconciliation(result.reconciliation);
+    onImportedDataChanged?.(result.dashboard ?? null);
+    await invalidateData();
+  };
+
+  const uploadMutation = useMutation({
+    mutationFn: async (selectedFiles: File[]) => {
+      if (!selected) throw new Error('Select one project before uploading files.');
+      const uploads = await Promise.all(selectedFiles.map((file) => batchApi.upload(selected.id, file)));
+      const sync = await batchApi.syncInputFiles(selected.id, { project: selected.key });
+      return { uploads, sync };
+    },
+    onSuccess: async ({ sync }) => publishImportedData(sync),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ['input-files', selected?.id] }),
+  });
 
   const syncMutation = useMutation({
     mutationFn: () => {
       if (!selected) throw new Error('All Projects cannot run an imported-data sync. Select one project first.');
       return batchApi.syncInputFiles(selected.id, { project: selected.key });
     },
-    onSuccess: async (result) => { setLastReconciliation(result.reconciliation); await invalidateData(); },
+    onSuccess: publishImportedData,
   });
 
   const deleteMutation = useMutation({
@@ -137,12 +154,12 @@ export function ImportStatusPage({ selectedProject, projects, onProjectChange }:
       if (!selected) throw new Error('Select one project before removing an imported file.');
       return batchApi.deleteInputFile(selected.id, fileId);
     },
-    onSuccess: async (result) => { setLastReconciliation(result.reconciliation); await invalidateData(); },
+    onSuccess: publishImportedData,
   });
 
   const handleFiles = useCallback((selectedFiles: FileList | File[]) => {
     const next = Array.from(selectedFiles);
-    if (selected && next.length) uploadMutation.mutate(next);
+    if (selected && next.length && !uploadMutation.isPending) uploadMutation.mutate(next);
   }, [selected, uploadMutation]);
 
   const handleDrop = (e: React.DragEvent) => {
@@ -169,22 +186,23 @@ export function ImportStatusPage({ selectedProject, projects, onProjectChange }:
       {!selected ? <QaSection title="Select one project to import" subtitle="All Projects cannot own files or run an imported-data sync">
         <div className="border border-[#e6d6b8] bg-[#fff8e8] p-4 text-[13px] text-[#7a5612]">
           <p className="m-0 font-semibold">Import is unavailable while All Projects is selected.</p>
-          <p className="mb-0 mt-1.5">Choose a specific project above. Its upload area, owned file list, remove actions, and Sync imported data control will then become available. Live Jira/QMetry synchronization for all projects remains available in Settings.</p>
+          <p className="mb-0 mt-1.5">Choose a specific project above. Its upload area, owned file list, remove actions, and automatic imported-data synchronization will then become available. Live Jira/QMetry synchronization for all projects remains available in Settings.</p>
         </div>
       </QaSection> : <>
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-[22px] items-start">
         <div>
-          <div onDragOver={(event) => { event.preventDefault(); if (selected) setIsDragging(true); }} onDragLeave={() => setIsDragging(false)} onDrop={handleDrop} onClick={() => selected && fileInputRef.current?.click()} className={clsx('border-2 border-dashed p-10 text-center transition mb-5', selected ? 'cursor-pointer hover:border-qa-ink hover:bg-[#faf8f2]' : 'cursor-not-allowed opacity-60', isDragging ? 'border-qa-ink bg-[#faf8f2]' : 'border-qa-border-mid')}>
-            <div className="text-3xl text-qa-muted-pale mb-3">↓</div><p className="text-qa-ink font-semibold m-0">{selected ? `Drop files for ${projectLabel(selected)} here or click to browse` : 'Select a project before uploading'}</p><p className="text-xs text-qa-muted-light mt-1 m-0">Max 20 MB each · .xlsx / .xls</p>
+          <div onDragOver={(event) => { event.preventDefault(); if (selected && !uploadMutation.isPending) setIsDragging(true); }} onDragLeave={() => setIsDragging(false)} onDrop={handleDrop} onClick={() => selected && !uploadMutation.isPending && fileInputRef.current?.click()} className={clsx('border-2 border-dashed p-10 text-center transition mb-5', selected && !uploadMutation.isPending ? 'cursor-pointer hover:border-qa-ink hover:bg-[#faf8f2]' : 'cursor-not-allowed opacity-60', isDragging ? 'border-qa-ink bg-[#faf8f2]' : 'border-qa-border-mid')}>
+            <div className="text-3xl text-qa-muted-pale mb-3">↓</div><p className="text-qa-ink font-semibold m-0">{uploadMutation.isPending ? 'Uploading, synchronizing, and refreshing tabs…' : selected ? `Drop files for ${projectLabel(selected)} here or click to browse` : 'Select a project before uploading'}</p><p className="text-xs text-qa-muted-light mt-1 m-0">Max 20 MB each · .xlsx / .xls · uploads sync automatically</p>
             <input ref={fileInputRef} type="file" accept=".xlsx,.xls" multiple className="hidden" onChange={(event) => { if (event.target.files) handleFiles(event.target.files); event.target.value = ''; }} />
           </div>
-          <div className="mb-4 flex items-center gap-2"><button type="button" onClick={() => syncMutation.mutate()} disabled={!selected || syncMutation.isPending || files.length === 0} className="font-mono-qa text-[10px] font-semibold tracking-wider uppercase px-4 py-2 border border-qa-ink bg-qa-ink text-[#F5F3ED] cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed">{syncMutation.isPending ? 'Syncing…' : 'Sync imported data'}</button><span className="text-[11.5px] text-qa-muted-light">{selected ? `Processes only ${projectLabel(selected)}'s files.` : 'Select a project to continue.'}</span></div>
+          <div className="mb-4 flex items-center gap-2"><button type="button" onClick={() => syncMutation.mutate()} disabled={!selected || uploadMutation.isPending || syncMutation.isPending || files.length === 0} className="font-mono-qa text-[10px] font-semibold tracking-wider uppercase px-4 py-2 border border-qa-ink bg-qa-ink text-[#F5F3ED] cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed">{syncMutation.isPending ? 'Syncing…' : 'Re-sync imported data'}</button><span className="text-[11.5px] text-qa-muted-light">{selected ? `Uploads sync automatically; use this to rebuild ${projectLabel(selected)} from its existing files.` : 'Select a project to continue.'}</span></div>
           {uploadMutation.isError && <div className="p-3 border border-[#ecccc2] bg-[#f8ece8] text-[#a13d2c] text-sm mb-4">{(uploadMutation.error as Error).message}</div>}
-          {uploadMutation.isSuccess && <div className="p-3 border border-[#cfe0d4] bg-[#eef4ef] text-[#2f6a48] text-sm mb-4">{uploadMutation.data.length} file{uploadMutation.data.length === 1 ? '' : 's'} staged for {selected ? projectLabel(selected) : 'the selected project'}. Click Sync imported data to reconcile.</div>}
+          {uploadMutation.isSuccess && uploadMutation.data.sync.reconciliation.status !== 'Failed' && <div className="p-3 border border-[#cfe0d4] bg-[#eef4ef] text-[#2f6a48] text-sm mb-4">{uploadMutation.data.uploads.length} file{uploadMutation.data.uploads.length === 1 ? '' : 's'} uploaded and synchronized for {selected ? projectLabel(selected) : 'the selected project'}. Dashboard tabs have been refreshed.</div>}
+          {uploadMutation.isSuccess && uploadMutation.data.sync.reconciliation.status === 'Failed' && <div className="p-3 border border-[#ecccc2] bg-[#f8ece8] text-[#a13d2c] text-sm mb-4">The file upload completed, but no rows could be imported. Review the reconciliation details below for header, sheet, date, or row-validation errors.</div>}
           {syncMutation.isError && <div className="p-3 border border-[#ecccc2] bg-[#f8ece8] text-[#a13d2c] text-sm mb-4">{(syncMutation.error as Error).message}</div>}
           {deleteMutation.isError && <div className="p-3 border border-[#ecccc2] bg-[#f8ece8] text-[#a13d2c] text-sm mb-4">{(deleteMutation.error as Error).message}</div>}
           {downloadError && <div className="p-3 border border-[#ecccc2] bg-[#f8ece8] text-[#a13d2c] text-sm mb-4">{downloadError}</div>}
-          <QaSection title="Expected file types"><ul className="m-0 p-0 list-none space-y-2">{EXPECTED.map((file) => <li key={file.label} className="flex items-start gap-2 text-[13px]"><span className="font-mono-qa text-[10px] font-semibold text-white px-1.5 py-0.5 shrink-0" style={{ background: extColor(file.ext) }}>{file.ext}</span><span><strong>{file.label}</strong> — {file.map}</span></li>)}</ul></QaSection>
+          <QaSection title="Expected file types"><ul className="m-0 p-0 list-none space-y-2">{expectedFiles.map((file) => <li key={file.label} className="flex items-start gap-2 text-[13px]"><span className="font-mono-qa text-[10px] font-semibold text-white px-1.5 py-0.5 shrink-0" style={{ background: extColor(file.ext) }}>{file.ext}</span><span><strong>{file.label}</strong> — {file.map}</span></li>)}</ul></QaSection>
         </div>
         <div>
           <QaSection title={`Project files (${files.length})`} subtitle={!selected ? 'No project selected' : isLoading ? 'Loading selected project…' : files.length ? `${projectLabel(selected)} files only` : `No files in ${projectLabel(selected)}`} noPadding>

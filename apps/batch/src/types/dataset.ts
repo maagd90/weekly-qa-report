@@ -45,6 +45,8 @@ export interface IssueRow {
   sprintId?: unknown;
   applicationCi?: string;
   source: DataSource;
+  /** Original spreadsheet name for uploaded issue exports. Live JIRA rows omit this. */
+  sourceFile?: string;
 }
 
 export interface UatRow {
@@ -156,7 +158,7 @@ export interface DashboardQualityAssuranceSearchItem { tester: string; searchTex
 export interface DashboardNotExecutedCase { project: string; cycleKey: string; cycleName: string; caseKey: string; updatedAt: string }
 export interface DashboardCycleItem { key: string; name: string; total: number; pass: number; fail: number; blocked: number; ne: number; na: number; passPct: number; coverage: number; status: string }
 export interface DashboardTraceabilityItem { area: string; stories: number; done: number; open: number; bugs: number; openBugs: number; completion: number; status: string }
-export interface DashboardWorkItem { key: string; summary: string; issueType: IssueType; status: IssueStatus; priority: string; assignee: string; sprint: string; sprintId?: unknown; area: string; project: string; updatedAt: string }
+export interface DashboardWorkItem { key: string; summary: string; issueType: IssueType; status: IssueStatus; priority: string; assignee: string; sprint: string; sprintId?: unknown; area: string; project: string; updatedAt: string; sourceFile?: string }
 export interface DashboardPriorityItem { priority: string; open: number; total: number }
 export interface DashboardOwnerItem { name: string; open: number }
 export interface DashboardStoryBug { story: number; bug: number; storyOpen: number; storyDone: number; bugOpen: number; bugDone: number }

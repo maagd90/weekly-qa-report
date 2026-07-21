@@ -82,6 +82,7 @@ export function parseJiraFromRows(
       summary,
       sprint: sprint || 'Not mapped',
       source: 'jira-file',
+      sourceFile: fileName,
     });
   }
 

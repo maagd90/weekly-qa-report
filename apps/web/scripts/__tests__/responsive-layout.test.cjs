@@ -120,7 +120,13 @@ hasAll('src/App.tsx', [
   'showSearch={showRuntimeSearch}',
   'datesChanged={datesChanged}',
   'searchQuery={filters.search}',
+  "vars.tab === 'uat'",
+  "vars.tab === 'wonder-miles'",
+  'batchApi.getDashboard(vars.params)',
+  'batchApi.getUploadedIssueDashboard',
+  'batchApi.searchDashboardByDates(vars.params)',
   "filters.project === 'DLM'",
+  "selectedProjectRecord?.key === 'DTTRV'",
   'registeredProjects.some(supportsVendorPortal)',
 ]);
 
@@ -144,6 +150,23 @@ hasAll('src/pages/CyclesPage.tsx', [
 hasAll('src/pages/TraceabilityPage.tsx', [
   'searchQuery.trim().toLowerCase()',
   'Search filters these rows instantly',
+]);
+
+hasAll('src/pages/WonderMilesExportPage.tsx', [
+  'Wonder Miles Export Data',
+  'uploaded spreadsheets only',
+  'Live Jira and QMetry connection data is excluded',
+  'Wonder Miles Stories',
+  'Wonder Miles Bugs',
+  'Source file',
+  'StatusTabs',
+  'Page {page + 1} of {totalPages}',
+  'max-w-full overflow-x-auto overscroll-x-contain',
+]);
+
+hasAll('src/components/layout/QaTabNav.tsx', [
+  "showWonderMilesExport = false",
+  "append('wonder-miles', 'Wonder Miles Export Data')",
 ]);
 
 hasAll('src/pages/UatPage.tsx', [
@@ -217,6 +240,9 @@ hasAll('src/pages/ImportStatusPage.tsx', [
   'All Projects — import disabled',
   'Import is unavailable while All Projects is selected.',
   'All Projects cannot own files or run an imported-data sync',
+  'uploads sync automatically',
+  'batchApi.syncInputFiles(selected.id',
+  'onImportedDataChanged?.(result.dashboard ?? null)',
   'Live Jira/QMetry synchronization for all projects remains available in Settings.',
   '!selected ?',
 ]);
@@ -225,6 +251,8 @@ hasNone('src/pages/ImportStatusPage.tsx', ['New project key', 'New project name'
 hasAll('src/App.tsx', [
   'min-w-0 overflow-x-hidden',
   'overflow-x-hidden overflow-y-auto',
+  'setBaseDashboard(freshDashboard)',
+  'setFilteredByTab({})',
 ]);
 
 hasAll('src/index.css', [

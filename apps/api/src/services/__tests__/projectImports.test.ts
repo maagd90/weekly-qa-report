@@ -50,6 +50,12 @@ try {
   assert.equal(syncB.newTotals.stories, 582);
   assert.equal(syncB.newTotals.bugs, 197);
   assert.equal(syncB.files[0].filename, 'project-b-jira.xlsx');
+  const uploadedIssuesB = store.uploadedIssueDataset(projectB.id);
+  assert.equal(uploadedIssuesB.executions.length, 0, 'uploaded issue view must exclude execution files');
+  assert.equal(uploadedIssuesB.issues.length, 779);
+  assert.ok(uploadedIssuesB.issues.every((row) => row.source === 'jira-file'));
+  assert.ok(uploadedIssuesB.issues.every((row) => row.sourceFile === 'project-b-jira.xlsx'));
+  assert.deepStrictEqual(uploadedIssuesB.files.map((file) => file.name), ['project-b-jira.xlsx']);
 
   const aggregate = readJsonFile<Dataset>(path.join(paths.outputDir, 'raw-dataset.imported.json'));
   assert.ok(aggregate);

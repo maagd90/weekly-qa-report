@@ -212,6 +212,7 @@ export function buildDashboardPayload(
     area: r.area,
     project: canonicalProjectKey(r.project),
     updatedAt: r.updatedAt,
+    sourceFile: r.sourceFile,
   })).sort((a, b) => (a.sprint === b.sprint ? a.key.localeCompare(b.key) : a.sprint.localeCompare(b.sprint)));
 
   const areaKeys = [...new Set(issues.map((i) => i.area))];

@@ -162,7 +162,7 @@ function normalizeProjectDataset(dataset: Dataset, project: ProjectRecord, filen
   const normalized: Dataset = {
     ...dataset,
     executions: dataset.executions.map((row) => ({ ...row, project: project.key })),
-    issues: dataset.issues.map((row) => ({ ...row, project: project.key })),
+    issues: dataset.issues.map((row) => ({ ...row, project: project.key, sourceFile: filename })),
     uat: dataset.uat.map((row) => ({ ...row, project: project.key, sourceFile: filename })),
     projects: dataset.executions.length || dataset.issues.length || dataset.uat.length ? [project.key] : [],
     files: dataset.files.map((file) => ({ ...file, name: filename, project: project.key })),
@@ -313,6 +313,29 @@ export class ProjectImportStore {
     return this.loadManifest().files
       .filter((file) => file.projectId === projectId)
       .sort((left, right) => right.uploadedAt.localeCompare(left.uploadedAt));
+  }
+
+  /**
+   * Returns only Story/Bug rows parsed from files uploaded to one project.
+   * Live JIRA rows are deliberately impossible in this view, which keeps
+   * project-specific export tabs independent from connection synchronization.
+   */
+  uploadedIssueDataset(projectId: string): Dataset {
+    const project = this.getProject(projectId);
+    const stored = this.loadProjectDataset(projectId) || emptyDataset();
+    const issues = stored.issues.filter((row) => row.source === 'jira-file');
+    return {
+      ...stored,
+      executions: [],
+      issues,
+      uat: [],
+      projects: [project.key],
+      files: stored.files.filter((file) => file.source === 'file' && file.detectedType === 'jira'),
+      meta: {
+        ...stored.meta,
+        integrations: { jira: false, qmetry: false },
+      },
+    };
   }
 
   stageFile(projectId: string, originalName: string, buffer: Buffer): ProjectFileRecord {

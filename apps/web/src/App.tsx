@@ -10,6 +10,7 @@ import { TestersPage } from './pages/TestersPage';
 import { CyclesPage } from './pages/CyclesPage';
 import { TraceabilityPage } from './pages/TraceabilityPage';
 import { UatPage } from './pages/UatPage';
+import { WonderMilesExportPage } from './pages/WonderMilesExportPage';
 import { ImportStatusPage } from './pages/ImportStatusPage';
 import { AiReportPage } from './pages/AiReportPage';
 import { SettingsPage } from './pages/SettingsPage';
@@ -32,6 +33,7 @@ const SEARCH_PLACEHOLDERS: Partial<Record<QaTab, string>> = {
   cycles: 'Search cycle name or key...',
   trace: 'Search key, summary, sprint, area, assignee, or status...',
   uat: 'Search ticket, subject, area, submitter, status, or CR...',
+  'wonder-miles': 'Search Wonder Miles key, summary, sprint, assignee, status, or source file...',
 };
 
 function AppContent() {
@@ -66,13 +68,23 @@ function AppContent() {
 
   const isProjectLoading = projectBaseFetch.isPending;
   const base = isProjectLoading ? undefined : (baseDashboard ?? initialDashboard ?? undefined);
-  const display = (filteredByTab[activeTab] ?? base) ?? undefined;
   const filters = usePerTabFilters(activeTab, base);
   const availableProjects = ['all', ...uniqueCanonicalProjects([
     ...filters.projects,
     ...registeredProjects.map((project) => project.key),
   ])];
   const projectNames = Object.fromEntries(registeredProjects.map((project) => [project.key, project.name === project.key ? projectDisplayName(project.key) : project.name]));
+  const selectedProjectRecord = registeredProjects.find((project) => project.key === filters.project);
+  const wonderMilesProject = selectedProjectRecord?.key === 'DTTRV' ? selectedProjectRecord : undefined;
+  const { data: wonderMilesDashboard, isLoading: isWonderMilesLoading } = useQuery<DashboardPayload>({
+    queryKey: ['wonder-miles-imports', wonderMilesProject?.id || 'none', defaultPeriod.startDate, defaultPeriod.endDate],
+    queryFn: () => batchApi.getUploadedIssueDashboard(wonderMilesProject!.id, { ...defaultPeriod, project: wonderMilesProject!.key }),
+    enabled: Boolean(wonderMilesProject),
+    retry: false,
+  });
+  const display = activeTab === 'wonder-miles'
+    ? (filteredByTab['wonder-miles'] ?? wonderMilesDashboard)
+    : (filteredByTab[activeTab] ?? base);
 
   const setFilteredView = (freshDashboard: DashboardPayload | null, tab: QaTab) => {
     if (!freshDashboard) return;
@@ -80,18 +92,30 @@ function AppContent() {
   };
 
   const applyDateRange = useMutation({
-    mutationFn: (vars: { params: Partial<FilterParams>; tab: QaTab }) => batchApi.searchDashboardByDates(vars.params).then((d) => ({ d, tab: vars.tab })),
+    mutationFn: (vars: { params: Partial<FilterParams>; tab: QaTab }) => {
+      // Vendor Portal and Wonder Miles rows come from project-owned spreadsheet
+      // imports. Their date actions only refilter cached imports; the shared live
+      // search endpoint intentionally refreshes Jira and QMetry for other tabs.
+      const request = vars.tab === 'wonder-miles'
+        ? wonderMilesProject
+          ? batchApi.getUploadedIssueDashboard(wonderMilesProject.id, { ...vars.params, project: wonderMilesProject.key })
+          : Promise.reject(new Error('Select the DTTRV project to filter Wonder Miles export data.'))
+        : vars.tab === 'uat'
+          ? batchApi.getDashboard(vars.params)
+          : batchApi.searchDashboardByDates(vars.params);
+      return request.then((d) => ({ d, tab: vars.tab }));
+    },
     onSuccess: ({ d, tab }) => setFilteredView(d, tab),
   });
 
   const supportsVendorPortal = (project: (typeof registeredProjects)[number]) => project.key === 'DLM';
-  const selectedProjectRecord = registeredProjects.find((project) => project.key === filters.project);
   const showVendorPortalBugs = Boolean(
     base?.uat
     || filters.project === 'DLM'
     || (filters.project === 'all' ? registeredProjects.some(supportsVendorPortal) : selectedProjectRecord && supportsVendorPortal(selectedProjectRecord)),
   );
-  const tabs = buildTabs(showVendorPortalBugs);
+  const showWonderMilesExport = Boolean(wonderMilesProject);
+  const tabs = buildTabs(showVendorPortalBugs, showWonderMilesExport);
   const currentTab = tabs.find((t) => t.id === activeTab) ?? tabs[0];
 
   useEffect(() => {
@@ -100,7 +124,7 @@ function AppContent() {
 
   const showFilters = !currentTab.hideFilters;
   const hasDashboard = !!display;
-  const showRuntimeSearch = activeTab === 'testers' || activeTab === 'cycles' || activeTab === 'trace' || activeTab === 'uat';
+  const showRuntimeSearch = activeTab === 'testers' || activeTab === 'cycles' || activeTab === 'trace' || activeTab === 'uat' || activeTab === 'wonder-miles';
   const datesChanged = Boolean(display && (
     filters.startDate !== (display.scope.startDate || '')
     || filters.endDate !== (display.scope.endDate || '')
@@ -121,6 +145,14 @@ function AppContent() {
   };
 
   const goGenerate = () => setActiveTab('ai');
+
+  const handleImportedDataChanged = (freshDashboard: DashboardPayload | null) => {
+    // Project import sync returns the dashboard it just rebuilt. Replace the
+    // in-memory snapshot immediately; query invalidation alone is insufficient
+    // because baseDashboard intentionally takes precedence over query data.
+    setBaseDashboard(freshDashboard);
+    setFilteredByTab({});
+  };
 
   return (
     <div className="min-h-screen w-full min-w-0 overflow-x-hidden bg-qa-bg text-qa-ink flex flex-col qa-scroll">
@@ -156,14 +188,15 @@ function AppContent() {
       )}
 
       <div className={clsx('flex-1 min-w-0', activeTab === 'ai' ? 'flex flex-col overflow-hidden min-h-0' : 'overflow-x-hidden overflow-y-auto')}>
-        {(isLoading || isProjectLoading) && showFilters && <div className="flex items-center justify-center h-64 font-mono-qa text-sm text-qa-muted-light">Loading dashboard…</div>}
-        {!isLoading && !isProjectLoading && !hasDashboard && showFilters && <EmptyDashboard onGenerate={goGenerate} />}
+        {(isLoading || isProjectLoading || (activeTab === 'wonder-miles' && isWonderMilesLoading)) && showFilters && <div className="flex items-center justify-center h-64 font-mono-qa text-sm text-qa-muted-light">Loading dashboard…</div>}
+        {!isLoading && !isProjectLoading && !(activeTab === 'wonder-miles' && isWonderMilesLoading) && !hasDashboard && showFilters && <EmptyDashboard onGenerate={goGenerate} />}
         {display && activeTab === 'overview' && <OverviewPage dashboard={display} kpiStyle={ui.kpiStyle} />}
         {display && activeTab === 'testers' && <TestersPage dashboard={display} kpiStyle={ui.kpiStyle} searchQuery={filters.search} />}
         {display && activeTab === 'cycles' && <CyclesPage dashboard={display} kpiStyle={ui.kpiStyle} selectedCycle={ui.selectedCycle} onSelectCycle={ui.setSelectedCycle} filterParams={filters.filterParams} searchQuery={filters.search} />}
         {display && activeTab === 'trace' && <TraceabilityPage dashboard={display} kpiStyle={ui.kpiStyle} searchQuery={filters.search} />}
         {display && activeTab === 'uat' && showVendorPortalBugs && <UatPage dashboard={display} kpiStyle={ui.kpiStyle} searchQuery={filters.search} />}
-        {activeTab === 'import' && <ImportStatusPage selectedProject={filters.project} projects={registeredProjects} onProjectChange={handleProjectChange} />}
+        {display && activeTab === 'wonder-miles' && showWonderMilesExport && <WonderMilesExportPage dashboard={display} kpiStyle={ui.kpiStyle} searchQuery={filters.search} />}
+        {activeTab === 'import' && <ImportStatusPage selectedProject={filters.project} projects={registeredProjects} onProjectChange={handleProjectChange} onImportedDataChanged={handleImportedDataChanged} />}
         {activeTab === 'ai' && <AiReportPage dashboard={display} kpiStyle={ui.kpiStyle} project={filters.project} />}
         {activeTab === 'settings' && <SettingsPage selectedProject={filters.project} onProjectChange={handleProjectChange} />}
       </div>

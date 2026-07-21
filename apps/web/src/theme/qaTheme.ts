@@ -20,7 +20,7 @@ export const QA = {
 
 export type KpiStyle = 'editorial' | 'framed' | 'minimal';
 
-export type QaTab = 'overview' | 'testers' | 'cycles' | 'trace' | 'uat' | 'ai' | 'import' | 'settings';
+export type QaTab = 'overview' | 'testers' | 'cycles' | 'trace' | 'uat' | 'wonder-miles' | 'ai' | 'import' | 'settings';
 
 export function displayResultColor(code: string): string {
   const map: Record<string, string> = {

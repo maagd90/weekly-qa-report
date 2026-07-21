@@ -45,6 +45,7 @@ function countResults(executions: { result: string }[]) {
   assert.strictEqual(bugs, 197);
   const openBugs = issues.filter((i: IssueRow) => i.issueType === 'Bug' && i.status === 'open').length;
   assert.strictEqual(openBugs, 63);
+  assert.ok(issues.every((issue) => issue.sourceFile === 'jira-regression.xlsx'), 'uploaded JIRA rows retain source-file provenance');
   console.log('✓ JIRA parser');
 }
 
@@ -88,6 +89,7 @@ function countResults(executions: { result: string }[]) {
   assert.ok(payload.overview.totalCases > 0);
   assert.strictEqual(payload.storyBug.story, 582);
   assert.strictEqual(payload.storyBug.bug, 197);
+  assert.ok(payload.workItems?.every((item) => item.sourceFile === 'jira-regression.xlsx'));
   assert.ok(payload.uat);
   assert.strictEqual(payload.uat!.total, 74);
   console.log('✓ Dashboard payload');

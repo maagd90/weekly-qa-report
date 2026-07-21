@@ -6,7 +6,7 @@ import { canonicalProjectOrAll, canonicalProjectOrUndefined, uniqueCanonicalProj
 import { defaultReportingPeriod } from '../lib/reportingPeriod';
 
 // Tabs that have an independent date/search filter.
-const FILTERABLE: QaTab[] = ['overview', 'testers', 'cycles', 'trace', 'uat'];
+const FILTERABLE: QaTab[] = ['overview', 'testers', 'cycles', 'trace', 'uat', 'wonder-miles'];
 
 type TabFilter = { startDate: string; endDate: string; search: string };
 

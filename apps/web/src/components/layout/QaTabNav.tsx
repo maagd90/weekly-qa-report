@@ -59,21 +59,22 @@ export function QaTabNav({ tabs, activeTab, onTabChange }: QaTabNavProps) {
   );
 }
 
-export function buildTabs(showVendorPortalBugs: boolean): TabDef[] {
-  const tabs: TabDef[] = [
-    { id: 'overview', label: 'Overview', num: '01' },
-    { id: 'testers', label: 'Quality Assurance', num: '02' },
-    { id: 'cycles', label: 'Test Cycles', num: '03' },
-    { id: 'trace', label: 'Traceability', num: '04' },
-  ];
-  if (showVendorPortalBugs) tabs.push({ id: 'uat', label: 'Vendor Portal Bugs', num: '05' });
-  const reportNum = showVendorPortalBugs ? '06' : '05';
-  const importNum = showVendorPortalBugs ? '07' : '06';
-  const settingsNum = showVendorPortalBugs ? '08' : '07';
-  tabs.push(
-    { id: 'ai', label: 'QA Report', num: reportNum, hideFilters: true },
-    { id: 'import', label: 'Import Data', num: importNum, hideFilters: true },
-    { id: 'settings', label: 'Settings', num: settingsNum, hideFilters: true },
-  );
+export function buildTabs(showVendorPortalBugs: boolean, showWonderMilesExport = false): TabDef[] {
+  const tabs: TabDef[] = [];
+  const append = (id: QaTab, label: string, hideFilters = false) => tabs.push({
+    id,
+    label,
+    num: String(tabs.length + 1).padStart(2, '0'),
+    ...(hideFilters ? { hideFilters: true } : {}),
+  });
+  append('overview', 'Overview');
+  append('testers', 'Quality Assurance');
+  append('cycles', 'Test Cycles');
+  append('trace', 'Traceability');
+  if (showVendorPortalBugs) append('uat', 'Vendor Portal Bugs');
+  if (showWonderMilesExport) append('wonder-miles', 'Wonder Miles Export Data');
+  append('ai', 'QA Report', true);
+  append('import', 'Import Data', true);
+  append('settings', 'Settings', true);
   return tabs;
 }
