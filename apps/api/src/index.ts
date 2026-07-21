@@ -4,6 +4,7 @@ import cors from 'cors';
 import util from 'util';
 import http from 'http';
 import batchRouter from './routes/batchRoutes';
+import projectImportRouter from './routes/projectImportRoutes';
 
 const app = express();
 const PORT = Number(process.env.PORT) || 3001;
@@ -70,6 +71,7 @@ app.use((req, res, next) => {
 });
 
 app.use('/api', batchRouter);
+app.use('/api', projectImportRouter);
 
 app.get('/health', (_req, res) => res.json({ ok: true }));
 
