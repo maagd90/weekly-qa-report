@@ -1,24 +1,16 @@
-import React, { useState, useRef, useCallback } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import clsx from 'clsx';
-import { batchApi, getJiraConnections, getQmetryConnections } from '../lib/api';
+import { batchApi } from '../lib/api';
+import type { ImportRecordCounts, ProjectRecord, ProjectSyncReport } from '../lib/api';
 import { projectDisplayName } from '../lib/projectDisplay';
 import { QaPageShell, QaSection } from '../components/layout/QaPageShell';
 import { QA } from '../theme/qaTheme';
 
-interface StagedFile {
-  name: string;
-  size: number;
-  modifiedAt: string;
-}
-
-interface SyncResult {
-  ok: boolean;
-  rebuilt: boolean;
-  rowCounts: { executions: number; issues: number; uat: number };
-  projects?: string[];
-  warnings?: string[];
-  error?: string;
+interface ImportStatusPageProps {
+  selectedProject: string;
+  projects: ProjectRecord[];
+  onProjectChange: (projectKey: string) => void;
 }
 
 const EXPECTED = [
@@ -41,137 +33,166 @@ function extColor(ext: string): string {
   return ({ XLSX: QA.PASS, CSV: QA.NA, PDF: QA.FAIL, JSON: QA.BLOCKED } as Record<string, string>)[ext] || QA.muted;
 }
 
-async function syncImports(): Promise<SyncResult> {
-  const connections = { jira: getJiraConnections(), qmetry: getQmetryConnections() };
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-  if (connections.jira.length || connections.qmetry.length) headers['x-user-connections'] = JSON.stringify(connections);
-  const res = await fetch('/api/input/sync', { method: 'POST', headers, body: '{}' });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok || data.ok === false) throw new Error(data.error || `Import sync failed: HTTP ${res.status}`);
-  return data as SyncResult;
+function totalRecords(counts: ImportRecordCounts): number {
+  return counts.executions + counts.stories + counts.bugs + counts.vendorBugs;
 }
 
-function rowCountText(result?: SyncResult): string {
-  if (!result) return '';
-  const counts = result.rowCounts;
-  return `${counts.executions} executions · ${counts.issues} issues · ${counts.uat} vendor bugs`;
+function projectLabel(project: Pick<ProjectRecord, 'key' | 'name'>): string {
+  return project.name === project.key ? projectDisplayName(project.key) : project.name;
 }
 
-function projectListText(projects?: string[]): string {
-  return projects?.length ? projects.map(projectDisplayName).join(', ') : '';
+function statusClass(status: ProjectSyncReport['status']): string {
+  if (status === 'Successful') return 'border-[#cfe0d4] bg-[#eef4ef] text-[#2f6a48]';
+  if (status === 'Partially Successful') return 'border-[#e8d6a8] bg-[#f8f1de] text-[#8f6312]';
+  return 'border-[#ecccc2] bg-[#f8ece8] text-[#a13d2c]';
 }
 
-export function ImportStatusPage() {
+function ReconciliationPanel({ report, onDownload }: { report: ProjectSyncReport; onDownload: () => void }) {
+  const summary = [
+    ['Executions', report.newTotals.executions, report.previousTotals.executions],
+    ['Stories', report.newTotals.stories, report.previousTotals.stories],
+    ['Bugs', report.newTotals.bugs, report.previousTotals.bugs],
+    ['Vendor bugs', report.newTotals.vendorBugs, report.previousTotals.vendorBugs],
+  ] as const;
+  return (
+    <QaSection
+      title="Import reconciliation"
+      subtitle={`${projectLabel(report.project)} (${report.project.key}) · job ${report.id}`}
+      className="mt-[22px]"
+      headerRight={<button type="button" onClick={onDownload} className="font-mono-qa text-[10px] uppercase tracking-wider border border-qa-ink px-3 py-2 bg-white cursor-pointer">Download CSV</button>}
+    >
+      <div className={clsx('border p-3 text-sm mb-4', statusClass(report.status))}>
+        <strong>{report.status}</strong> · {report.filesProcessed} file{report.filesProcessed === 1 ? '' : 's'} processed · {report.durationMs.toLocaleString()} ms
+      </div>
+      <dl className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 m-0 mb-5 text-[12px]">
+        <div><dt className="font-mono-qa text-[10px] uppercase text-qa-muted-light">Started</dt><dd className="m-0 mt-1">{new Date(report.startedAt).toLocaleString()}</dd></div>
+        <div><dt className="font-mono-qa text-[10px] uppercase text-qa-muted-light">Completed</dt><dd className="m-0 mt-1">{new Date(report.completedAt).toLocaleString()}</dd></div>
+        <div><dt className="font-mono-qa text-[10px] uppercase text-qa-muted-light">Initiated by</dt><dd className="m-0 mt-1">{report.initiatedBy}</dd></div>
+        <div><dt className="font-mono-qa text-[10px] uppercase text-qa-muted-light">Total records</dt><dd className="m-0 mt-1">{totalRecords(report.previousTotals).toLocaleString()} → {totalRecords(report.newTotals).toLocaleString()}</dd></div>
+      </dl>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
+        {summary.map(([label, current, previous]) => <div key={label} className="border border-qa-border p-3"><div className="font-mono-qa text-[10px] uppercase text-qa-muted-light">{label}</div><div className="font-spectral text-xl font-semibold mt-1">{current.toLocaleString()}</div><div className="text-[10px] text-qa-muted-light">Previous {previous.toLocaleString()} · Change {current - previous >= 0 ? '+' : ''}{(current - previous).toLocaleString()}</div></div>)}
+      </div>
+      <div className="overflow-x-auto border border-qa-border">
+        <table className="w-full min-w-[1120px] text-left text-[11px] border-collapse">
+          <thead className="bg-[#f7f5ef] font-mono-qa uppercase tracking-wide"><tr>{['File', 'Type / sheet', 'Found', 'Imported', 'Created', 'Updated', 'Duplicate / skipped', 'Rejected', 'Validation'].map((header) => <th key={header} className="px-3 py-2 border-b border-qa-border">{header}</th>)}</tr></thead>
+          <tbody>{report.files.map((file) => <tr key={file.fileId} className="align-top border-t border-qa-border first:border-t-0">
+            <td className="px-3 py-2 font-semibold max-w-[220px] break-all">{file.filename}</td>
+            <td className="px-3 py-2">{file.detectedType}<div className="text-qa-muted-light">{file.sheet || 'Not detected'}</div></td>
+            <td className="px-3 py-2">{file.totalRowsFound.toLocaleString()}</td><td className="px-3 py-2">{file.successfullyImportedRows.toLocaleString()}</td><td className="px-3 py-2">{file.createdRecords.toLocaleString()}</td><td className="px-3 py-2">{file.updatedRecords.toLocaleString()}</td><td className="px-3 py-2">{file.duplicateOrSkippedRows.toLocaleString()}</td><td className="px-3 py-2">{file.rejectedRows.toLocaleString()}</td>
+            <td className="px-3 py-2 max-w-[330px]">{file.errors.length === 0 && file.warnings.length === 0 && file.rejections.length === 0 ? <span className="text-[#2f6a48]">No issues</span> : <ul className="m-0 pl-4 space-y-1">{file.errors.map((message) => <li key={`e-${message}`} className="text-[#a13d2c]">{message}</li>)}{file.warnings.map((message) => <li key={`w-${message}`} className="text-[#8f6312]">{message}</li>)}{file.rejections.slice(0, 5).map((rejection) => <li key={`r-${rejection.rowNumber}-${rejection.reference}`} className="text-[#a13d2c]">Row {rejection.rowNumber} · {rejection.reference}: {rejection.reason}</li>)}{file.rejections.length > 5 && <li className="text-qa-muted">+{file.rejections.length - 5} more in the CSV report</li>}</ul>}</td>
+          </tr>)}</tbody>
+        </table>
+      </div>
+    </QaSection>
+  );
+}
+
+export function ImportStatusPage({ selectedProject, projects, onProjectChange }: ImportStatusPageProps) {
   const queryClient = useQueryClient();
   const [isDragging, setIsDragging] = useState(false);
+  const [projectKey, setProjectKey] = useState('');
+  const [projectName, setProjectName] = useState('');
+  const [lastReconciliation, setLastReconciliation] = useState<ProjectSyncReport | null>(null);
+  const [downloadError, setDownloadError] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const selected = useMemo(() => projects.find((project) => project.key === selectedProject) || null, [projects, selectedProject]);
 
-  const { data: files = [], isLoading } = useQuery<StagedFile[]>({
-    queryKey: ['input-files'],
-    queryFn: batchApi.listInputFiles,
-    refetchInterval: 15_000,
+  useEffect(() => {
+    setLastReconciliation(null);
+    setDownloadError('');
+  }, [selected?.id]);
+
+  const { data: files = [], isLoading } = useQuery({
+    queryKey: ['input-files', selected?.id || 'none'],
+    queryFn: () => batchApi.listInputFiles(selected!.id),
+    enabled: Boolean(selected),
+    refetchInterval: selected ? 15_000 : false,
+  });
+
+  const createProject = useMutation({
+    mutationFn: () => batchApi.createProject({ key: projectKey, name: projectName }),
+    onSuccess: async (project) => {
+      setProjectKey(''); setProjectName(''); setLastReconciliation(null);
+      await queryClient.invalidateQueries({ queryKey: ['projects'] });
+      onProjectChange(project.key);
+    },
   });
 
   const uploadMutation = useMutation({
-    mutationFn: (selectedFiles: File[]) => Promise.all(selectedFiles.map((file) => batchApi.upload(file))),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['input-files'] }),
+    mutationFn: (selectedFiles: File[]) => Promise.all(selectedFiles.map((file) => batchApi.upload(selected!.id, file))),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['input-files', selected?.id] }),
   });
 
+  const invalidateData = async () => Promise.all([
+    queryClient.invalidateQueries({ queryKey: ['input-files', selected?.id] }),
+    queryClient.invalidateQueries({ queryKey: ['projects'] }),
+    queryClient.invalidateQueries({ queryKey: ['dashboard'] }),
+    queryClient.invalidateQueries({ queryKey: ['dashboard-init'] }),
+    queryClient.invalidateQueries({ queryKey: ['report'] }),
+  ]);
+
   const syncMutation = useMutation({
-    mutationFn: syncImports,
-    onSuccess: async () => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['input-files'] }),
-        queryClient.invalidateQueries({ queryKey: ['dashboard'] }),
-        queryClient.invalidateQueries({ queryKey: ['dashboard-init'] }),
-        queryClient.invalidateQueries({ queryKey: ['report'] }),
-        queryClient.invalidateQueries({ queryKey: ['settings-dashboard-projects'] }),
-      ]);
-    },
+    mutationFn: () => batchApi.syncInputFiles(selected!.id, { project: selected!.key }),
+    onSuccess: async (result) => { setLastReconciliation(result.reconciliation); await invalidateData(); },
   });
 
   const deleteMutation = useMutation({
-    mutationFn: batchApi.deleteInputFile,
-    onSuccess: async () => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['input-files'] }),
-        queryClient.invalidateQueries({ queryKey: ['dashboard'] }),
-        queryClient.invalidateQueries({ queryKey: ['dashboard-init'] }),
-        queryClient.invalidateQueries({ queryKey: ['report'] }),
-        queryClient.invalidateQueries({ queryKey: ['settings-dashboard-projects'] }),
-      ]);
-    },
+    mutationFn: (fileId: string) => batchApi.deleteInputFile(selected!.id, fileId),
+    onSuccess: async (result) => { setLastReconciliation(result.reconciliation); await invalidateData(); },
   });
 
   const handleFiles = useCallback((selectedFiles: FileList | File[]) => {
     const next = Array.from(selectedFiles);
-    if (next.length) uploadMutation.mutate(next);
-  }, [uploadMutation]);
+    if (selected && next.length) uploadMutation.mutate(next);
+  }, [selected, uploadMutation]);
 
   const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(false);
-    handleFiles(e.dataTransfer.files);
+    e.preventDefault(); setIsDragging(false);
+    if (selected) handleFiles(e.dataTransfer.files);
   };
 
-  const syncedProjects = projectListText(syncMutation.data?.projects);
+  const downloadReconciliation = async () => {
+    if (!lastReconciliation || !selected) return;
+    setDownloadError('');
+    try { await batchApi.downloadImportReconciliation(selected.id, lastReconciliation.id); }
+    catch { setDownloadError('Could not download the reconciliation report.'); }
+  };
 
   return (
-    <QaPageShell
-      title="Import Data"
-      intro="Upload Excel files first, then click Sync to parse them into the dashboard. Re-uploaded files are merged with existing data and duplicate execution rows are removed."
-    >
+    <QaPageShell title="Import Data" intro="Create or select a project, upload files into that project, then sync. File listing, processing, deletion, and reconciliation are isolated by project on the server.">
+      <QaSection title="Project workspace" subtitle="Every uploaded file must belong to one project" className="mb-[22px]">
+        <div className="grid grid-cols-1 lg:grid-cols-[minmax(220px,1fr)_minmax(180px,0.7fr)_minmax(260px,1.2fr)_auto] gap-3 items-end">
+          <label className="text-[11px] font-mono-qa uppercase tracking-wide text-qa-muted">Selected project<select value={selected?.key || 'all'} onChange={(event) => { setLastReconciliation(null); onProjectChange(event.target.value); }} className="block w-full mt-1.5 border border-qa-ink bg-white px-3 py-2.5 text-[13px] normal-case font-sans"><option value="all">Choose a project…</option>{projects.map((project) => <option key={project.id} value={project.key}>{projectLabel(project)} ({project.key})</option>)}</select></label>
+          <label className="text-[11px] font-mono-qa uppercase tracking-wide text-qa-muted">New project key<input value={projectKey} onChange={(event) => setProjectKey(event.target.value.toUpperCase())} placeholder="e.g. ACE" maxLength={32} className="block w-full mt-1.5 border border-qa-border-mid px-3 py-2.5 text-[13px] normal-case font-sans" /></label>
+          <label className="text-[11px] font-mono-qa uppercase tracking-wide text-qa-muted">New project name<input value={projectName} onChange={(event) => setProjectName(event.target.value)} placeholder="e.g. ACE Backoffice" maxLength={100} className="block w-full mt-1.5 border border-qa-border-mid px-3 py-2.5 text-[13px] normal-case font-sans" /></label>
+          <button type="button" onClick={() => createProject.mutate()} disabled={createProject.isPending || projectKey.trim().length < 2 || projectName.trim().length < 2} className="font-mono-qa text-[10px] uppercase tracking-wider border border-qa-ink bg-white px-4 py-2.5 cursor-pointer disabled:opacity-50">{createProject.isPending ? 'Creating…' : 'Create project'}</button>
+        </div>
+        {createProject.isError && <div className="mt-3 text-sm text-[#a13d2c]">{(createProject.error as Error).message}</div>}
+      </QaSection>
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-[22px] items-start">
         <div>
-          <div
-            onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
-            onDragLeave={() => setIsDragging(false)}
-            onDrop={handleDrop}
-            onClick={() => fileInputRef.current?.click()}
-            className={clsx('border-2 border-dashed p-10 text-center cursor-pointer transition mb-5', isDragging ? 'border-qa-ink bg-[#faf8f2]' : 'border-qa-border-mid hover:border-qa-ink hover:bg-[#faf8f2]')}
-          >
-            <div className="text-3xl text-qa-muted-pale mb-3">↓</div>
-            <p className="text-qa-ink font-semibold m-0">Drop one or more Excel files here or click to browse</p>
-            <p className="text-xs text-qa-muted-light mt-1 m-0">Upload daily ODL and production files together · max 20 MB each · .xlsx / .xls</p>
-            <input ref={fileInputRef} type="file" accept=".xlsx,.xls" multiple className="hidden" onChange={(e) => { if (e.target.files) handleFiles(e.target.files); e.target.value = ''; }} />
+          <div onDragOver={(event) => { event.preventDefault(); if (selected) setIsDragging(true); }} onDragLeave={() => setIsDragging(false)} onDrop={handleDrop} onClick={() => selected && fileInputRef.current?.click()} className={clsx('border-2 border-dashed p-10 text-center transition mb-5', selected ? 'cursor-pointer hover:border-qa-ink hover:bg-[#faf8f2]' : 'cursor-not-allowed opacity-60', isDragging ? 'border-qa-ink bg-[#faf8f2]' : 'border-qa-border-mid')}>
+            <div className="text-3xl text-qa-muted-pale mb-3">↓</div><p className="text-qa-ink font-semibold m-0">{selected ? `Drop files for ${projectLabel(selected)} here or click to browse` : 'Select or create a project before uploading'}</p><p className="text-xs text-qa-muted-light mt-1 m-0">Max 20 MB each · .xlsx / .xls</p>
+            <input ref={fileInputRef} type="file" accept=".xlsx,.xls" multiple className="hidden" onChange={(event) => { if (event.target.files) handleFiles(event.target.files); event.target.value = ''; }} />
           </div>
-
-          <div className="mb-4 flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => syncMutation.mutate()}
-              disabled={syncMutation.isPending || files.length === 0}
-              className="font-mono-qa text-[10px] font-semibold tracking-wider uppercase px-4 py-2 border border-qa-ink bg-qa-ink text-[#F5F3ED] cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {syncMutation.isPending ? 'Syncing…' : 'Sync imported data'}
-            </button>
-            <span className="text-[11.5px] text-qa-muted-light">
-              {files.length ? 'Runs parser/batch sync for all staged files.' : 'Upload at least one file to sync.'}
-            </span>
-          </div>
-
-          {uploadMutation.isError && <div className="p-3 border border-[#ecccc2] bg-[#f8ece8] text-[#a13d2c] text-sm mb-4">Upload failed</div>}
-          {uploadMutation.isSuccess && <div className="p-3 border border-[#cfe0d4] bg-[#eef4ef] text-[#2f6a48] text-sm mb-4">{uploadMutation.data.length} file{uploadMutation.data.length === 1 ? '' : 's'} staged successfully. Click Sync imported data to merge and update the dashboard.</div>}
+          <div className="mb-4 flex items-center gap-2"><button type="button" onClick={() => syncMutation.mutate()} disabled={!selected || syncMutation.isPending || files.length === 0} className="font-mono-qa text-[10px] font-semibold tracking-wider uppercase px-4 py-2 border border-qa-ink bg-qa-ink text-[#F5F3ED] cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed">{syncMutation.isPending ? 'Syncing…' : 'Sync imported data'}</button><span className="text-[11.5px] text-qa-muted-light">{selected ? `Processes only ${projectLabel(selected)}'s files.` : 'Select a project to continue.'}</span></div>
+          {uploadMutation.isError && <div className="p-3 border border-[#ecccc2] bg-[#f8ece8] text-[#a13d2c] text-sm mb-4">{(uploadMutation.error as Error).message}</div>}
+          {uploadMutation.isSuccess && <div className="p-3 border border-[#cfe0d4] bg-[#eef4ef] text-[#2f6a48] text-sm mb-4">{uploadMutation.data.length} file{uploadMutation.data.length === 1 ? '' : 's'} staged for {selected ? projectLabel(selected) : 'the selected project'}. Click Sync imported data to reconcile.</div>}
           {syncMutation.isError && <div className="p-3 border border-[#ecccc2] bg-[#f8ece8] text-[#a13d2c] text-sm mb-4">{(syncMutation.error as Error).message}</div>}
-          {syncMutation.isSuccess && <div className="p-3 border border-[#cfe0d4] bg-[#eef4ef] text-[#2f6a48] text-sm mb-4">Sync completed · {rowCountText(syncMutation.data)}{syncedProjects ? ` · Projects: ${syncedProjects}` : ''}</div>}
-          {deleteMutation.isError && <div className="p-3 border border-[#ecccc2] bg-[#f8ece8] text-[#a13d2c] text-sm mb-4">Remove failed</div>}
-          {deleteMutation.isSuccess && <div className="p-3 border border-[#cfe0d4] bg-[#eef4ef] text-[#2f6a48] text-sm mb-4">File removed and dashboard data refreshed</div>}
-          <QaSection title="Expected file types">
-            <ul className="m-0 p-0 list-none space-y-2">
-              {EXPECTED.map((f) => <li key={f.label} className="flex items-start gap-2 text-[13px]"><span className="font-mono-qa text-[10px] font-semibold text-white px-1.5 py-0.5 shrink-0" style={{ background: extColor(f.ext) }}>{f.ext}</span><span><strong>{f.label}</strong> — {f.map}</span></li>)}
-            </ul>
-          </QaSection>
+          {deleteMutation.isError && <div className="p-3 border border-[#ecccc2] bg-[#f8ece8] text-[#a13d2c] text-sm mb-4">{(deleteMutation.error as Error).message}</div>}
+          {downloadError && <div className="p-3 border border-[#ecccc2] bg-[#f8ece8] text-[#a13d2c] text-sm mb-4">{downloadError}</div>}
+          <QaSection title="Expected file types"><ul className="m-0 p-0 list-none space-y-2">{EXPECTED.map((file) => <li key={file.label} className="flex items-start gap-2 text-[13px]"><span className="font-mono-qa text-[10px] font-semibold text-white px-1.5 py-0.5 shrink-0" style={{ background: extColor(file.ext) }}>{file.ext}</span><span><strong>{file.label}</strong> — {file.map}</span></li>)}</ul></QaSection>
         </div>
         <div>
-          <QaSection title={`Staged files (${files.length})`} subtitle={isLoading ? 'Loading…' : files.length ? `${files.length} file(s) waiting for sync or already synced` : 'No files yet'} noPadding>
-            {files.length === 0 ? <div className="py-10 text-center text-[13px] text-qa-muted-light">No files staged yet</div> : <div>{files.map((f) => <div key={f.name} className="flex items-center gap-3 px-[22px] py-3 border-t border-[#f0ede5] first:border-t-0"><span className="font-mono-qa text-[10px] font-semibold text-white px-1.5 py-1 shrink-0" style={{ background: extColor('XLSX') }}>XLSX</span><div className="flex-1 min-w-0"><p className="text-[13px] font-semibold m-0 truncate">{f.name}</p><p className="font-mono-qa text-[10px] text-qa-muted-light m-0 mt-0.5">{(f.size / 1024).toFixed(1)} KB · {new Date(f.modifiedAt).toLocaleString()} · staged</p></div><button type="button" onClick={() => deleteMutation.mutate(f.name)} disabled={deleteMutation.isPending} className="font-mono-qa text-[10px] text-qa-muted-light hover:text-[#C24533] border-none bg-transparent cursor-pointer disabled:opacity-50 disabled:cursor-wait">{deleteMutation.isPending ? 'Removing…' : 'Remove'}</button></div>)}</div>}
+          <QaSection title={`Project files (${files.length})`} subtitle={!selected ? 'No project selected' : isLoading ? 'Loading selected project…' : files.length ? `${projectLabel(selected)} files only` : `No files in ${projectLabel(selected)}`} noPadding>
+            {files.length === 0 ? <div className="py-10 text-center text-[13px] text-qa-muted-light">{selected ? 'No files staged for this project' : 'Choose a project to view its files'}</div> : <div>{files.map((file) => <div key={file.id} className="flex items-center gap-3 px-[22px] py-3 border-t border-[#f0ede5] first:border-t-0"><span className="font-mono-qa text-[10px] font-semibold text-white px-1.5 py-1 shrink-0" style={{ background: extColor('XLSX') }}>XLSX</span><div className="flex-1 min-w-0"><p className="text-[13px] font-semibold m-0 truncate">{file.originalName}</p><p className="font-mono-qa text-[10px] text-qa-muted-light m-0 mt-0.5">{(file.size / 1024).toFixed(1)} KB · {new Date(file.uploadedAt).toLocaleString()} · {file.status}{typeof file.rows === 'number' ? ` · ${file.rows} rows` : ''}</p></div><button type="button" onClick={() => deleteMutation.mutate(file.id)} disabled={deleteMutation.isPending} className="font-mono-qa text-[10px] text-qa-muted-light hover:text-[#C24533] border-none bg-transparent cursor-pointer disabled:opacity-50">Remove</button></div>)}</div>}
           </QaSection>
-          <QaSection title="Column mapping" className="mt-[22px]">
-            <p className="text-[11.5px] text-qa-muted-light m-0 mb-3">{MAPPING_ROWS.length} fields auto-mapped on parse</p>
-            <div className="space-y-1.5">{MAPPING_ROWS.map((m) => <div key={m.source} className="flex justify-between text-[12.5px] py-1 border-b border-[#f3f0e8] last:border-0"><span className="font-mono-qa text-qa-muted">{m.source}</span><span className="text-qa-ink">{m.target}</span></div>)}</div>
-          </QaSection>
+          <QaSection title="Column mapping" className="mt-[22px]"><p className="text-[11.5px] text-qa-muted-light m-0 mb-3">{MAPPING_ROWS.length} fields auto-mapped on parse</p><div className="space-y-1.5">{MAPPING_ROWS.map((mapping) => <div key={mapping.source} className="flex justify-between text-[12.5px] py-1 border-b border-[#f3f0e8] last:border-0"><span className="font-mono-qa text-qa-muted">{mapping.source}</span><span className="text-qa-ink">{mapping.target}</span></div>)}</div></QaSection>
         </div>
       </div>
+      {lastReconciliation && <ReconciliationPanel report={lastReconciliation} onDownload={downloadReconciliation} />}
     </QaPageShell>
   );
 }

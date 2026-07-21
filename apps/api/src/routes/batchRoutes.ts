@@ -23,6 +23,7 @@ import {
   fetchFolderCycleHealth,
   searchQmetryTestCycles,
   emptyConnections,
+  emptyDataset,
   canonicalProjectKey,
   canonicalProjectOrUndefined,
   ensureRuntimeDirectories,
@@ -46,11 +47,17 @@ import type {
 } from 'qa-dashboard-batch';
 import { getEnvStatus } from '../loadRepoEnv';
 import { generateReportPdf, type ReportBrandingPayload } from '../services/reportPdf';
+import { ProjectImportStore } from '../services/projectImports';
+import {
+  ProjectConnectionValidationError,
+  validateProjectConnections,
+} from '../services/projectConnections';
 
 const router = Router();
 const RUNTIME_PATHS = resolveRuntimePaths({ fallbackRoot: path.resolve(__dirname, '../../../..') });
 const { rootDir: ROOT, inputDir: INPUT_DIR, outputDir: OUTPUT_DIR, configDir: CONFIG_DIR } = RUNTIME_PATHS;
 ensureRuntimeDirectories(RUNTIME_PATHS);
+const projectImports = new ProjectImportStore(RUNTIME_PATHS);
 
 const GENERATED_OUTPUT_FILES = ['raw-dataset.json', 'dataset-fingerprint.txt', 'dashboard-data.json', 'report-dashboard.json', 'report-raw-dataset.json', 'report-dataset-fingerprint.txt', 'report.md', 'report-meta.json'];
 const REPORT_OUTPUT_FILES = ['report-dashboard.json', 'report-raw-dataset.json', 'report-dataset-fingerprint.txt', 'report.md', 'report-meta.json'];
@@ -272,24 +279,49 @@ async function refreshGeneratedOutputs(req: Request, connections: UserConnection
   return { rebuilt: true, rowCounts: counts, removed, warnings: dataset.meta.warnings, files: dataset.files, projects: dataset.projects, dashboard: payload };
 }
 
+function publishProjectImportOutputs(req: Request, dashboardFilter: Partial<FilterParams> = {}) {
+  const imported = loadDatasetFile(IMPORT_CACHE_FILE) || emptyDataset();
+  const dataset = mergedSourceDataset('import-only', imported);
+  const counts = rowCounts(dataset);
+  const removed = clearOutputFiles(REPORT_OUTPUT_FILES);
+  if (totalRows(dataset) === 0) {
+    removed.push(...clearOutputFiles(['raw-dataset.json', 'dataset-fingerprint.txt', 'dashboard-data.json']));
+    return { rebuilt: false, rowCounts: counts, removed, warnings: dataset.meta.warnings, files: dataset.files, projects: dataset.projects };
+  }
+  const fingerprint = `project-import:${imported.meta.parsedAt}:${totalRows(imported)}`;
+  saveRawDataset(OUTPUT_DIR, dataset, fingerprint);
+  const dashboard = refilterDashboard(dataset, { ...dashboardFilter, project: cleanProject(dashboardFilter.project) });
+  writeJsonFile(outputPath('dashboard-data.json'), dashboard);
+  log(req, 'project-scoped import outputs published', { rowCounts: counts, projects: dataset.projects });
+  return { rebuilt: true, rowCounts: counts, removed, warnings: dataset.meta.warnings, files: dataset.files, projects: dataset.projects, dashboard };
+}
+
 function connectionSummary(connections: UserConnections) {
   return {
-    jira: connections.jira.map((c) => ({ name: c.name, baseUrl: c.baseUrl, projectKeys: c.projectKeys?.join(',') || '' })),
-    qmetry: connections.qmetry.map((c) => ({ name: c.name, baseUrl: c.baseUrl, projectKey: c.projectKey, projectId: c.projectId || '', folderId: c.folderId || '' })),
+    jira: connections.jira.map((c) => ({ name: c.name, workspaceProjectId: c.workspaceProjectId || '', baseUrl: c.baseUrl, projectKeys: c.projectKeys?.join(',') || '' })),
+    qmetry: connections.qmetry.map((c) => ({ name: c.name, workspaceProjectId: c.workspaceProjectId || '', baseUrl: c.baseUrl, projectKey: c.projectKey, projectId: c.projectId || '', folderId: c.folderId || '' })),
   };
 }
 
+type ConnectionRequest = Request & { validatedUserConnections?: UserConnections };
+
 function resolveConnections(req: Request): UserConnections {
+  const connectionRequest = req as ConnectionRequest;
+  if (connectionRequest.validatedUserConnections) return connectionRequest.validatedUserConnections;
   const raw = req.header('x-user-connections');
   if (!raw) return emptyConnections();
   try {
     const parsed = JSON.parse(raw) as Partial<UserConnections>;
     const connections = { jira: Array.isArray(parsed.jira) ? parsed.jira : [], qmetry: Array.isArray(parsed.qmetry) ? parsed.qmetry : [] };
-    log(req, 'resolved browser connections', connectionSummary(connections));
-    return connections;
+    const validated = validateProjectConnections(connections, projectImports.listProjects());
+    connectionRequest.validatedUserConnections = validated;
+    log(req, 'resolved browser connections', connectionSummary(validated));
+    return validated;
   } catch (err) {
     logError(req, 'failed to parse x-user-connections header', err);
-    return emptyConnections();
+    throw err instanceof SyntaxError
+      ? new ProjectConnectionValidationError('The saved JIRA/QMetry connection data is invalid JSON.')
+      : err;
   }
 }
 
@@ -302,6 +334,13 @@ function resolveAnthropicKey(req: Request): { key: string; source: 'user' | 'ser
 }
 
 async function ensureDataset(req: Request, connections: UserConnections, apiScope?: ApiFetchScope, mode: BuildMode = 'import-only'): Promise<{ dataset: Dataset; fingerprint: string } | null> {
+  if (mode === 'import-only') {
+    const imported = loadDatasetFile(IMPORT_CACHE_FILE);
+    if (imported) {
+      const merged = mergedSourceDataset('import-only', imported);
+      if (totalRows(merged) > 0) return { dataset: merged, fingerprint: `project-import:${imported.meta.parsedAt}:${totalRows(imported)}` };
+    }
+  }
   const options = buildOptions(mode, apiScope);
   const fingerprint = computeFingerprint(INPUT_DIR, CONFIG_DIR, connections, options);
   const cached = loadFingerprint(OUTPUT_DIR);
@@ -350,6 +389,16 @@ function selectQmetryConnection(connections: UserConnections, connectionId?: str
   return connections.qmetry[0];
 }
 
+router.use((req: Request, res: Response, next) => {
+  if (!req.header('x-user-connections')) return next();
+  try {
+    resolveConnections(req);
+    return next();
+  } catch (err) {
+    return res.status(400).json({ ok: false, error: toErrorMessage(err), requestId: requestId(req) });
+  }
+});
+
 router.get('/status', (_req: Request, res: Response) => res.json({
   apiKeyConfigured: Boolean(process.env.ANTHROPIC_API_KEY || process.env.OPENAI_API_KEY || process.env.GEMINI_API_KEY || process.env.CUSTOM_LLM_API_KEY),
   llmProvidersConfigured: {
@@ -390,12 +439,8 @@ router.get('/anthropic/test', async (req: Request, res: Response) => {
   }
 });
 
-const storage = multer.diskStorage({
-  destination: (_req, _file, cb) => cb(null, INPUT_DIR),
-  filename: (_req, file, cb) => cb(null, `${Date.now()}_${path.basename(file.originalname).replace(/[/\\]/g, '_')}`),
-});
 const upload = multer({
-  storage,
+  storage: multer.memoryStorage(),
   limits: { fileSize: 20 * 1024 * 1024 },
   fileFilter: (_req, file, cb) => {
     const ext = path.extname(file.originalname).toLowerCase();
@@ -412,7 +457,10 @@ router.post('/generate', async (req: Request, res: Response) => {
   log(req, 'POST /generate:start', { startDate, endDate, reportType, search, result, project: clean, keySource: key.source, connections: connectionSummary(connections) });
   const type = REPORT_TYPES.includes(reportType as ReportType) ? (reportType as ReportType) : 'full';
   try {
-    const resultPayload = await runGenerate({ startDate, endDate, reportType: type, search, result: (result as 'all') || 'all', project: clean, inputDir: INPUT_DIR, outputDir: OUTPUT_DIR, configDir: CONFIG_DIR, apiKey: key.key || undefined, llm, connections });
+    const filter = filterFromBody({ startDate, endDate, search, result: (result as FilterParams['result']) || 'all', project: clean });
+    if (hasLiveSources(connections)) await refreshGeneratedOutputs(req, connections, apiScopeFromFilter(filter), filter, 'live');
+    const sourceDataset = mergedSourceDataset();
+    const resultPayload = await runGenerate({ startDate, endDate, reportType: type, search, result: (result as 'all') || 'all', project: clean, inputDir: INPUT_DIR, outputDir: OUTPUT_DIR, configDir: CONFIG_DIR, apiKey: key.key || undefined, llm, connections, sourceDataset });
     log(req, 'POST /generate:done', { ok: resultPayload.ok, rowCounts: resultPayload.rowCounts, warnings: resultPayload.warnings, error: resultPayload.error, paths: resultPayload.paths });
     return res.status(200).json({ ...resultPayload, requestId: requestId(req) });
   } catch (err) {
@@ -601,61 +649,173 @@ router.post('/integrations/test-connection', async (req: Request, res: Response)
   if (!type || !connection) return res.status(400).json({ ok: false, error: 'type and connection are required', requestId: requestId(req) });
   try {
     if (type === 'jira') {
-      const { issues, error } = await fetchJiraIssues({ ...jiraConfigFromConnection(connection as JiraConnectionInput), pageSize: 5 });
+      const validated = validateProjectConnections({ jira: [connection as JiraConnectionInput], qmetry: [] }, projectImports.listProjects());
+      const { issues, error } = await fetchJiraIssues({ ...jiraConfigFromConnection(validated.jira[0]), pageSize: 5 });
       if (error) return res.json({ ok: false, error });
       return res.json({ ok: true, count: issues.length });
     }
-    const qmetryCfg = qmetryConfigFromConnection(connection as QmetryConnectionInput);
+    const validated = validateProjectConnections({ jira: [], qmetry: [connection as QmetryConnectionInput] }, projectImports.listProjects());
+    const qmetryCfg = qmetryConfigFromConnection(validated.qmetry[0]);
     const cycles = await searchQmetryTestCycles(qmetryCfg, { startAt: 0, maxResults: 5 });
     if (cycles.error) return res.json({ ok: false, error: cycles.error });
     return res.json({ ok: true, count: cycles.total, sampleCycles: cycles.cycles });
   } catch (err) {
-    return res.status(500).json({ ok: false, error: toErrorMessage(err), requestId: requestId(req) });
+    const status = err instanceof ProjectConnectionValidationError ? 400 : 500;
+    return res.status(status).json({ ok: false, error: toErrorMessage(err), requestId: requestId(req) });
   }
 });
 
-router.post('/input/sync', async (req: Request, res: Response) => {
-  const filter = filterFromBody(req.body as Partial<FilterParams>);
-  log(req, 'POST /input/sync:start', { filter, mode: 'import-only' });
+function seedProjectRegistry() {
+  const existing = projectImports.listProjects();
+  if (existing.length) return existing;
+  // One-time migration is limited to imported files. Live credentials and API
+  // response data must never create a dashboard project implicitly.
+  const keys = uniqueProjectsFromDatasets([loadDatasetFile(IMPORT_CACHE_FILE)]);
+  return projectImports.ensureProjectsForKeys(keys);
+}
+
+function uniqueProjectsFromDatasets(datasets: Array<Dataset | null>): string[] {
+  return [...new Set(datasets.flatMap((dataset) => dataset?.projects || []).map(canonicalProjectKey).filter((key) => key && key !== 'all'))];
+}
+
+function projectErrorStatus(err: unknown): number {
+  const message = toErrorMessage(err);
+  if (/already exists/i.test(message)) return 409;
+  if (/not found/i.test(message)) return 404;
+  return 400;
+}
+
+router.get('/projects', (_req: Request, res: Response) => {
+  const projects = seedProjectRegistry().map((project) => ({
+    ...project,
+    fileCount: projectImports.listFiles(project.id).length,
+  }));
+  res.json(projects);
+});
+
+router.post('/projects', (req: Request, res: Response) => {
   try {
-    const sync = await refreshGeneratedOutputs(req, emptyConnections(), undefined, filter, 'import-only');
-    return res.json({ ok: true, ...sync, requestId: requestId(req) });
+    const project = projectImports.createProject(req.body as { key?: string; name?: string });
+    return res.status(201).json({ ok: true, project, requestId: requestId(req) });
   } catch (err) {
-    logError(req, 'POST /input/sync:failed', err);
-    return res.status(500).json({ ok: false, error: toErrorMessage(err), requestId: requestId(req) });
+    return res.status(projectErrorStatus(err)).json({ ok: false, error: toErrorMessage(err), requestId: requestId(req) });
+  }
+});
+
+router.get('/projects/:projectId/files', (req: Request, res: Response) => {
+  try {
+    return res.json(projectImports.listFiles(req.params.projectId));
+  } catch (err) {
+    return res.status(projectErrorStatus(err)).json({ error: toErrorMessage(err), requestId: requestId(req) });
+  }
+});
+
+router.post('/projects/:projectId/files', upload.single('file'), (req: Request, res: Response) => {
+  if (!req.file) return res.status(400).json({ error: 'No file uploaded', requestId: requestId(req) });
+  try {
+    const file = projectImports.stageFile(req.params.projectId, req.file.originalname, req.file.buffer);
+    log(req, 'project file staged', { projectId: req.params.projectId, fileId: file.id, filename: file.originalName, size: file.size });
+    return res.status(201).json({ ok: true, file, message: 'File staged for the selected project. Click Sync imported data to reconcile it.' });
+  } catch (err) {
+    return res.status(projectErrorStatus(err)).json({ ok: false, error: toErrorMessage(err), requestId: requestId(req) });
+  }
+});
+
+router.post('/projects/:projectId/imports/sync', (req: Request, res: Response) => {
+  const filter = filterFromBody(req.body as Partial<FilterParams>);
+  try {
+    const reconciliation = projectImports.syncProject(req.params.projectId, req.header('x-user-name') || 'Local user');
+    const published = publishProjectImportOutputs(req, { ...filter, project: reconciliation.project.key });
+    return res.json({
+      ok: true,
+      ...published,
+      rowCounts: reconciliation.rowCounts,
+      reconciliation,
+      requestId: requestId(req),
+    });
+  } catch (err) {
+    logError(req, 'project import sync failed', err, { projectId: req.params.projectId });
+    return res.status(projectErrorStatus(err) === 404 ? 404 : 500).json({ ok: false, error: toErrorMessage(err), requestId: requestId(req) });
+  }
+});
+
+router.delete('/projects/:projectId/files/:fileId', (req: Request, res: Response) => {
+  try {
+    const removedFile = projectImports.deleteFile(req.params.projectId, req.params.fileId);
+    const reconciliation = projectImports.syncProject(req.params.projectId, req.header('x-user-name') || 'Local user');
+    const published = publishProjectImportOutputs(req, { project: reconciliation.project.key });
+    return res.json({ ok: true, removedFile, ...published, rowCounts: reconciliation.rowCounts, reconciliation, requestId: requestId(req) });
+  } catch (err) {
+    return res.status(projectErrorStatus(err)).json({ ok: false, error: toErrorMessage(err), requestId: requestId(req) });
+  }
+});
+
+router.get('/projects/:projectId/imports/:syncId', (req: Request, res: Response) => {
+  try {
+    return res.json(projectImports.getSyncReport(req.params.projectId, req.params.syncId));
+  } catch (err) {
+    return res.status(projectErrorStatus(err)).json({ error: toErrorMessage(err), requestId: requestId(req) });
+  }
+});
+
+router.get('/projects/:projectId/imports/:syncId/report.csv', (req: Request, res: Response) => {
+  try {
+    const csv = projectImports.reconciliationCsv(req.params.projectId, req.params.syncId);
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="import-reconciliation-${path.basename(req.params.syncId)}.csv"`);
+    return res.send(csv);
+  } catch (err) {
+    return res.status(projectErrorStatus(err)).json({ error: toErrorMessage(err), requestId: requestId(req) });
+  }
+});
+
+// Compatibility endpoints remain project-scoped. They intentionally refuse an
+// unscoped request so older clients cannot list, sync, or delete another
+// project's files by accident.
+router.post('/input/sync', (req: Request, res: Response) => {
+  const projectId = String((req.body as { projectId?: string }).projectId || '');
+  if (!projectId) return res.status(400).json({ ok: false, error: 'projectId is required.', requestId: requestId(req) });
+  try {
+    const reconciliation = projectImports.syncProject(projectId, req.header('x-user-name') || 'Local user');
+    const published = publishProjectImportOutputs(req, { project: reconciliation.project.key });
+    return res.json({ ok: true, ...published, rowCounts: reconciliation.rowCounts, reconciliation, requestId: requestId(req) });
+  } catch (err) {
+    return res.status(projectErrorStatus(err)).json({ ok: false, error: toErrorMessage(err), requestId: requestId(req) });
   }
 });
 
 router.post('/upload', upload.single('file'), (req: Request, res: Response) => {
+  const projectId = String((req.body as { projectId?: string }).projectId || '');
+  if (!projectId) return res.status(400).json({ ok: false, error: 'projectId is required.', requestId: requestId(req) });
   if (!req.file) return res.status(400).json({ error: 'No file uploaded', requestId: requestId(req) });
-  log(req, 'POST /upload:done', { filename: req.file.filename, size: req.file.size });
-  res.json({ ok: true, filename: req.file.filename, path: req.file.path, message: 'File staged. Click Sync imported data to update dashboard data.' });
-});
-
-router.get('/input/files', (_req: Request, res: Response) => {
-  if (!fs.existsSync(INPUT_DIR)) return res.json([]);
-  const files = fs.readdirSync(INPUT_DIR)
-    .filter((f) => !f.startsWith('.'))
-    .map((f) => {
-      const stat = fs.statSync(path.join(INPUT_DIR, f));
-      return { name: f, size: stat.size, modifiedAt: stat.mtime.toISOString() };
-    });
-  res.json(files);
-});
-
-router.delete('/input/:filename', async (req: Request, res: Response) => {
-  const filename = path.basename(req.params.filename);
-  const filePath = path.join(INPUT_DIR, filename);
-  if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'File not found', requestId: requestId(req) });
-  fs.unlinkSync(filePath);
-  log(req, 'DELETE /input:file removed', { filename, mode: 'import-only' });
   try {
-    const refresh = await refreshGeneratedOutputs(req, emptyConnections(), undefined, {}, 'import-only');
-    return res.json({ ok: true, filename, ...refresh });
+    const file = projectImports.stageFile(projectId, req.file.originalname, req.file.buffer);
+    return res.status(201).json({ ok: true, file, message: 'File staged for the selected project.' });
   } catch (err) {
-    const removed = clearOutputFiles();
-    logError(req, 'DELETE /input:refresh failed; cleared stale outputs', err, { filename, removed });
-    return res.json({ ok: true, filename, rebuilt: false, rowCounts: { executions: 0, issues: 0, uat: 0 }, removed, warnings: [`File removed, but imported data refresh failed: ${toErrorMessage(err)}`] });
+    return res.status(projectErrorStatus(err)).json({ ok: false, error: toErrorMessage(err), requestId: requestId(req) });
+  }
+});
+
+router.get('/input/files', (req: Request, res: Response) => {
+  const projectId = queryString(req.query.projectId);
+  if (!projectId) return res.status(400).json({ error: 'projectId is required.', requestId: requestId(req) });
+  try {
+    return res.json(projectImports.listFiles(projectId));
+  } catch (err) {
+    return res.status(projectErrorStatus(err)).json({ error: toErrorMessage(err), requestId: requestId(req) });
+  }
+});
+
+router.delete('/input/:fileId', (req: Request, res: Response) => {
+  const projectId = queryString(req.query.projectId);
+  if (!projectId) return res.status(400).json({ error: 'projectId is required.', requestId: requestId(req) });
+  try {
+    const removedFile = projectImports.deleteFile(projectId, req.params.fileId);
+    const reconciliation = projectImports.syncProject(projectId, req.header('x-user-name') || 'Local user');
+    const published = publishProjectImportOutputs(req, { project: reconciliation.project.key });
+    return res.json({ ok: true, removedFile, ...published, rowCounts: reconciliation.rowCounts, reconciliation, requestId: requestId(req) });
+  } catch (err) {
+    return res.status(projectErrorStatus(err)).json({ ok: false, error: toErrorMessage(err), requestId: requestId(req) });
   }
 });
 

@@ -11,7 +11,7 @@
     "dev:servers": "npm run build --workspace=apps/batch && concurrently \"npm run dev --workspace=apps/api\" \"npm run dev --workspace=apps/web\"",
     "build": "npm run build --workspace=apps/batch && npm run build --workspace=apps/api && npm run build --workspace=apps/web",
     "generate": "npm run generate --workspace=apps/batch",
-    "test": "npm run test --workspace=apps/batch && npm run test:responsive --workspace=apps/web && npm run test:dev-cache && npm run test:npm-spawn",
+    "test": "npm run test --workspace=apps/batch && npm run test --workspace=apps/api && npm run test:responsive --workspace=apps/web && npm run test:dev-cache && npm run test:npm-spawn",
     "test:dev-cache": "node scripts/__tests__/dev-cache.test.cjs",
     "test:npm-spawn": "node scripts/__tests__/npm-spawn.test.cjs",
     "install:all": "npm install"

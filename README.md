@@ -63,12 +63,15 @@ The dashboard combines supported Excel imports with optional live Jira and QMetr
 Runtime directories:
 
 ```text
-input/    Uploaded or staged Excel files
-output/   Generated datasets, dashboard payloads, reports, and temporary artifacts
-config/   Local runtime and integration settings
+input/projects/<project-id>/   Project-owned staged Excel files
+output/import-projects/        Reconciled per-project datasets
+output/import-sync/            Import reconciliation jobs and downloadable evidence
+output/                        Combined datasets, dashboards, and reports
+config/projects.json           Project registry
+config/project-imports.json    File ownership manifest
 ```
 
-The application is file-based and stateless. These directories must be persistent when the application is deployed with containers.
+The application is file-backed and does not require a database. These directories must be persistent when the application is deployed with containers.
 
 ---
 
@@ -484,7 +487,17 @@ A project does not need both Jira and QMetry. Missing source types are shown as 
 .xls
 ```
 
-Upload files through **Import Data**, or copy files into `input/` before generating the dataset.
+For the web application, create or select a project in **Import Data** and upload files there. The API stores every file beneath that project's own directory and records ownership in the import manifest. The standalone batch CLI can still read files copied directly into its configured input directory.
+
+### Project-scoped import workflow
+
+1. Create a project with a unique key and name, or select an existing project.
+2. Upload Excel files. Only files owned by the selected project are listed.
+3. Click **Sync imported data**. Only the selected project's directory is parsed.
+4. Review the reconciliation job: status, timing, initiator, per-file type/sheet, rows found, created/updated/skipped/rejected rows, row-level rejection reasons, validation messages, category totals, and previous-versus-new totals.
+5. Download the reconciliation CSV when evidence or row-level failure follow-up is required.
+
+The backend validates project ownership for list, sync, report download, and delete operations. An unscoped import request is rejected.
 
 ### Test-execution file
 
@@ -734,7 +747,7 @@ Filterable areas:
 | Test Cycles | Cycle totals, execution split, coverage, and cycle status |
 | Traceability | Story, bug, and test evidence |
 | UAT/vendor issues | UAT totals, status, priority, and ownership |
-| Import Data | Uploaded files and file classification |
+| Import Data | Project creation, isolated project files, synchronization, and detailed reconciliation |
 | QA Report | Report generation and PDF download |
 | Settings | Connections, AI provider, branding, and connection tests |
 
@@ -1003,9 +1016,14 @@ Check:
 | `POST` | `/api/integrations/test` | Test configured integrations |
 | `POST` | `/api/integrations/test-connection` | Test a Settings connection |
 | `POST` | `/api/llm/test` | Validate the selected narrative provider |
-| `POST` | `/api/upload` | Upload an Excel file |
-| `GET` | `/api/input/files` | List staged files |
-| `DELETE` | `/api/input/:filename` | Delete a staged file and refresh data |
+| `GET` | `/api/projects` | List project workspaces |
+| `POST` | `/api/projects` | Create a project workspace |
+| `GET` | `/api/projects/:projectId/files` | List only the selected project's staged files |
+| `POST` | `/api/projects/:projectId/files` | Upload an Excel file into the selected project |
+| `DELETE` | `/api/projects/:projectId/files/:fileId` | Delete a file after verifying project ownership |
+| `POST` | `/api/projects/:projectId/imports/sync` | Sync only the selected project and return reconciliation details |
+| `GET` | `/api/projects/:projectId/imports/:syncId` | Read a project-owned reconciliation job |
+| `GET` | `/api/projects/:projectId/imports/:syncId/report.csv` | Download the reconciliation CSV |
 
 ---
 

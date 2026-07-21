@@ -17,8 +17,9 @@ import { EmptyDashboard } from './components/common/EmptyDashboard';
 import { usePerTabFilters } from './hooks/usePerTabFilters';
 import { useUiPreferences } from './hooks/useUiPreferences';
 import { batchApi, getActiveProject } from './lib/api';
-import { canonicalProjectOrUndefined } from './lib/projectKey';
+import { canonicalProjectOrUndefined, uniqueCanonicalProjects } from './lib/projectKey';
 import { defaultReportingPeriod } from './lib/reportingPeriod';
+import { projectDisplayName } from './lib/projectDisplay';
 import type { DashboardPayload, FilterParams } from 'qa-dashboard-batch';
 import type { QaTab } from './theme/qaTheme';
 
@@ -50,6 +51,10 @@ function AppContent() {
     queryFn: () => batchApi.getDashboard(initialFilter),
     retry: false,
   });
+  const { data: registeredProjects = [] } = useQuery({
+    queryKey: ['projects'],
+    queryFn: batchApi.listProjects,
+  });
 
   const projectBaseFetch = useMutation({
     mutationFn: (project: string) => batchApi.getDashboard({
@@ -63,6 +68,11 @@ function AppContent() {
   const base = isProjectLoading ? undefined : (baseDashboard ?? initialDashboard ?? undefined);
   const display = (filteredByTab[activeTab] ?? base) ?? undefined;
   const filters = usePerTabFilters(activeTab, base);
+  const availableProjects = ['all', ...uniqueCanonicalProjects([
+    ...filters.projects,
+    ...registeredProjects.map((project) => project.key),
+  ])];
+  const projectNames = Object.fromEntries(registeredProjects.map((project) => [project.key, project.name === project.key ? projectDisplayName(project.key) : project.name]));
 
   const setFilteredView = (freshDashboard: DashboardPayload | null, tab: QaTab) => {
     if (!freshDashboard) return;
@@ -108,7 +118,7 @@ function AppContent() {
 
   return (
     <div className="min-h-screen w-full min-w-0 overflow-x-hidden bg-qa-bg text-qa-ink flex flex-col qa-scroll">
-      <QaMasthead dashboard={display} project={filters.project} projects={filters.projects} onProjectChange={handleProjectChange} />
+      <QaMasthead dashboard={display} project={filters.project} projects={availableProjects} projectNames={projectNames} onProjectChange={handleProjectChange} />
       <QaTabNav tabs={tabs} activeTab={activeTab} onTabChange={handleTabChange} />
 
       {showFilters && (
@@ -147,7 +157,7 @@ function AppContent() {
         {display && activeTab === 'cycles' && <CyclesPage dashboard={display} kpiStyle={ui.kpiStyle} selectedCycle={ui.selectedCycle} onSelectCycle={ui.setSelectedCycle} filterParams={filters.filterParams} searchQuery={filters.search} />}
         {display && activeTab === 'trace' && <TraceabilityPage dashboard={display} kpiStyle={ui.kpiStyle} searchQuery={filters.search} />}
         {display && activeTab === 'uat' && showUat && <UatPage dashboard={display} kpiStyle={ui.kpiStyle} searchQuery={filters.search} />}
-        {activeTab === 'import' && <ImportStatusPage />}
+        {activeTab === 'import' && <ImportStatusPage selectedProject={filters.project} projects={registeredProjects} onProjectChange={handleProjectChange} />}
         {activeTab === 'ai' && <AiReportPage dashboard={display} kpiStyle={ui.kpiStyle} project={filters.project} />}
         {activeTab === 'settings' && <SettingsPage />}
       </div>

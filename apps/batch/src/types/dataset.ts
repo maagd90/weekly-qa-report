@@ -137,6 +137,8 @@ export interface GenerateParams extends FilterParams {
   apiKey?: string;
   llm?: import('../ai/llmProviders').LlmSelectionInput;
   connections?: import('./connections').UserConnections;
+  /** Optional canonical source supplied by the API after project-scoped imports are reconciled. */
+  sourceDataset?: Dataset;
 }
 
 export function resultColor(code: string): string {

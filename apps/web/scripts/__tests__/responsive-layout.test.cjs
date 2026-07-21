@@ -80,8 +80,10 @@ hasAll('src/pages/SettingsPage.tsx', [
   'function saveConnections()',
   'onClick={saveNarrativeProvider}',
   'onClick={saveBranding}',
-  'saveConnections(); syncLiveMutation.mutate();',
-  'saveConnections(); testMutation.mutate();',
+  'if (saveConnections()) syncLiveMutation.mutate();',
+  'if (saveConnections()) testMutation.mutate();',
+  'Only one JIRA connection is allowed per project.',
+  'Only one QMetry connection is allowed per project.',
 ]);
 hasNone('src/pages/SettingsPage.tsx', ['saveAll']);
 

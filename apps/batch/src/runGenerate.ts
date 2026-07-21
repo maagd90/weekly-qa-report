@@ -102,6 +102,7 @@ function reportRowCounts(payload: DashboardPayload): { executions: number; issue
 function sanitizeParamsForMeta(params: GenerateParams): GenerateParams {
   const safe: GenerateParams = { ...params };
   delete safe.apiKey;
+  delete safe.sourceDataset;
   if (safe.llm) safe.llm = { provider: safe.llm.provider, model: safe.llm.model, baseUrl: safe.llm.baseUrl };
   if (safe.connections) {
     safe.connections = {
@@ -164,20 +165,28 @@ export async function runGenerate(params: GenerateParams): Promise<GenerateResul
   const apiScope = apiScopeFromParams(params);
   const buildOptions = { apiScope, liveSync: true, includeFiles: true };
 
-  const fingerprint = computeFingerprint(inputDir, configDir, params.connections, buildOptions);
+  const fingerprint = params.sourceDataset
+    ? `provided:${params.sourceDataset.meta.parsedAt}:${params.sourceDataset.executions.length}:${params.sourceDataset.issues.length}:${params.sourceDataset.uat.length}`
+    : computeFingerprint(inputDir, configDir, params.connections, buildOptions);
   const cachedFingerprint = loadReportFingerprint(fingerprintPath);
 
   let dataset;
   try {
-    const cached = loadReportDataset(rawPath);
-    const forceLiveBuild = hasBrowserConnections(params) || cachedFingerprint !== fingerprint;
-    dataset = forceLiveBuild ? await buildDataset(inputDir, configDir, params.connections, buildOptions) : (cached || await buildDataset(inputDir, configDir, params.connections, buildOptions));
+    if (params.sourceDataset) {
+      dataset = params.sourceDataset;
+    } else {
+      const cached = loadReportDataset(rawPath);
+      const forceLiveBuild = hasBrowserConnections(params) || cachedFingerprint !== fingerprint;
+      dataset = forceLiveBuild ? await buildDataset(inputDir, configDir, params.connections, buildOptions) : (cached || await buildDataset(inputDir, configDir, params.connections, buildOptions));
+    }
   } catch (err) {
     clearStaleReportFiles(dashboardPath, reportPath, metaPath, rawPath, fingerprintPath);
     return { ok: false, filesParsed: 0, rowCounts: {}, warnings: [], paths: { dashboard: '', report: '', meta: '', raw: '' }, error: toErrorMessage(err) };
   }
 
-  const fileCount = discoverInputFiles(inputDir).length;
+  const fileCount = params.sourceDataset
+    ? params.sourceDataset.files.filter((file) => file.source === 'file').length
+    : discoverInputFiles(inputDir).length;
   const totalRows = dataset.executions.length + dataset.issues.length + dataset.uat.length;
   if (totalRows === 0) {
     clearStaleReportFiles(dashboardPath, reportPath, metaPath, rawPath, fingerprintPath);

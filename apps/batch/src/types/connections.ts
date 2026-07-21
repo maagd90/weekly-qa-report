@@ -3,6 +3,8 @@ export type JiraAuthType = 'basic' | 'bearer';
 
 export interface JiraConnectionInput {
   id: string;
+  /** Internal QA Dashboard project that owns this connection. */
+  workspaceProjectId?: string;
   name: string;
   baseUrl: string;
   enabled?: boolean;
@@ -24,6 +26,8 @@ export interface JiraConnectionInput {
 
 export interface QmetryConnectionInput {
   id: string;
+  /** Internal QA Dashboard project that owns this connection. */
+  workspaceProjectId?: string;
   name: string;
   baseUrl: string;
   enabled?: boolean;

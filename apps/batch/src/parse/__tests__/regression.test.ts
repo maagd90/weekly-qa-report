@@ -1,9 +1,12 @@
 import assert from 'assert';
+import fs from 'fs';
+import os from 'os';
 import path from 'path';
+import * as XLSX from 'xlsx';
 import { parseExecutionExport } from '../parseExecutionExport';
 import { parseJira } from '../parseJira';
 import { parseOdl, parseOdlFromRows } from '../parseOdl';
-import { parseAllFiles } from '../dispatcher';
+import { inspectImportFile, parseAllFiles } from '../dispatcher';
 import { buildDashboardPayload } from '../../export/buildDashboardPayload';
 import { mergeDatasets } from '../../merge/mergeDataset';
 import type { IssueRow, UatRow } from '../../types/dataset';
@@ -88,6 +91,36 @@ function countResults(executions: { result: string }[]) {
   assert.ok(payload.uat);
   assert.strictEqual(payload.uat!.total, 74);
   console.log('✓ Dashboard payload');
+}
+
+// Reconciliation must retain a reason and spreadsheet row number for every
+// rejected source row so the UI and CSV can explain exactly what was skipped.
+{
+  const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'qa-rejections-'));
+  try {
+    const filePath = path.join(temporary, 'jira-with-rejections.xlsx');
+    const workbook = XLSX.utils.book_new();
+    const sheet = XLSX.utils.aoa_to_sheet([
+      ['Key', 'Summary', 'Issue Type', 'Created'],
+      ['TEST-1', 'Valid story', 'Story', '2026-07-01'],
+      ['TEST-2', 'Unsupported work item', 'Task', '2026-07-01'],
+      ['TEST-3', 'Missing date', 'Bug', ''],
+      ['', 'Missing issue key', 'Bug', '2026-07-01'],
+    ]);
+    XLSX.utils.book_append_sheet(workbook, sheet, 'Jira');
+    XLSX.writeFile(workbook, filePath);
+    const inspected = inspectImportFile(filePath);
+    assert.equal(inspected.inspection.rowsFound, 4);
+    assert.equal(inspected.inspection.importedRows, 1);
+    assert.equal(inspected.inspection.rejectedRows, 3);
+    assert.deepStrictEqual(inspected.inspection.rejections.map((row) => row.rowNumber), [3, 4, 5]);
+    assert.match(inspected.inspection.rejections[0].reason, /Issue Type/);
+    assert.match(inspected.inspection.rejections[1].reason, /Created date/);
+    assert.match(inspected.inspection.rejections[2].reason, /Issue key/);
+    console.log('✓ Row-level import rejection evidence');
+  } finally {
+    fs.rmSync(temporary, { recursive: true, force: true });
+  }
 }
 
 console.log('All parser regression tests passed');

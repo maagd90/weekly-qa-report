@@ -1,7 +1,7 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { JiraConnectionInput, QmetryConnectionInput } from 'qa-dashboard-batch';
-import type { LlmProvider, LlmSelectionInput, ReportBranding, SyncInputResult } from '../lib/api';
+import type { LlmProvider, LlmSelectionInput, ProjectRecord, ReportBranding, SyncInputResult } from '../lib/api';
 import {
   batchApi,
   getJiraConnections,
@@ -26,6 +26,10 @@ const fieldClass = 'w-full border border-qa-line bg-white px-2.5 py-1.5 text-[12
 const labelClass = 'block text-[10.5px] font-mono-qa uppercase tracking-wide text-qa-muted-light mb-1';
 const MAX_LOGO_BYTES = 1_500_000;
 
+function jiraProjectJql(projectKey: string): string {
+  return `project = ${projectKey} AND issuetype in (Story, Bug) ORDER BY updated DESC`;
+}
+
 type TestResult = { ok: boolean; count?: number; executions?: number; issues?: number; uat?: number; error?: string };
 
 function Field({ label, ...props }: { label: string } & React.InputHTMLAttributes<HTMLInputElement>) {
@@ -40,24 +44,38 @@ function DeploymentBox({ label, checked, onSelect }: { label: string; checked: b
   return <label className="inline-flex items-center gap-2 text-[12.5px] text-qa-ink"><input type="checkbox" checked={checked} onChange={(e) => { if (e.target.checked) onSelect(); }} className="h-4 w-4 accent-[#b95c00]" /><span className="font-semibold">{label}</span></label>;
 }
 
-function blankJiraConnection(): JiraConnectionInput {
-  return { id: newConnectionId(), name: '', baseUrl: '', enabled: true, syncIssues: true, deploymentType: 'on-prem', authType: 'basic', email: '', username: '', apiToken: '', credential: '', cookie: '', jiraSessionId: '', jiraXsrfToken: '', searchPath: '/rest/api/2/search', projectKeys: [], jql: '', applicationCiFieldId: '' };
+function blankJiraConnection(project: ProjectRecord): JiraConnectionInput {
+  return { id: newConnectionId(), workspaceProjectId: project.id, name: `${project.key} JIRA`, baseUrl: '', enabled: true, syncIssues: true, deploymentType: 'on-prem', authType: 'basic', email: '', username: '', apiToken: '', credential: '', cookie: '', jiraSessionId: '', jiraXsrfToken: '', searchPath: '/rest/api/2/search', projectKeys: [project.key], jql: jiraProjectJql(project.key), applicationCiFieldId: '' };
 }
 
-function blankQmetryConnection(): QmetryConnectionInput {
-  return { id: newConnectionId(), name: '', baseUrl: '', enabled: true, syncExecutions: true, email: '', apiToken: '', credential: '', sessionHeader: '', sessionId: '', xsrfToken: '', projectKey: '', projectId: '', folderId: '', cycleIds: [] };
+function blankQmetryConnection(project: ProjectRecord): QmetryConnectionInput {
+  return { id: newConnectionId(), workspaceProjectId: project.id, name: `${project.key} QMetry`, baseUrl: '', enabled: true, syncExecutions: true, email: '', apiToken: '', credential: '', sessionHeader: '', sessionId: '', xsrfToken: '', projectKey: project.key, projectId: '', folderId: '', cycleIds: [] };
 }
 
-function withProject(conn: JiraConnectionInput, projectKey: string): JiraConnectionInput {
-  const clean = projectKey.trim().toUpperCase();
-  return { ...conn, projectKeys: clean ? [clean] : [], jql: clean ? `project = ${clean} AND issuetype in (Story, Bug) ORDER BY updated DESC` : '' };
+function withJiraProject(conn: JiraConnectionInput, project?: ProjectRecord): JiraConnectionInput {
+  if (!project) return { ...conn, workspaceProjectId: undefined, projectKeys: [], jql: '' };
+  return { ...conn, workspaceProjectId: project.id, projectKeys: [project.key], jql: jiraProjectJql(project.key) };
 }
 
-function JiraConnectionCard({ conn, onChange, onRemove, projectOptions }: { conn: JiraConnectionInput; onChange: (next: JiraConnectionInput) => void; onRemove: () => void; projectOptions: string[] }) {
+function withQmetryProject(conn: QmetryConnectionInput, project?: ProjectRecord): QmetryConnectionInput {
+  if (!project) return { ...conn, workspaceProjectId: undefined, projectKey: '', cycleIds: [] };
+  return { ...conn, workspaceProjectId: project.id, projectKey: project.key, cycleIds: [] };
+}
+
+function jiraProject(conn: JiraConnectionInput, projects: ProjectRecord[]): ProjectRecord | undefined {
+  return projects.find((project) => project.id === conn.workspaceProjectId)
+    || projects.find((project) => project.key === conn.projectKeys?.[0]?.trim().toUpperCase());
+}
+
+function qmetryProject(conn: QmetryConnectionInput, projects: ProjectRecord[]): ProjectRecord | undefined {
+  return projects.find((project) => project.id === conn.workspaceProjectId)
+    || projects.find((project) => project.key === conn.projectKey?.trim().toUpperCase());
+}
+
+function JiraConnectionCard({ conn, onChange, onRemove, projects, unavailableProjectIds }: { conn: JiraConnectionInput; onChange: (next: JiraConnectionInput) => void; onRemove: () => void; projects: ProjectRecord[]; unavailableProjectIds: Set<string> }) {
   const [testResult, setTestResult] = useState<TestResult | null>(null);
   const [showSecret, setShowSecret] = useState(false);
-  const selectedProject = conn.projectKeys?.[0] || '';
-  const customProject = selectedProject && !projectOptions.includes(selectedProject) ? selectedProject : '';
+  const selectedProject = jiraProject(conn, projects);
   const enabled = conn.enabled !== false;
   const syncIssues = conn.syncIssues !== false;
   const deploymentType = conn.deploymentType || 'on-prem';
@@ -77,8 +95,8 @@ function JiraConnectionCard({ conn, onChange, onRemove, projectOptions }: { conn
         </div>
       </div>
       <div className="grid grid-cols-1 gap-2.5 mb-2.5 sm:grid-cols-2">
-        <div><label className={labelClass}>JIRA project</label><select className={fieldClass} value={customProject ? '__custom__' : selectedProject} onChange={(e) => onChange(withProject(conn, e.target.value === '__custom__' ? '' : e.target.value))}><option value="">Select project</option>{projectOptions.map((p) => <option key={p} value={p}>{p}</option>)}<option value="__custom__">Other project...</option></select></div>
-        <Field label="Custom project key" placeholder="ABC" value={customProject} onChange={(e) => onChange(withProject(conn, e.target.value))} />
+        <div><label className={labelClass}>Dashboard project</label><select className={fieldClass} value={selectedProject?.id || ''} onChange={(e) => onChange(withJiraProject(conn, projects.find((project) => project.id === e.target.value)))}><option value="">Select existing project</option>{projects.map((project) => <option key={project.id} value={project.id} disabled={unavailableProjectIds.has(project.id)}>{project.key} — {project.name}</option>)}</select></div>
+        <Field label="JIRA project key" value={selectedProject?.key || conn.projectKeys?.[0] || ''} readOnly />
         <Field label="Connection name" value={conn.name} onChange={(e) => onChange({ ...conn, name: e.target.value })} />
         <Field label="Base URL" placeholder="https://jira.example.com" value={conn.baseUrl} onChange={(e) => onChange({ ...conn, baseUrl: e.target.value })} />
         <Field label={deploymentType === 'cloud' ? 'Email / Username' : 'Username'} value={conn.email} onChange={(e) => onChange({ ...conn, email: e.target.value, username: e.target.value })} />
@@ -89,18 +107,19 @@ function JiraConnectionCard({ conn, onChange, onRemove, projectOptions }: { conn
         <Field label="Session ID" type={showSecret ? 'text' : 'password'} value={conn.jiraSessionId || ''} onChange={(e) => onChange({ ...conn, jiraSessionId: e.target.value })} />
         <Field label="Security token" type={showSecret ? 'text' : 'password'} value={conn.jiraXsrfToken || ''} onChange={(e) => onChange({ ...conn, jiraXsrfToken: e.target.value })} />
       </div>
-      <label className={labelClass}>JQL override</label>
-      <textarea className="w-full border border-qa-line bg-white px-2.5 py-1.5 text-[12.5px] font-mono-qa min-h-[62px]" value={conn.jql || ''} onChange={(e) => onChange({ ...conn, jql: e.target.value })} />
-      <div className="flex flex-wrap items-center gap-2 mt-2.5"><button type="button" onClick={() => setShowSecret((v) => !v)} className="font-mono-qa text-[10px] px-3 py-1.5 border border-qa-border bg-white cursor-pointer">{showSecret ? 'Hide values' : 'Show values'}</button><button type="button" onClick={() => testMutation.mutate()} disabled={testMutation.isPending || !enabled} className="font-mono-qa text-[10px] px-3 py-1.5 border border-qa-border bg-white cursor-pointer disabled:opacity-50">{testMutation.isPending ? 'Testing...' : 'Test'}</button><button type="button" onClick={onRemove} className="font-mono-qa text-[10px] text-[#a13d2c] underline bg-transparent border-none cursor-pointer">Remove</button>{testResult && <span className={`min-w-0 break-words font-mono-qa text-[10.5px] ${testResult.ok ? 'text-[#2f6a48]' : 'text-[#a13d2c]'}`}>{testResult.ok ? `OK (${testResult.count ?? 0} sample rows)` : testResult.error}</span>}</div>
+      <label className={labelClass}>Project-scoped JQL</label>
+      <textarea className="w-full border border-qa-line bg-[#f3f0e8] px-2.5 py-1.5 text-[12.5px] font-mono-qa min-h-[62px]" value={conn.jql || ''} readOnly />
+      <div className="flex flex-wrap items-center gap-2 mt-2.5"><button type="button" onClick={() => setShowSecret((v) => !v)} className="font-mono-qa text-[10px] px-3 py-1.5 border border-qa-border bg-white cursor-pointer">{showSecret ? 'Hide values' : 'Show values'}</button><button type="button" onClick={() => testMutation.mutate()} disabled={testMutation.isPending || !enabled || !selectedProject} className="font-mono-qa text-[10px] px-3 py-1.5 border border-qa-border bg-white cursor-pointer disabled:opacity-50">{testMutation.isPending ? 'Testing...' : 'Test'}</button><button type="button" onClick={onRemove} className="font-mono-qa text-[10px] text-[#a13d2c] underline bg-transparent border-none cursor-pointer">Remove</button>{testResult && <span className={`min-w-0 break-words font-mono-qa text-[10.5px] ${testResult.ok ? 'text-[#2f6a48]' : 'text-[#a13d2c]'}`}>{testResult.ok ? `OK (${testResult.count ?? 0} sample rows)` : testResult.error}</span>}</div>
     </div>
   );
 }
 
-function QmetryConnectionCard({ conn, onChange, onRemove }: { conn: QmetryConnectionInput; onChange: (next: QmetryConnectionInput) => void; onRemove: () => void }) {
+function QmetryConnectionCard({ conn, onChange, onRemove, projects, unavailableProjectIds }: { conn: QmetryConnectionInput; onChange: (next: QmetryConnectionInput) => void; onRemove: () => void; projects: ProjectRecord[]; unavailableProjectIds: Set<string> }) {
   const [testResult, setTestResult] = useState<TestResult | null>(null);
   const [showSecret, setShowSecret] = useState(false);
   const enabled = conn.enabled !== false;
   const syncExecutions = conn.syncExecutions !== false;
+  const selectedProject = qmetryProject(conn, projects);
   const testMutation = useMutation({ mutationFn: () => batchApi.testConnection('qmetry', { ...conn, enabled, syncExecutions, cycleIds: [] }), onSuccess: (r) => setTestResult(r) });
   return (
     <div className="border border-qa-border bg-[#faf8f2] p-3.5 mb-3">
@@ -110,20 +129,50 @@ function QmetryConnectionCard({ conn, onChange, onRemove }: { conn: QmetryConnec
         <SyncBox label="Sync test executions / cycles" checked={syncExecutions} disabled={!enabled} onChange={(checked) => onChange({ ...conn, syncExecutions: checked, cycleIds: [] })} />
       </div>
       <div className="grid grid-cols-1 gap-2.5 mb-2.5 sm:grid-cols-2">
+        <div><label className={labelClass}>Dashboard project</label><select className={fieldClass} value={selectedProject?.id || ''} onChange={(e) => onChange(withQmetryProject(conn, projects.find((project) => project.id === e.target.value)))}><option value="">Select existing project</option>{projects.map((project) => <option key={project.id} value={project.id} disabled={unavailableProjectIds.has(project.id)}>{project.key} — {project.name}</option>)}</select></div>
+        <Field label="QMetry project key" value={selectedProject?.key || conn.projectKey || ''} readOnly />
         <Field label="Connection name" value={conn.name} onChange={(e) => onChange({ ...conn, name: e.target.value })} />
         <Field label="Base URL" placeholder="https://jira.example.com" value={conn.baseUrl} onChange={(e) => onChange({ ...conn, baseUrl: e.target.value })} />
         <Field label="Username" value={conn.email} onChange={(e) => onChange({ ...conn, email: e.target.value })} />
         <Field label="Auth value" type={showSecret ? 'text' : 'password'} value={conn.apiToken || ''} onChange={(e) => onChange({ ...conn, apiToken: e.target.value, credential: e.target.value })} />
-        <Field label="Project key" placeholder="DP" value={conn.projectKey} onChange={(e) => onChange({ ...conn, projectKey: e.target.value.toUpperCase(), cycleIds: [] })} />
         <Field label="Project ID" placeholder="19703" value={conn.projectId || ''} onChange={(e) => onChange({ ...conn, projectId: e.target.value, cycleIds: [] })} />
         <Field label="Folder ID" placeholder="96225" value={conn.folderId || ''} onChange={(e) => onChange({ ...conn, folderId: e.target.value, cycleIds: [] })} />
         <Field label="Session header" type={showSecret ? 'text' : 'password'} value={conn.sessionHeader || ''} onChange={(e) => onChange({ ...conn, sessionHeader: e.target.value, cycleIds: [] })} />
         <Field label="Session ID" type={showSecret ? 'text' : 'password'} value={conn.sessionId || ''} onChange={(e) => onChange({ ...conn, sessionId: e.target.value, cycleIds: [] })} />
         <Field label="Security token" type={showSecret ? 'text' : 'password'} value={conn.xsrfToken || ''} onChange={(e) => onChange({ ...conn, xsrfToken: e.target.value, cycleIds: [] })} />
       </div>
-      <div className="flex flex-wrap items-center gap-2 mt-2.5"><button type="button" onClick={() => setShowSecret((v) => !v)} className="font-mono-qa text-[10px] px-3 py-1.5 border border-qa-border bg-white cursor-pointer">{showSecret ? 'Hide values' : 'Show values'}</button><button type="button" onClick={() => testMutation.mutate()} disabled={testMutation.isPending || !enabled} className="font-mono-qa text-[10px] px-3 py-1.5 border border-qa-border bg-white cursor-pointer disabled:opacity-50">{testMutation.isPending ? 'Testing...' : 'Test'}</button><button type="button" onClick={onRemove} className="font-mono-qa text-[10px] text-[#a13d2c] underline bg-transparent border-none cursor-pointer">Remove</button>{testResult && <span className={`min-w-0 break-words font-mono-qa text-[10.5px] ${testResult.ok ? 'text-[#2f6a48]' : 'text-[#a13d2c]'}`}>{testResult.ok ? `OK (${testResult.count ?? 0} test cycles found)` : testResult.error}</span>}</div>
+      <div className="flex flex-wrap items-center gap-2 mt-2.5"><button type="button" onClick={() => setShowSecret((v) => !v)} className="font-mono-qa text-[10px] px-3 py-1.5 border border-qa-border bg-white cursor-pointer">{showSecret ? 'Hide values' : 'Show values'}</button><button type="button" onClick={() => testMutation.mutate()} disabled={testMutation.isPending || !enabled || !selectedProject} className="font-mono-qa text-[10px] px-3 py-1.5 border border-qa-border bg-white cursor-pointer disabled:opacity-50">{testMutation.isPending ? 'Testing...' : 'Test'}</button><button type="button" onClick={onRemove} className="font-mono-qa text-[10px] text-[#a13d2c] underline bg-transparent border-none cursor-pointer">Remove</button>{testResult && <span className={`min-w-0 break-words font-mono-qa text-[10.5px] ${testResult.ok ? 'text-[#2f6a48]' : 'text-[#a13d2c]'}`}>{testResult.ok ? `OK (${testResult.count ?? 0} test cycles found)` : testResult.error}</span>}</div>
     </div>
   );
+}
+
+function normalizedConnectionsForSave(
+  jiraConnections: JiraConnectionInput[],
+  qmetryConnections: QmetryConnectionInput[],
+  projects: ProjectRecord[],
+): { jira: JiraConnectionInput[]; qmetry: QmetryConnectionInput[] } {
+  const projectById = new Map(projects.map((project) => [project.id, project]));
+  const normalizeJira = (connections: JiraConnectionInput[]) => {
+    const assigned = new Set<string>();
+    return connections.map((connection) => {
+      const project = projectById.get(connection.workspaceProjectId || '') || jiraProject(connection, projects);
+      if (!project) throw new Error(`${connection.name || 'JIRA connection'} must be assigned to an existing dashboard project.`);
+      if (assigned.has(project.id)) throw new Error(`Project ${project.key} already has a JIRA connection. Only one JIRA connection is allowed per project.`);
+      assigned.add(project.id);
+      return { ...connection, workspaceProjectId: project.id, deploymentType: connection.deploymentType || 'on-prem', projectKeys: [project.key], jql: jiraProjectJql(project.key) };
+    });
+  };
+  const normalizeQmetry = (connections: QmetryConnectionInput[]) => {
+    const assigned = new Set<string>();
+    return connections.map((connection) => {
+      const project = projectById.get(connection.workspaceProjectId || '') || qmetryProject(connection, projects);
+      if (!project) throw new Error(`${connection.name || 'QMetry connection'} must be assigned to an existing dashboard project.`);
+      if (assigned.has(project.id)) throw new Error(`Project ${project.key} already has a QMetry connection. Only one QMetry connection is allowed per project.`);
+      assigned.add(project.id);
+      return { ...connection, workspaceProjectId: project.id, projectKey: project.key, cycleIds: [] };
+    });
+  };
+  return { jira: normalizeJira(jiraConnections), qmetry: normalizeQmetry(qmetryConnections) };
 }
 
 export function SettingsPage() {
@@ -144,20 +193,43 @@ export function SettingsPage() {
   const [narrativeSavedMsg, setNarrativeSavedMsg] = useState<string | null>(null);
   const [brandingSavedMsg, setBrandingSavedMsg] = useState<string | null>(null);
   const [savedMsg, setSavedMsg] = useState<string | null>(null);
+  const [connectionError, setConnectionError] = useState<string | null>(null);
 
   const { data: integrations, refetch } = useQuery({ queryKey: ['integrations'], queryFn: batchApi.getIntegrations });
-  const { data: settingsDashboard } = useQuery({ queryKey: ['settings-dashboard-projects'], queryFn: () => batchApi.getDashboard(), retry: false });
+  const { data: projectsData, isLoading: projectsLoading } = useQuery({ queryKey: ['projects'], queryFn: batchApi.listProjects, retry: false });
   const { data: cycles, refetch: loadCycles, isFetching: cyclesFetching, isFetched: cyclesFetched } = useQuery({ queryKey: ['cycles-folders', jiraConnections, qmetryConnections], queryFn: batchApi.getCycleFolders, retry: false, enabled: false });
+  const projects = projectsData || [];
 
-  const projectOptions = useMemo(() => {
-    const values = new Set<string>();
-    for (const p of settingsDashboard?.scope.projects || []) if (p && p !== 'all') values.add(p);
-    for (const c of jiraConnections) for (const p of c.projectKeys || []) if (p) values.add(p);
-    for (const c of qmetryConnections) if (c.projectKey) values.add(c.projectKey.toUpperCase());
-    values.add('DLM');
-    values.add('DP');
-    return [...values].sort();
-  }, [settingsDashboard?.scope.projects, jiraConnections, qmetryConnections]);
+  useEffect(() => {
+    if (!projectsData?.length) return;
+    setJiraConnectionsState((current) => {
+      const next = current.map((connection) => {
+        const project = jiraProject(connection, projectsData);
+        if (!project) return connection;
+        const scopedJql = jiraProjectJql(project.key);
+        if (connection.workspaceProjectId === project.id && connection.projectKeys?.[0] === project.key && connection.jql === scopedJql) return connection;
+        return { ...connection, workspaceProjectId: project.id, projectKeys: [project.key], jql: scopedJql };
+      });
+      return next.some((connection, index) => connection !== current[index]) ? next : current;
+    });
+    setQmetryConnectionsState((current) => {
+      const next = current.map((connection) => {
+        const project = qmetryProject(connection, projectsData);
+        if (!project || (connection.workspaceProjectId === project.id && connection.projectKey === project.key)) return connection;
+        return { ...connection, workspaceProjectId: project.id, projectKey: project.key, cycleIds: [] };
+      });
+      return next.some((connection, index) => connection !== current[index]) ? next : current;
+    });
+  }, [projectsData]);
+
+  const availableJiraProject = useMemo(() => {
+    const assigned = new Set(jiraConnections.map((connection) => jiraProject(connection, projects)?.id).filter(Boolean));
+    return projects.find((project) => !assigned.has(project.id));
+  }, [jiraConnections, projects]);
+  const availableQmetryProject = useMemo(() => {
+    const assigned = new Set(qmetryConnections.map((connection) => qmetryProject(connection, projects)?.id).filter(Boolean));
+    return projects.find((project) => !assigned.has(project.id));
+  }, [qmetryConnections, projects]);
 
   const customEndpointSelected = llmProvider !== 'template' && (llmProvider === 'openai-compatible' || llmUseCustomEndpoint);
   const customModelAllowed = customEndpointSelected;
@@ -182,17 +254,28 @@ export function SettingsPage() {
     setBrandingSavedMsg('Report branding saved.');
     setTimeout(() => setBrandingSavedMsg(null), 3500);
   }
-  function saveConnections() {
-    setJiraConnections(jiraConnections.map((c) => ({ ...c, deploymentType: c.deploymentType || 'on-prem' })));
-    setQmetryConnections(qmetryConnections.map((c) => ({ ...c, cycleIds: [] })));
-    setSavedMsg('Connections saved. Settings sync refreshes all enabled JIRA/QMetry connections across all projects.');
-    queryClient.invalidateQueries({ queryKey: ['integrations'] });
-    queryClient.invalidateQueries({ queryKey: ['dashboard-init'] });
-    setTimeout(() => setSavedMsg(null), 3500);
+  function saveConnections(): boolean {
+    try {
+      const normalized = normalizedConnectionsForSave(jiraConnections, qmetryConnections, projects);
+      setJiraConnections(normalized.jira);
+      setQmetryConnections(normalized.qmetry);
+      setJiraConnectionsState(normalized.jira);
+      setQmetryConnectionsState(normalized.qmetry);
+      setConnectionError(null);
+      setSavedMsg('Connections saved. Each project has at most one JIRA and one QMetry connection.');
+      queryClient.invalidateQueries({ queryKey: ['integrations'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard-init'] });
+      setTimeout(() => setSavedMsg(null), 3500);
+      return true;
+    } catch (err) {
+      setSavedMsg(null);
+      setConnectionError(err instanceof Error ? err.message : 'Connection validation failed.');
+      return false;
+    }
   }
 
   const testMutation = useMutation({ mutationFn: batchApi.testIntegrations, onSuccess: () => refetch() });
-  const syncLiveMutation = useMutation({ mutationFn: () => batchApi.syncLiveData(globalSyncFilter()), onSuccess: async () => { await Promise.all([refetch(), queryClient.invalidateQueries({ queryKey: ['dashboard-init'] }), queryClient.invalidateQueries({ queryKey: ['settings-dashboard-projects'] }), queryClient.invalidateQueries({ queryKey: ['report'] })]); } });
+  const syncLiveMutation = useMutation({ mutationFn: () => batchApi.syncLiveData(globalSyncFilter()), onSuccess: async () => { await Promise.all([refetch(), queryClient.invalidateQueries({ queryKey: ['dashboard-init'] }), queryClient.invalidateQueries({ queryKey: ['projects'] }), queryClient.invalidateQueries({ queryKey: ['report'] })]); } });
   const llmTest = useMutation({ mutationFn: () => batchApi.testLlm(currentLlmSelection()), onSuccess: (data) => setLlmTestMsg(data.ok ? (data.provider === 'template' ? `Ready - ${data.providerLabel || LLM_PROVIDER_LABELS[llmProvider]} / ${data.model}; no network required` : `Connected - ${data.providerLabel || LLM_PROVIDER_LABELS[llmProvider]} / ${data.model}`) : data.error || 'Narrative provider validation failed'), onError: (err: Error) => setLlmTestMsg(err.message) });
   const testResult = testMutation.data as TestResult | undefined;
   const syncResult = syncLiveMutation.data as SyncInputResult | undefined;
@@ -267,21 +350,25 @@ export function SettingsPage() {
           {integrations && <div className="grid grid-cols-1 gap-3 mb-4 sm:grid-cols-2"><div className="min-w-0 border border-qa-border p-3 bg-[#faf8f2]"><p className="font-semibold text-[13px] m-0">JIRA</p><p className="font-mono-qa text-[10px] text-qa-muted-light mt-1 m-0 break-words">{jiraConnections.length ? `${jiraConnections.length} browser connection(s)` : (integrations.jira.enabled ? 'Config file enabled' : 'Disabled')}</p></div><div className="min-w-0 border border-qa-border p-3 bg-[#faf8f2]"><p className="font-semibold text-[13px] m-0">QMetry</p><p className="font-mono-qa text-[10px] text-qa-muted-light mt-1 m-0 break-words">{qmetryConnections.length ? `${qmetryConnections.length} browser connection(s)` : (integrations.qmetry.enabled ? 'Config file enabled' : 'Disabled')}</p></div></div>}
           <p className="text-[11.5px] text-qa-muted-light mt-0">Sync scope: all projects · any → any</p>
           <p className="text-[11.5px] text-qa-muted-light mt-0">Settings Sync is global. Use the dashboard Search button for project/date-specific live searching.</p>
-          <div className="flex flex-wrap gap-2"><button type="button" onClick={() => { saveConnections(); syncLiveMutation.mutate(); }} disabled={syncLiveMutation.isPending} className="font-mono-qa text-xs font-semibold tracking-wider uppercase px-4 py-2.5 border-none cursor-pointer text-white disabled:opacity-50" style={{ background: QA.accent }}>{syncLiveMutation.isPending ? 'Syncing...' : 'Sync JIRA & QMetry now'}</button><button type="button" onClick={() => { saveConnections(); testMutation.mutate(); }} disabled={testMutation.isPending} className="font-mono-qa text-xs font-semibold tracking-wider uppercase px-4 py-2.5 border border-qa-border bg-white cursor-pointer disabled:opacity-50">{testMutation.isPending ? 'Testing...' : 'Save & Test all connections'}</button></div>
+          <div className="flex flex-wrap gap-2"><button type="button" onClick={() => { if (saveConnections()) syncLiveMutation.mutate(); }} disabled={syncLiveMutation.isPending} className="font-mono-qa text-xs font-semibold tracking-wider uppercase px-4 py-2.5 border-none cursor-pointer text-white disabled:opacity-50" style={{ background: QA.accent }}>{syncLiveMutation.isPending ? 'Syncing...' : 'Sync JIRA & QMetry now'}</button><button type="button" onClick={() => { if (saveConnections()) testMutation.mutate(); }} disabled={testMutation.isPending} className="font-mono-qa text-xs font-semibold tracking-wider uppercase px-4 py-2.5 border border-qa-border bg-white cursor-pointer disabled:opacity-50">{testMutation.isPending ? 'Testing...' : 'Save & Test all connections'}</button></div>
           {syncCounts && <div className="mt-3 p-3 text-[13px] border border-[#cfe0d4] bg-[#eef4ef] text-[#2f6a48]">Synced executions {syncCounts.executions} · issues {syncCounts.issues} · uat {syncCounts.uat}{syncWarnings.length ? ` · warnings: ${syncWarnings.join('; ')}` : ''}</div>}
           {syncLiveMutation.isError && <div className="mt-3 p-3 text-[13px] border border-[#ecccc2] bg-[#f8ece8] text-[#a13d2c]">{(syncLiveMutation.error as Error).message}</div>}
           {testResult && <div className={`mt-3 p-3 text-[13px] border ${testResult.ok ? 'border-[#cfe0d4] bg-[#eef4ef] text-[#2f6a48]' : 'border-[#ecccc2] bg-[#f8ece8] text-[#a13d2c]'}`}>{testResult.ok ? `Fetched ${testResult.executions} executions, ${testResult.issues} issues, ${testResult.uat} rows` : testResult.error}</div>}
           {savedMsg && <div className="mt-3 p-3 text-[13px] border border-[#cfe0d4] bg-[#eef4ef] text-[#2f6a48]">{savedMsg}</div>}
+          {connectionError && <div className="mt-3 p-3 text-[13px] border border-[#ecccc2] bg-[#f8ece8] text-[#a13d2c]">{connectionError}</div>}
         </QaSection>
         <QaSection title="JIRA connections" className="lg:col-span-2">
-          <p className="text-[13px] text-qa-muted m-0 mb-3">Add one JIRA connection per project that needs story/bug/defect metrics.</p>
-          {jiraConnections.map((conn, idx) => <JiraConnectionCard key={conn.id} conn={conn} projectOptions={projectOptions} onChange={(next) => setJiraConnectionsState(jiraConnections.map((c, i) => (i === idx ? next : c)))} onRemove={() => setJiraConnectionsState(jiraConnections.filter((_, i) => i !== idx))} />)}
-          <button type="button" onClick={() => setJiraConnectionsState([...jiraConnections, blankJiraConnection()])} className="font-mono-qa text-xs font-semibold tracking-wider uppercase px-4 py-2.5 border border-qa-border bg-white cursor-pointer">+ Add JIRA connection</button>
+          <p className="text-[13px] text-qa-muted m-0 mb-3">Each existing dashboard project can have exactly zero or one JIRA connection. The project-scoped JQL cannot be changed to another project.</p>
+          {projectsLoading && <p className="text-[12px] text-qa-muted">Loading projects...</p>}
+          {!projectsLoading && !projects.length && <div className="mb-3 p-3 text-[13px] border border-[#e6d6b8] bg-[#fff8e8] text-[#7a5612]">Create a project in Import Data before adding a JIRA connection.</div>}
+          {jiraConnections.map((conn, idx) => <JiraConnectionCard key={conn.id} conn={conn} projects={projects} unavailableProjectIds={new Set(jiraConnections.filter((_, otherIndex) => otherIndex !== idx).flatMap((other) => { const projectId = jiraProject(other, projects)?.id; return projectId ? [projectId] : []; }))} onChange={(next) => { setConnectionError(null); setJiraConnectionsState(jiraConnections.map((c, i) => (i === idx ? next : c))); }} onRemove={() => { setConnectionError(null); setJiraConnectionsState(jiraConnections.filter((_, i) => i !== idx)); }} />)}
+          <button type="button" disabled={!availableJiraProject} onClick={() => { if (availableJiraProject) { setConnectionError(null); setJiraConnectionsState([...jiraConnections, blankJiraConnection(availableJiraProject)]); } }} className="font-mono-qa text-xs font-semibold tracking-wider uppercase px-4 py-2.5 border border-qa-border bg-white cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed">{availableJiraProject ? '+ Add JIRA connection' : projects.length ? 'All projects already have JIRA' : '+ Add JIRA connection'}</button>
         </QaSection>
         <QaSection title="QMetry connections" className="lg:col-span-2">
-          <p className="text-[13px] text-qa-muted m-0 mb-3">Add one QMetry connection per project that needs test execution/cycle metrics. Multiple connections are saved as separate cards.</p>
-          {qmetryConnections.map((conn, idx) => <QmetryConnectionCard key={conn.id} conn={conn} onChange={(next) => setQmetryConnectionsState(qmetryConnections.map((c, i) => (i === idx ? next : c)))} onRemove={() => setQmetryConnectionsState(qmetryConnections.filter((_, i) => i !== idx))} />)}
-          <button type="button" onClick={() => setQmetryConnectionsState([...qmetryConnections, blankQmetryConnection()])} className="font-mono-qa text-xs font-semibold tracking-wider uppercase px-4 py-2.5 border border-qa-border bg-white cursor-pointer">+ Add QMetry connection</button>
+          <p className="text-[13px] text-qa-muted m-0 mb-3">Each existing dashboard project can have exactly zero or one QMetry connection. Its dashboard project key is fixed; the numeric QMetry Project ID remains configurable.</p>
+          {!projectsLoading && !projects.length && <div className="mb-3 p-3 text-[13px] border border-[#e6d6b8] bg-[#fff8e8] text-[#7a5612]">Create a project in Import Data before adding a QMetry connection.</div>}
+          {qmetryConnections.map((conn, idx) => <QmetryConnectionCard key={conn.id} conn={conn} projects={projects} unavailableProjectIds={new Set(qmetryConnections.filter((_, otherIndex) => otherIndex !== idx).flatMap((other) => { const projectId = qmetryProject(other, projects)?.id; return projectId ? [projectId] : []; }))} onChange={(next) => { setConnectionError(null); setQmetryConnectionsState(qmetryConnections.map((c, i) => (i === idx ? next : c))); }} onRemove={() => { setConnectionError(null); setQmetryConnectionsState(qmetryConnections.filter((_, i) => i !== idx)); }} />)}
+          <button type="button" disabled={!availableQmetryProject} onClick={() => { if (availableQmetryProject) { setConnectionError(null); setQmetryConnectionsState([...qmetryConnections, blankQmetryConnection(availableQmetryProject)]); } }} className="font-mono-qa text-xs font-semibold tracking-wider uppercase px-4 py-2.5 border border-qa-border bg-white cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed">{availableQmetryProject ? '+ Add QMetry connection' : projects.length ? 'All projects already have QMetry' : '+ Add QMetry connection'}</button>
         </QaSection>
         <QaSection title="Cycle / Folder list" className="lg:col-span-2">
           <p className="text-[13px] text-qa-muted m-0 mb-3">Live QMetry cycles are shown only after you click Load cycles/folders.</p>
