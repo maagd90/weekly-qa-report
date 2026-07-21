@@ -8,6 +8,7 @@ import {
   inspectImportFile,
   issueIdentity,
   mergeDatasets,
+  normalizeProjectPrimaryKey,
   normalizeSourceProjectKey,
   projectSourceKeys,
   readJsonFile,
@@ -119,7 +120,7 @@ function inferredCapabilities(project: Pick<ProjectRecord, 'key' | 'sourceKeys'>
 }
 
 function normalizedProject(project: ProjectRecord): ProjectRecord {
-  const key = canonicalProjectKey(project.key);
+  const key = normalizeProjectPrimaryKey(project.key) || project.key;
   const sourceKeys = normalizeSourceKeys(key, project.sourceKeys);
   return {
     ...project,
@@ -266,7 +267,7 @@ export class ProjectImportStore {
   }
 
   createProject(input: { key?: string; sourceKeys?: string[]; name?: string; capabilities?: Partial<ProjectCapabilities> }): ProjectRecord {
-    const key = canonicalProjectKey(input.key);
+    const key = normalizeProjectPrimaryKey(input.key);
     const sourceKeys = normalizeSourceKeys(key, input.sourceKeys);
     const name = (input.name || '').trim();
     validateProjectKeys(key, sourceKeys);
@@ -300,7 +301,7 @@ export class ProjectImportStore {
     const index = projects.findIndex((project) => project.id === projectId);
     if (index < 0) throw new Error('Project not found.');
     const current = projects[index];
-    const key = input.key === undefined ? current.key : canonicalProjectKey(input.key);
+    const key = input.key === undefined ? current.key : normalizeProjectPrimaryKey(input.key);
     const sourceKeys = normalizeSourceKeys(key, input.sourceKeys === undefined ? current.sourceKeys : input.sourceKeys, current.key !== key ? current.key : undefined);
     const name = input.name === undefined ? current.name : input.name.trim();
     validateProjectKeys(key, sourceKeys);
@@ -330,7 +331,7 @@ export class ProjectImportStore {
 
   deleteProject(projectId: string, confirmationKey?: string): ProjectDeletionResult {
     const project = this.getProject(projectId);
-    if (canonicalProjectKey(confirmationKey) !== project.key) {
+    if (normalizeProjectPrimaryKey(confirmationKey) !== project.key) {
       throw new Error(`Project deletion confirmation must match project key ${project.key}.`);
     }
 

@@ -25,6 +25,9 @@ try {
   assert.deepStrictEqual(projectA.sourceKeys, ['PROJA', 'PROJAUX']);
   assert.deepStrictEqual(dlmProject.sourceKeys, ['DLM', 'DN4_FT'], 'raw source aliases must not collapse to the dashboard key');
   assert.deepStrictEqual(dlmProject.capabilities, { vendorPortal: true, wonderMilesExport: false });
+  const independentProject = store.createProject({ key: 'WONDERMILES', name: 'Independent Wonder Miles workspace' });
+  assert.equal(independentProject.key, 'WONDERMILES', 'a project must be able to adopt any key as its own independent primary key, not be forced through the legacy dashboard alias table');
+  assert.deepStrictEqual(independentProject.sourceKeys, ['WONDERMILES']);
   const wonderMilesProject = store.createProject({ key: 'TRAVEL', sourceKeys: ['TRAVEL', 'DP', 'DTTRV'], name: 'Travel' });
   assert.deepStrictEqual(wonderMilesProject.capabilities, { vendorPortal: false, wonderMilesExport: true });
   const registryPath = path.join(paths.configDir, 'projects.json');

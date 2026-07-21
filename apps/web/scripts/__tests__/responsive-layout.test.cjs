@@ -82,8 +82,6 @@ hasAll('src/pages/SettingsPage.tsx', [
   'onClick={saveBranding}',
   'if (saveConnections()) testMutation.mutate();',
   'if (saveConnections()) syncLiveMutation.mutate();',
-  'Only one JIRA connection is allowed per project.',
-  'Only one QMetry connection is allowed per project.',
   'Project management',
   'Update project',
   'Delete project',
@@ -91,9 +89,7 @@ hasAll('src/pages/SettingsPage.tsx', [
   'Save & test',
   'Save & sync data',
   'allProjectsSelected &&',
-  'Project-scoped JQL',
   'Additional source keys',
-  'JIRA source project keys',
   'Choose the applicable QMetry key',
   'All project connection summary',
   'all configured projects',
@@ -104,6 +100,16 @@ hasAll('src/pages/SettingsPage.tsx', [
   'never creates projects from API response rows',
 ]);
 hasNone('src/pages/SettingsPage.tsx', ['saveAll', '+ Add JIRA connection', '+ Add QMetry connection']);
+
+// The JIRA/QMetry connection card UI was extracted out of SettingsPage.tsx
+// for readability; its responsive contract still applies there.
+hasAll('src/components/settings/ConnectionSettings.tsx', [
+  'grid grid-cols-1 gap-2.5 mb-2.5 sm:grid-cols-2',
+  'Only one JIRA connection is allowed per project.',
+  'Only one QMetry connection is allowed per project.',
+  'Project-scoped JQL',
+  'JIRA source project keys',
+]);
 
 hasAll('src/lib/api.ts', [
   "? value : 'template'",

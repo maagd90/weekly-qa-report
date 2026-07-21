@@ -1,4 +1,4 @@
-import { canonicalProjectKey } from './projectKey';
+import { canonicalProjectKey } from './projectKeys';
 
 const PROJECT_DISPLAY_NAMES: Record<string, string> = {};
 

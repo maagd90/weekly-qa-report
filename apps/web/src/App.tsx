@@ -18,7 +18,8 @@ import { EmptyDashboard } from './components/common/EmptyDashboard';
 import { usePerTabFilters } from './hooks/usePerTabFilters';
 import { useUiPreferences } from './hooks/useUiPreferences';
 import { batchApi, getActiveProject } from './lib/api';
-import { canonicalProjectOrUndefined, uniqueCanonicalProjects } from './lib/projectKey';
+import { canonicalProjectOrUndefined, uniqueCanonicalProjects } from './lib/projectKeys';
+import { isCurrentDateRequest, isCurrentProjectRequest } from './lib/requestSequencing';
 import { defaultReportingPeriod } from './lib/reportingPeriod';
 import { projectDisplayName } from './lib/projectDisplay';
 import type { DashboardPayload, FilterParams } from 'qa-dashboard-batch';
@@ -67,7 +68,7 @@ function AppContent() {
       project: request.project === 'all' ? undefined : request.project,
     }),
     onSuccess: (d, request) => {
-      if (request.sequence !== projectRequestSequence.current || request.project !== activeProjectRef.current) return;
+      if (!isCurrentProjectRequest(request, { sequence: projectRequestSequence.current, project: activeProjectRef.current })) return;
       setBaseDashboard(d);
       setFilteredByTab({});
     },
@@ -115,7 +116,7 @@ function AppContent() {
       return request.then((d) => ({ d, ...vars }));
     },
     onSuccess: ({ d, tab, project, sequence }) => {
-      if (sequence !== dateRequestSequence.current || project !== activeProjectRef.current || tab !== activeTab) return;
+      if (!isCurrentDateRequest({ sequence, project, tab }, { sequence: dateRequestSequence.current, project: activeProjectRef.current, tab: activeTab })) return;
       setFilteredView(d, tab);
     },
   });

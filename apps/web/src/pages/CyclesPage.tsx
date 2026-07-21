@@ -11,7 +11,7 @@ import { CycleBadge, QaTable, QaThead } from '../components/qa/QaBadge';
 import { CycleDetailDrawer } from '../components/qa/CycleDetailDrawer';
 import { WarningDetails } from '../components/common/WarningDetails';
 import { batchApi, getQmetryConnections } from '../lib/api';
-import { canonicalProjectOrUndefined } from '../lib/projectKey';
+import { canonicalProjectOrUndefined } from '../lib/projectKeys';
 
 interface CyclesPageProps {
   dashboard: DashboardPayload;

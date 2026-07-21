@@ -2,7 +2,7 @@ import { useState, useCallback, useMemo, useEffect } from 'react';
 import type { DashboardPayload, FilterParams } from 'qa-dashboard-batch';
 import type { QaTab } from '../theme/qaTheme';
 import { getActiveProject, setActiveProject } from '../lib/api';
-import { canonicalProjectOrAll, canonicalProjectOrUndefined, uniqueCanonicalProjects } from '../lib/projectKey';
+import { canonicalProjectOrAll, canonicalProjectOrUndefined, uniqueCanonicalProjects } from '../lib/projectKeys';
 import { defaultReportingPeriod } from '../lib/reportingPeriod';
 
 // Tabs that have an independent date/search filter.

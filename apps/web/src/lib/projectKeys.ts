@@ -1,3 +1,12 @@
+/**
+ * Browser-side project key helpers. Kept separate from `qa-dashboard-batch`
+ * because that package's runtime module graph pulls in Node-only integrations
+ * (fs, axios clients, etc.) that are unsafe to bundle for the browser; only
+ * `import type` usages of that package are safe here. This file intentionally
+ * mirrors the pure string logic in apps/batch/src/projects/projectKey.ts —
+ * keep both in sync when the alias table or key-normalization rules change.
+ */
+
 const PROJECT_ALIASES: Record<string, string> = {
   DLM: 'DLM',
   DN4_FT: 'DLM',
@@ -18,16 +27,13 @@ export function canonicalProjectKey(value?: string | null): string {
   return PROJECT_ALIASES[normalized] || normalized;
 }
 
+export function canonicalProjectOrAll(value?: string | null): string {
+  return canonicalProjectKey(value) || 'all';
+}
+
 export function canonicalProjectOrUndefined(value?: string | null): string | undefined {
   const key = canonicalProjectKey(value);
   return key && key !== 'all' ? key : undefined;
-}
-
-export function sameProjectKey(left?: string | null, right?: string | null): boolean {
-  const a = canonicalProjectKey(left);
-  const b = canonicalProjectKey(right);
-  if (!a || a === 'all' || !b || b === 'all') return true;
-  return a === b;
 }
 
 export function uniqueCanonicalProjects(values: Array<string | null | undefined>): string[] {
@@ -37,21 +43,6 @@ export function uniqueCanonicalProjects(values: Array<string | null | undefined>
 /** Normalize an external Jira/QMetry key without applying dashboard aliases. */
 export function normalizeSourceProjectKey(value?: string | null): string {
   return (value || '').trim().toUpperCase();
-}
-
-/**
- * Normalizes a dashboard project's own primary registry key without collapsing
- * it through the legacy PROJECT_ALIASES table. Use this (not canonicalProjectKey)
- * when creating or updating a project record, so a project can adopt any source
- * key as its own independent primary key instead of always merging into the
- * legacy alias target (e.g. DN4_FT no longer has to become DLM). canonicalProjectKey
- * remains the right choice for matching free-text project values found in already
- * imported/legacy datasets that predate the project registry.
- */
-export function normalizeProjectPrimaryKey(value?: string | null): string {
-  const raw = (value || '').trim();
-  if (!raw || raw.toLowerCase() === 'all') return '';
-  return raw.toUpperCase().replace(/\s+/g, ' ').trim();
 }
 
 export function uniqueSourceProjectKeys(values: Array<string | null | undefined>): string[] {

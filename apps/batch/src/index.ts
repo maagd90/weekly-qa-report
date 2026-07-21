@@ -41,6 +41,7 @@ export {
   sameProjectKey,
   uniqueCanonicalProjects,
   normalizeSourceProjectKey,
+  normalizeProjectPrimaryKey,
   uniqueSourceProjectKeys,
   projectSourceKeys,
   jiraProjectJql,

@@ -21,8 +21,10 @@ import {
   jiraProjectJql,
   normalizeSourceProjectKey,
   uniqueSourceProjectKeys,
-} from './sourceProjects';
-import { canonicalProjectOrAll, canonicalProjectOrUndefined, uniqueCanonicalProjects } from './projectKey';
+  canonicalProjectOrAll,
+  canonicalProjectOrUndefined,
+  uniqueCanonicalProjects,
+} from './projectKeys';
 
 const api = axios.create({ baseURL: '/api' });
 
