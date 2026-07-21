@@ -29,6 +29,7 @@ type RequestMeta = { requestId: string; startedAt: number };
 
 export interface ReportBranding { logoUrl?: string; logoAlt?: string; title?: string; subtitle?: string }
 export interface ProjectRecord { id: string; key: string; name: string; createdAt: string; updatedAt: string; fileCount?: number }
+export interface ProjectDeletionResult { project: ProjectRecord; filesDeleted: number; syncReportsDeleted: number }
 export interface ProjectFileRecord { id: string; projectId: string; originalName: string; storedName: string; size: number; uploadedAt: string; status: 'staged' | 'synced' | 'error'; detectedType?: 'test-execution' | 'jira' | 'odl' | 'unknown'; rows?: number; lastSyncId?: string; lastSyncedAt?: string }
 export interface ImportRecordCounts { executions: number; stories: number; bugs: number; vendorBugs: number }
 export interface ImportFileReport { fileId: string; filename: string; detectedType: 'test-execution' | 'jira' | 'odl' | 'unknown'; sheet: string; totalRowsFound: number; successfullyImportedRows: number; createdRecords: number; updatedRecords: number; duplicateOrSkippedRows: number; rejectedRows: number; rejections: Array<{ rowNumber: number; reference: string; reason: string }>; warnings: string[]; errors: string[] }
@@ -128,6 +129,8 @@ export const batchApi = {
   getReport: () => api.get('/report').then((r) => r.data as GeneratedReportData).catch((err) => { if (axios.isAxiosError(err) && err.response?.status === 404) return null; throw err; }),
   listProjects: () => api.get('/projects').then((r) => r.data as ProjectRecord[]),
   createProject: (input: { key: string; name: string }) => api.post('/projects', input).then((r) => (r.data as { project: ProjectRecord }).project).catch((err) => { throw new Error(apiErrorMessage(err, 'Project creation failed')); }),
+  updateProject: (projectId: string, input: { name: string }) => api.patch(`/projects/${encodeURIComponent(projectId)}`, input).then((r) => (r.data as { project: ProjectRecord }).project).catch((err) => { throw new Error(apiErrorMessage(err, 'Project update failed')); }),
+  deleteProject: (projectId: string, confirmationKey: string) => api.delete(`/projects/${encodeURIComponent(projectId)}`, { data: { confirmationKey } }).then((r) => (r.data as { deletion: ProjectDeletionResult }).deletion).catch((err) => { throw new Error(apiErrorMessage(err, 'Project deletion failed')); }),
   upload: (projectId: string, file: File) => { const form = new FormData(); form.append('file', file); return api.post(`/projects/${encodeURIComponent(projectId)}/files`, form, { headers: { 'Content-Type': 'multipart/form-data' } }).then((r) => r.data).catch((err) => { throw new Error(apiErrorMessage(err, 'Upload failed')); }); },
   syncInputFiles: (projectId: string, filter?: Partial<FilterParams>) => api.post(`/projects/${encodeURIComponent(projectId)}/imports/sync`, normalizeFilter(filter) || {}, { timeout: 180_000 }).then((r) => r.data as SyncInputResult).catch((err) => { throw new Error(apiErrorMessage(err, 'Import sync failed')); }),
   syncLiveData: (filter?: Partial<FilterParams>) => api.post('/integrations/sync', normalizeFilter(filter) || {}, { timeout: 240_000 }).then((r) => r.data as SyncInputResult).catch((err) => { throw new Error(apiErrorMessage(err, 'JIRA/QMetry sync failed')); }),
@@ -139,7 +142,7 @@ export const batchApi = {
     const link = document.createElement('a'); link.href = url; link.download = `import-reconciliation-${syncId}.csv`; document.body.appendChild(link); link.click(); link.remove(); URL.revokeObjectURL(url);
   },
   getIntegrations: () => api.get('/integrations').then((r) => r.data as IntegrationsStatus),
-  testIntegrations: () => api.post('/integrations/test').then((r) => r.data),
+  testIntegrations: (filter?: Partial<FilterParams>) => api.post('/integrations/test', normalizeFilter(filter) || {}).then((r) => r.data),
   testConnection: (type: 'jira' | 'qmetry', connection: JiraConnectionInput | QmetryConnectionInput) => api.post('/integrations/test-connection', { type, connection: type === 'jira' ? normalizeJiraConnection(connection as JiraConnectionInput) : normalizeQmetryConnection(connection as QmetryConnectionInput) }, { timeout: 35_000 }).then((r) => r.data as { ok: boolean; count?: number; error?: string }).catch((err) => ({ ok: false, error: apiErrorMessage(err, 'Connection test failed') })),
   getCycleFolders: (connectionId?: unknown) => { const id = typeof connectionId === 'string' ? connectionId : undefined; return api.get('/cycles/folders', { params: { connectionId: id }, timeout: 45_000 }).then((r) => r.data as CycleFoldersResult); },
   getCyclesByFolder: (folderId: string, connectionId?: string, filter?: Partial<FilterParams>) => { const clean = normalizeFilter(filter); return api.get('/cycles/by-folder', { params: { folderId, connectionId, startDate: clean?.startDate, endDate: clean?.endDate, project: clean?.project }, timeout: 180_000 }).then((r) => r.data as FolderCycleHealthResult); },

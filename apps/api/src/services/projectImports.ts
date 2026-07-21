@@ -21,6 +21,12 @@ export interface ProjectRecord {
   updatedAt: string;
 }
 
+export interface ProjectDeletionResult {
+  project: ProjectRecord;
+  filesDeleted: number;
+  syncReportsDeleted: number;
+}
+
 export interface ProjectFileRecord {
   id: string;
   projectId: string;
@@ -140,6 +146,7 @@ export class ProjectImportStore {
   private readonly projectCacheDir: string;
   private readonly syncReportDir: string;
   private readonly importedCacheFile: string;
+  private readonly liveCacheFile: string;
 
   constructor(paths: RuntimePaths) {
     this.projectsFile = path.join(paths.configDir, 'projects.json');
@@ -148,6 +155,7 @@ export class ProjectImportStore {
     this.projectCacheDir = path.join(paths.outputDir, 'import-projects');
     this.syncReportDir = path.join(paths.outputDir, 'import-sync');
     this.importedCacheFile = path.join(paths.outputDir, 'raw-dataset.imported.json');
+    this.liveCacheFile = path.join(paths.outputDir, 'raw-dataset.live.json');
     [this.projectsInputDir, this.projectCacheDir, this.syncReportDir].forEach((dir) => fs.mkdirSync(dir, { recursive: true }));
   }
 
@@ -194,6 +202,50 @@ export class ProjectImportStore {
     const project = this.listProjects().find((candidate) => candidate.id === projectId);
     if (!project) throw new Error('Project not found.');
     return project;
+  }
+
+  updateProject(projectId: string, input: { name?: string }): ProjectRecord {
+    const name = (input.name || '').trim();
+    if (name.length < 2 || name.length > 100) throw new Error('Project name must contain 2-100 characters.');
+    const projects = this.listProjects();
+    const index = projects.findIndex((project) => project.id === projectId);
+    if (index < 0) throw new Error('Project not found.');
+    const updated = { ...projects[index], name, updatedAt: now() };
+    projects[index] = updated;
+    this.saveProjects(projects);
+    return updated;
+  }
+
+  deleteProject(projectId: string, confirmationKey?: string): ProjectDeletionResult {
+    const project = this.getProject(projectId);
+    if (canonicalProjectKey(confirmationKey) !== project.key) {
+      throw new Error(`Project deletion confirmation must match project key ${project.key}.`);
+    }
+
+    const manifest = this.loadManifest();
+    const projectFiles = manifest.files.filter((file) => file.projectId === projectId);
+    manifest.files = manifest.files.filter((file) => file.projectId !== projectId);
+    this.saveManifest(manifest);
+
+    const projectDirectory = this.projectDirectory(projectId);
+    if (fs.existsSync(projectDirectory)) fs.rmSync(projectDirectory, { recursive: true, force: true });
+    const projectCache = this.projectCachePath(projectId);
+    if (fs.existsSync(projectCache)) fs.unlinkSync(projectCache);
+
+    let syncReportsDeleted = 0;
+    for (const filename of fs.readdirSync(this.syncReportDir)) {
+      if (!filename.endsWith('.json')) continue;
+      const reportPath = path.join(this.syncReportDir, filename);
+      const report = readJsonFile<ProjectSyncReport>(reportPath);
+      if (report?.project.id !== projectId) continue;
+      fs.unlinkSync(reportPath);
+      syncReportsDeleted += 1;
+    }
+
+    this.saveProjects(this.listProjects().filter((candidate) => candidate.id !== projectId));
+    this.removeProjectFromLiveCache(project.key);
+    this.rebuildAggregateDataset();
+    return { project, filesDeleted: projectFiles.length, syncReportsDeleted };
   }
 
   listFiles(projectId: string): ProjectFileRecord[] {
@@ -398,6 +450,22 @@ export class ProjectImportStore {
     const aggregate = mergeDatasets(datasets);
     writeJsonAtomic(this.importedCacheFile, aggregate);
     return aggregate;
+  }
+
+  private removeProjectFromLiveCache(projectKey: string): void {
+    const live = readJsonFile<Dataset>(this.liveCacheFile);
+    if (!live) return;
+    const belongsToProject = (value?: string) => canonicalProjectKey(value) === projectKey;
+    const remaining: Dataset = {
+      ...live,
+      executions: live.executions.filter((row) => !belongsToProject(row.project)),
+      issues: live.issues.filter((row) => !belongsToProject(row.project)),
+      uat: live.uat.filter((row) => !belongsToProject(row.project)),
+      files: live.files.filter((file) => !belongsToProject(file.project)),
+      projects: live.projects.map(canonicalProjectKey).filter((key) => key && key !== projectKey),
+      meta: { ...live.meta, parsedAt: now() },
+    };
+    writeJsonAtomic(this.liveCacheFile, remaining);
   }
 
   private loadManifest(): ProjectFilesManifest {

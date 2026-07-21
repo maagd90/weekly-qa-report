@@ -91,8 +91,6 @@ function ReconciliationPanel({ report, onDownload }: { report: ProjectSyncReport
 export function ImportStatusPage({ selectedProject, projects, onProjectChange }: ImportStatusPageProps) {
   const queryClient = useQueryClient();
   const [isDragging, setIsDragging] = useState(false);
-  const [projectKey, setProjectKey] = useState('');
-  const [projectName, setProjectName] = useState('');
   const [lastReconciliation, setLastReconciliation] = useState<ProjectSyncReport | null>(null);
   const [downloadError, setDownloadError] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -108,15 +106,6 @@ export function ImportStatusPage({ selectedProject, projects, onProjectChange }:
     queryFn: () => batchApi.listInputFiles(selected!.id),
     enabled: Boolean(selected),
     refetchInterval: selected ? 15_000 : false,
-  });
-
-  const createProject = useMutation({
-    mutationFn: () => batchApi.createProject({ key: projectKey, name: projectName }),
-    onSuccess: async (project) => {
-      setProjectKey(''); setProjectName(''); setLastReconciliation(null);
-      await queryClient.invalidateQueries({ queryKey: ['projects'] });
-      onProjectChange(project.key);
-    },
   });
 
   const uploadMutation = useMutation({
@@ -160,21 +149,18 @@ export function ImportStatusPage({ selectedProject, projects, onProjectChange }:
   };
 
   return (
-    <QaPageShell title="Import Data" intro="Create or select a project, upload files into that project, then sync. File listing, processing, deletion, and reconciliation are isolated by project on the server.">
-      <QaSection title="Project workspace" subtitle="Every uploaded file must belong to one project" className="mb-[22px]">
-        <div className="grid grid-cols-1 lg:grid-cols-[minmax(220px,1fr)_minmax(180px,0.7fr)_minmax(260px,1.2fr)_auto] gap-3 items-end">
-          <label className="text-[11px] font-mono-qa uppercase tracking-wide text-qa-muted">Selected project<select value={selected?.key || 'all'} onChange={(event) => { setLastReconciliation(null); onProjectChange(event.target.value); }} className="block w-full mt-1.5 border border-qa-ink bg-white px-3 py-2.5 text-[13px] normal-case font-sans"><option value="all">Choose a project…</option>{projects.map((project) => <option key={project.id} value={project.key}>{projectLabel(project)} ({project.key})</option>)}</select></label>
-          <label className="text-[11px] font-mono-qa uppercase tracking-wide text-qa-muted">New project key<input value={projectKey} onChange={(event) => setProjectKey(event.target.value.toUpperCase())} placeholder="e.g. ACE" maxLength={32} className="block w-full mt-1.5 border border-qa-border-mid px-3 py-2.5 text-[13px] normal-case font-sans" /></label>
-          <label className="text-[11px] font-mono-qa uppercase tracking-wide text-qa-muted">New project name<input value={projectName} onChange={(event) => setProjectName(event.target.value)} placeholder="e.g. ACE Backoffice" maxLength={100} className="block w-full mt-1.5 border border-qa-border-mid px-3 py-2.5 text-[13px] normal-case font-sans" /></label>
-          <button type="button" onClick={() => createProject.mutate()} disabled={createProject.isPending || projectKey.trim().length < 2 || projectName.trim().length < 2} className="font-mono-qa text-[10px] uppercase tracking-wider border border-qa-ink bg-white px-4 py-2.5 cursor-pointer disabled:opacity-50">{createProject.isPending ? 'Creating…' : 'Create project'}</button>
+    <QaPageShell title="Import Data" intro="Select an existing project, upload files into that project, then sync. Create and manage projects from Settings.">
+      <QaSection title="Project selection" subtitle="Only the selected project's files are listed and processed" className="mb-[22px]">
+        <div className="max-w-xl">
+          <label className="text-[11px] font-mono-qa uppercase tracking-wide text-qa-muted">Project<select value={selected?.key || 'all'} onChange={(event) => { setLastReconciliation(null); onProjectChange(event.target.value); }} className="block w-full mt-1.5 border border-qa-ink bg-white px-3 py-2.5 text-[13px] normal-case font-sans"><option value="all">Choose a project…</option>{projects.map((project) => <option key={project.id} value={project.key}>{projectLabel(project)} ({project.key})</option>)}</select></label>
+          {!projects.length && <div className="mt-3 p-3 text-[13px] border border-[#e6d6b8] bg-[#fff8e8] text-[#7a5612]">No projects exist yet. Open Settings to create the first project.</div>}
         </div>
-        {createProject.isError && <div className="mt-3 text-sm text-[#a13d2c]">{(createProject.error as Error).message}</div>}
       </QaSection>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-[22px] items-start">
         <div>
           <div onDragOver={(event) => { event.preventDefault(); if (selected) setIsDragging(true); }} onDragLeave={() => setIsDragging(false)} onDrop={handleDrop} onClick={() => selected && fileInputRef.current?.click()} className={clsx('border-2 border-dashed p-10 text-center transition mb-5', selected ? 'cursor-pointer hover:border-qa-ink hover:bg-[#faf8f2]' : 'cursor-not-allowed opacity-60', isDragging ? 'border-qa-ink bg-[#faf8f2]' : 'border-qa-border-mid')}>
-            <div className="text-3xl text-qa-muted-pale mb-3">↓</div><p className="text-qa-ink font-semibold m-0">{selected ? `Drop files for ${projectLabel(selected)} here or click to browse` : 'Select or create a project before uploading'}</p><p className="text-xs text-qa-muted-light mt-1 m-0">Max 20 MB each · .xlsx / .xls</p>
+            <div className="text-3xl text-qa-muted-pale mb-3">↓</div><p className="text-qa-ink font-semibold m-0">{selected ? `Drop files for ${projectLabel(selected)} here or click to browse` : 'Select a project before uploading'}</p><p className="text-xs text-qa-muted-light mt-1 m-0">Max 20 MB each · .xlsx / .xls</p>
             <input ref={fileInputRef} type="file" accept=".xlsx,.xls" multiple className="hidden" onChange={(event) => { if (event.target.files) handleFiles(event.target.files); event.target.value = ''; }} />
           </div>
           <div className="mb-4 flex items-center gap-2"><button type="button" onClick={() => syncMutation.mutate()} disabled={!selected || syncMutation.isPending || files.length === 0} className="font-mono-qa text-[10px] font-semibold tracking-wider uppercase px-4 py-2 border border-qa-ink bg-qa-ink text-[#F5F3ED] cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed">{syncMutation.isPending ? 'Syncing…' : 'Sync imported data'}</button><span className="text-[11.5px] text-qa-muted-light">{selected ? `Processes only ${projectLabel(selected)}'s files.` : 'Select a project to continue.'}</span></div>

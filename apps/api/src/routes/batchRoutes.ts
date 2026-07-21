@@ -619,9 +619,11 @@ router.get('/integrations', (req: Request, res: Response) => {
 
 router.post('/integrations/test', async (req: Request, res: Response) => {
   const connections = resolveConnections(req);
-  log(req, 'POST /integrations/test:start', { connections: connectionSummary(connections) });
+  const filter = filterFromBody(req.body as Partial<FilterParams>);
+  const apiScope = apiScopeFromFilter(filter);
+  log(req, 'POST /integrations/test:start', { filter, apiScope, connections: connectionSummary(connections) });
   try {
-    const dataset = await buildDataset(INPUT_DIR, CONFIG_DIR, connections, { liveSync: true });
+    const dataset = await buildDataset(INPUT_DIR, CONFIG_DIR, connections, { liveSync: true, apiScope, includeFiles: false });
     log(req, 'POST /integrations/test:done', { executions: dataset.executions.length, issues: dataset.issues.length, uat: dataset.uat.length, warnings: dataset.meta.warnings });
     res.json({ ok: true, executions: dataset.executions.length, issues: dataset.issues.length, uat: dataset.uat.length, warnings: dataset.meta.warnings });
   } catch (err) {
@@ -697,6 +699,27 @@ router.post('/projects', (req: Request, res: Response) => {
   try {
     const project = projectImports.createProject(req.body as { key?: string; name?: string });
     return res.status(201).json({ ok: true, project, requestId: requestId(req) });
+  } catch (err) {
+    return res.status(projectErrorStatus(err)).json({ ok: false, error: toErrorMessage(err), requestId: requestId(req) });
+  }
+});
+
+router.patch('/projects/:projectId', (req: Request, res: Response) => {
+  try {
+    const project = projectImports.updateProject(req.params.projectId, req.body as { name?: string });
+    return res.json({ ok: true, project, requestId: requestId(req) });
+  } catch (err) {
+    return res.status(projectErrorStatus(err)).json({ ok: false, error: toErrorMessage(err), requestId: requestId(req) });
+  }
+});
+
+router.delete('/projects/:projectId', (req: Request, res: Response) => {
+  try {
+    const confirmationKey = String((req.body as { confirmationKey?: string } | undefined)?.confirmationKey || '');
+    const deletion = projectImports.deleteProject(req.params.projectId, confirmationKey);
+    const published = publishProjectImportOutputs(req);
+    log(req, 'project deleted', { projectId: deletion.project.id, projectKey: deletion.project.key, filesDeleted: deletion.filesDeleted, syncReportsDeleted: deletion.syncReportsDeleted });
+    return res.json({ ok: true, deletion, ...published, requestId: requestId(req) });
   } catch (err) {
     return res.status(projectErrorStatus(err)).json({ ok: false, error: toErrorMessage(err), requestId: requestId(req) });
   }

@@ -487,12 +487,12 @@ A project does not need both Jira and QMetry. Missing source types are shown as 
 .xls
 ```
 
-For the web application, create or select a project in **Import Data** and upload files there. The API stores every file beneath that project's own directory and records ownership in the import manifest. The standalone batch CLI can still read files copied directly into its configured input directory.
+For the web application, create and manage projects in **Settings**. Then select an existing project in **Import Data** and upload files there. The API stores every file beneath that project's own directory and records ownership in the import manifest. The standalone batch CLI can still read files copied directly into its configured input directory.
 
 ### Project-scoped import workflow
 
-1. Create a project with a unique key and name, or select an existing project.
-2. Upload Excel files. Only files owned by the selected project are listed.
+1. Create a project with a unique key and name in **Settings**. Project names can be updated later; project keys are immutable.
+2. Select the existing project in **Import Data** and upload Excel files. Only files owned by the selected project are listed.
 3. Click **Sync imported data**. Only the selected project's directory is parsed.
 4. Review the reconciliation job: status, timing, initiator, per-file type/sheet, rows found, created/updated/skipped/rejected rows, row-level rejection reasons, validation messages, category totals, and previous-versus-new totals.
 5. Download the reconciliation CSV when evidence or row-level failure follow-up is required.
@@ -1018,6 +1018,8 @@ Check:
 | `POST` | `/api/llm/test` | Validate the selected narrative provider |
 | `GET` | `/api/projects` | List project workspaces |
 | `POST` | `/api/projects` | Create a project workspace |
+| `PATCH` | `/api/projects/:projectId` | Update a project's display name |
+| `DELETE` | `/api/projects/:projectId` | Permanently delete a confirmed project and its owned runtime data |
 | `GET` | `/api/projects/:projectId/files` | List only the selected project's staged files |
 | `POST` | `/api/projects/:projectId/files` | Upload an Excel file into the selected project |
 | `DELETE` | `/api/projects/:projectId/files/:fileId` | Delete a file after verifying project ownership |

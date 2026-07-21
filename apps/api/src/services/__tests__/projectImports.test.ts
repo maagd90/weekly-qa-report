@@ -60,11 +60,38 @@ try {
   assert.match(csv, /project-a-executions\.xlsx/);
   assert.match(csv, /Rejected Row/);
 
+  const updatedProjectA = store.updateProject(projectA.id, { name: 'Project A Updated' });
+  assert.equal(updatedProjectA.name, 'Project A Updated');
+  assert.equal(updatedProjectA.key, projectA.key, 'project key must remain immutable during updates');
+  assert.throws(() => store.deleteProject(projectB.id, 'WRONG'), /confirmation must match project key PROJB/i);
+
+  const projectBDirectory = path.join(paths.inputDir, 'projects', projectB.id);
+  const projectBCache = path.join(paths.outputDir, 'import-projects', `${projectB.id}.json`);
+  const projectBReport = path.join(paths.outputDir, 'import-sync', `${syncB.id}.json`);
+  const liveCache = path.join(paths.outputDir, 'raw-dataset.live.json');
+  fs.writeFileSync(liveCache, JSON.stringify(aggregate));
+  assert.equal(fs.existsSync(projectBDirectory), true);
+  assert.equal(fs.existsSync(projectBCache), true);
+  assert.equal(fs.existsSync(projectBReport), true);
+  const deletion = store.deleteProject(projectB.id, projectB.key);
+  assert.equal(deletion.filesDeleted, 1);
+  assert.ok(deletion.syncReportsDeleted >= 1);
+  assert.equal(fs.existsSync(projectBDirectory), false, 'project input folder must be deleted');
+  assert.equal(fs.existsSync(projectBCache), false, 'project import cache must be deleted');
+  assert.equal(fs.existsSync(projectBReport), false, 'project reconciliation reports must be deleted');
+  assert.throws(() => store.getProject(projectB.id), /not found/i);
+  const aggregateAfterProjectDelete = readJsonFile<Dataset>(path.join(paths.outputDir, 'raw-dataset.imported.json'));
+  assert.ok(aggregateAfterProjectDelete);
+  assert.deepStrictEqual(aggregateAfterProjectDelete!.projects, ['PROJA']);
+  const liveAfterProjectDelete = readJsonFile<Dataset>(liveCache);
+  assert.ok(liveAfterProjectDelete);
+  assert.deepStrictEqual(liveAfterProjectDelete!.projects, ['PROJA']);
+  assert.equal(liveAfterProjectDelete!.issues.length, 0, 'deleted project live rows must be removed');
+
   store.deleteFile(projectA.id, fileA.id);
   const afterDelete = store.syncProject(projectA.id, 'QA tester');
   assert.equal(afterDelete.newTotals.executions, 0);
-  assert.equal(store.listFiles(projectB.id).length, 1, 'deleting Project A data must not alter Project B files');
-  console.log('✓ Project-scoped import isolation and reconciliation');
+  console.log('✓ Project-scoped import isolation, reconciliation, update, and deletion');
 } finally {
   fs.rmSync(root, { recursive: true, force: true });
 }

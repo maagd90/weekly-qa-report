@@ -84,8 +84,13 @@ hasAll('src/pages/SettingsPage.tsx', [
   'if (saveConnections()) testMutation.mutate();',
   'Only one JIRA connection is allowed per project.',
   'Only one QMetry connection is allowed per project.',
+  'Project management',
+  'Update project',
+  'Delete project',
+  'Save project connections',
+  'Sync selected project',
 ]);
-hasNone('src/pages/SettingsPage.tsx', ['saveAll']);
+hasNone('src/pages/SettingsPage.tsx', ['saveAll', '+ Add JIRA connection', '+ Add QMetry connection']);
 
 hasAll('src/lib/api.ts', [
   "? value : 'template'",
@@ -197,7 +202,9 @@ hasAll('src/pages/ImportStatusPage.tsx', [
   'Promise.all(selectedFiles.map',
   'multiple className="hidden"',
   'handleFiles(e.dataTransfer.files)',
+  'Create and manage projects from Settings.',
 ]);
+hasNone('src/pages/ImportStatusPage.tsx', ['New project key', 'New project name', 'Create project']);
 
 hasAll('src/App.tsx', [
   'min-w-0 overflow-x-hidden',

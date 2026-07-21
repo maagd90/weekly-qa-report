@@ -159,7 +159,7 @@ function AppContent() {
         {display && activeTab === 'uat' && showUat && <UatPage dashboard={display} kpiStyle={ui.kpiStyle} searchQuery={filters.search} />}
         {activeTab === 'import' && <ImportStatusPage selectedProject={filters.project} projects={registeredProjects} onProjectChange={handleProjectChange} />}
         {activeTab === 'ai' && <AiReportPage dashboard={display} kpiStyle={ui.kpiStyle} project={filters.project} />}
-        {activeTab === 'settings' && <SettingsPage />}
+        {activeTab === 'settings' && <SettingsPage selectedProject={filters.project} onProjectChange={handleProjectChange} />}
       </div>
 
       <QaFooter />
