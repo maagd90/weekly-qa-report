@@ -44,10 +44,10 @@ type WorkItemPager = {
 
 function Pager({ page, totalPages, setPage }: WorkItemPager) {
   return totalPages > 1 ? (
-    <div className="flex items-center gap-2 font-mono-qa text-[10.5px] text-qa-muted-light">
-      <span>{page + 1}/{totalPages} · {PAGE_SIZE} rows/page</span>
-      <button type="button" onClick={() => setPage((p) => Math.max(0, p - 1))} disabled={page === 0} className="px-2 py-1 border border-qa-border bg-white text-qa-ink disabled:opacity-40">Prev</button>
-      <button type="button" onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))} disabled={page >= totalPages - 1} className="px-2 py-1 border border-qa-border bg-white text-qa-ink disabled:opacity-40">Next</button>
+    <div className="flex items-center gap-2 font-mono-qa text-[10.5px] text-qa-muted-light" aria-label="Table pagination">
+      <span aria-live="polite">Page {page + 1} of {totalPages} · {PAGE_SIZE} rows/page</span>
+      <button type="button" aria-label="Previous page" onClick={() => setPage((p) => Math.max(0, p - 1))} disabled={page === 0} className="min-h-10 px-3 py-1 border border-qa-border bg-white text-qa-ink disabled:opacity-40 sm:min-h-0 sm:px-2">Prev</button>
+      <button type="button" aria-label="Next page" onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))} disabled={page >= totalPages - 1} className="min-h-10 px-3 py-1 border border-qa-border bg-white text-qa-ink disabled:opacity-40 sm:min-h-0 sm:px-2">Next</button>
     </div>
   ) : <span className="font-mono-qa text-[10.5px] text-qa-muted-light">latest first</span>;
 }
@@ -86,7 +86,7 @@ function StatusTabs({ rows, value, onChange, label }: {
               role="tab"
               aria-selected={active}
               onClick={() => onChange(status.id)}
-              className={`shrink-0 border px-3 py-1.5 font-mono-qa text-[9.5px] font-semibold ${active ? 'border-qa-ink bg-qa-ink text-white' : 'border-qa-border bg-white text-qa-muted hover:border-qa-ink'}`}
+              className={`min-h-10 shrink-0 border px-3 py-1.5 font-mono-qa text-[9.5px] font-semibold sm:min-h-0 ${active ? 'border-qa-ink bg-qa-ink text-white' : 'border-qa-border bg-white text-qa-muted hover:border-qa-ink'}`}
             >
               {status.label} · {counts[status.id]}
             </button>

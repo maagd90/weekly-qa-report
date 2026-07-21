@@ -110,8 +110,8 @@ function Pager({ page, totalPages, totalRows, onPage }: { page: number; totalPag
   return (
     <div className="flex flex-wrap items-center gap-2 font-mono-qa text-[10.5px] text-qa-muted-light">
       <span>Page {page + 1} of {totalPages} · {totalRows} rows</span>
-      <button type="button" onClick={() => onPage(Math.max(0, page - 1))} disabled={page === 0} className="border border-qa-border bg-white px-2.5 py-1.5 text-qa-ink disabled:cursor-not-allowed disabled:opacity-40">Previous</button>
-      <button type="button" onClick={() => onPage(Math.min(totalPages - 1, page + 1))} disabled={page >= totalPages - 1} className="border border-qa-border bg-white px-2.5 py-1.5 text-qa-ink disabled:cursor-not-allowed disabled:opacity-40">Next</button>
+      <button type="button" aria-label="Go to previous page" onClick={() => onPage(Math.max(0, page - 1))} disabled={page === 0} className="border border-qa-border bg-white px-2.5 py-1.5 text-qa-ink disabled:cursor-not-allowed disabled:opacity-40">Previous</button>
+      <button type="button" aria-label="Go to next page" onClick={() => onPage(Math.min(totalPages - 1, page + 1))} disabled={page >= totalPages - 1} className="border border-qa-border bg-white px-2.5 py-1.5 text-qa-ink disabled:cursor-not-allowed disabled:opacity-40">Next</button>
     </div>
   );
 }

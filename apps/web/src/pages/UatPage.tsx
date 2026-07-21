@@ -123,7 +123,8 @@ export function UatPage({ dashboard, kpiStyle, searchQuery }: UatPageProps) {
     setBugView(view);
     setPage(0);
     if (scrollToDetail) {
-      window.requestAnimationFrame(() => detailRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+      const behavior = window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth';
+      window.requestAnimationFrame(() => detailRef.current?.scrollIntoView({ behavior, block: 'start' }));
     }
   }
 
@@ -231,6 +232,7 @@ export function UatPage({ dashboard, kpiStyle, searchQuery }: UatPageProps) {
               <span>Page {safePage + 1} of {totalPages}</span>
               <button
                 type="button"
+                aria-label="Go to previous Vendor Portal bug page"
                 onClick={() => setPage((current) => Math.max(0, current - 1))}
                 disabled={safePage === 0}
                 className="border border-qa-border bg-white px-2.5 py-1.5 text-qa-ink disabled:cursor-not-allowed disabled:opacity-40"
@@ -239,6 +241,7 @@ export function UatPage({ dashboard, kpiStyle, searchQuery }: UatPageProps) {
               </button>
               <button
                 type="button"
+                aria-label="Go to next Vendor Portal bug page"
                 onClick={() => setPage((current) => Math.min(totalPages - 1, current + 1))}
                 disabled={safePage >= totalPages - 1}
                 className="border border-qa-border bg-white px-2.5 py-1.5 text-qa-ink disabled:cursor-not-allowed disabled:opacity-40"

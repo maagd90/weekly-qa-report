@@ -35,24 +35,26 @@ export function StackedMonthChart({ data, showTitle = true, maxMonths }: { data:
         </div>
       </div>
       {truncated && <p className="text-[10.5px] text-qa-muted-light m-0 mb-2">Showing the most recent {visible.length} of {data.length} months.</p>}
-      <div className="flex items-end gap-[26px] h-[210px] px-2.5 mt-4">
-        {visible.map((m) => {
-          const total = m.pass + m.blocked + m.fail;
-          const h = (v: number) => ({ height: `${(v / maxTotal) * 170}px` });
-          return (
-            <div key={m.label} className="flex-1 flex flex-col items-center gap-2 h-full min-w-0">
-              <div className="flex-1 w-full flex flex-col justify-end items-center">
-                <span className="font-mono-qa text-[11px] text-qa-ink mb-1">{fmt(total)}</span>
-                <div className="w-[62%] flex flex-col">
-                  <div className="w-full" style={{ ...h(m.fail), background: QA.FAIL }} />
-                  <div className="w-full" style={{ ...h(m.blocked), background: QA.BLOCKED }} />
-                  <div className="w-full" style={{ ...h(m.pass), background: QA.PASS }} />
+      <div className="qa-scroll -mx-2 overflow-x-auto overscroll-x-contain px-2">
+        <div className="mt-4 flex h-[210px] min-w-[480px] items-end gap-3 px-2.5 sm:gap-[26px]">
+          {visible.map((m) => {
+            const total = m.pass + m.blocked + m.fail;
+            const h = (v: number) => ({ height: `${(v / maxTotal) * 170}px` });
+            return (
+              <div key={m.label} className="flex-1 flex flex-col items-center gap-2 h-full min-w-0">
+                <div className="flex-1 w-full flex flex-col justify-end items-center">
+                  <span className="font-mono-qa text-[11px] text-qa-ink mb-1">{fmt(total)}</span>
+                  <div className="w-[62%] flex flex-col">
+                    <div className="w-full" style={{ ...h(m.fail), background: QA.FAIL }} />
+                    <div className="w-full" style={{ ...h(m.blocked), background: QA.BLOCKED }} />
+                    <div className="w-full" style={{ ...h(m.pass), background: QA.PASS }} />
+                  </div>
                 </div>
+                <span className="font-mono-qa text-[11px] text-qa-muted">{m.label}</span>
               </div>
-              <span className="font-mono-qa text-[11px] text-qa-muted">{m.label}</span>
-            </div>
-          );
-        })}
+            );
+          })}
+        </div>
       </div>
     </div>
   );

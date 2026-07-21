@@ -65,7 +65,7 @@ function ReconciliationPanel({ report, onDownload }: { report: ProjectSyncReport
       title="Import reconciliation"
       subtitle={`${projectLabel(report.project)} (${report.project.key}) · job ${report.id}`}
       className="mt-[22px]"
-      headerRight={<button type="button" onClick={onDownload} className="font-mono-qa text-[10px] uppercase tracking-wider border border-qa-ink px-3 py-2 bg-white cursor-pointer">Download CSV</button>}
+      headerRight={<button type="button" onClick={onDownload} className="min-h-11 w-full border border-qa-ink bg-white px-3 py-2 font-mono-qa text-[10px] uppercase tracking-wider sm:min-h-0 sm:w-auto">Download CSV</button>}
     >
       <div className={clsx('border p-3 text-sm mb-4', statusClass(report.status))}>
         <strong>{report.status}</strong> · {report.filesProcessed} file{report.filesProcessed === 1 ? '' : 's'} processed · {report.durationMs.toLocaleString()} ms
@@ -79,8 +79,38 @@ function ReconciliationPanel({ report, onDownload }: { report: ProjectSyncReport
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
         {summary.map(([label, current, previous]) => <div key={label} className="border border-qa-border p-3"><div className="font-mono-qa text-[10px] uppercase text-qa-muted-light">{label}</div><div className="font-spectral text-xl font-semibold mt-1">{current.toLocaleString()}</div><div className="text-[10px] text-qa-muted-light">Previous {previous.toLocaleString()} · Change {current - previous >= 0 ? '+' : ''}{(current - previous).toLocaleString()}</div></div>)}
       </div>
-      <div className="overflow-x-auto border border-qa-border">
+      <div className="space-y-3 md:hidden">
+        {report.files.map((file) => (
+          <article key={file.fileId} className="border border-qa-border bg-white p-4">
+            <h4 className="m-0 break-all text-[13px] font-semibold">{file.filename}</h4>
+            <p className="mt-1 text-[11px] text-qa-muted">{file.detectedType} · {file.sheet || 'Sheet not detected'}</p>
+            <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-3 text-[11px]">
+              {[
+                ['Found', file.totalRowsFound],
+                ['Imported', file.successfullyImportedRows],
+                ['Created', file.createdRecords],
+                ['Updated', file.updatedRecords],
+                ['Unchanged', file.unchangedRecords],
+                ['Duplicate / skipped', file.duplicateOrSkippedRows],
+                ['Rejected', file.rejectedRows],
+              ].map(([label, value]) => (
+                <div key={String(label)}>
+                  <dt className="font-mono-qa text-[9px] uppercase text-qa-muted-light">{label}</dt>
+                  <dd className="m-0 mt-0.5 font-mono-qa text-[12px]">{Number(value).toLocaleString()}</dd>
+                </div>
+              ))}
+            </dl>
+            <div className="mt-3 border-t border-qa-border pt-3 text-[11px]">
+              {file.errors.length === 0 && file.warnings.length === 0 && file.rejections.length === 0
+                ? <span className="text-[#2f6a48]">No validation issues</span>
+                : <ul className="m-0 space-y-1 pl-4">{file.errors.map((message) => <li key={`mobile-e-${message}`} className="text-[#a13d2c]">{message}</li>)}{file.warnings.map((message) => <li key={`mobile-w-${message}`} className="text-[#8f6312]">{message}</li>)}{file.rejections.slice(0, 3).map((rejection) => <li key={`mobile-r-${rejection.rowNumber}-${rejection.reference}`} className="text-[#a13d2c]">Row {rejection.rowNumber} · {rejection.reference}: {rejection.reason}</li>)}{file.rejections.length > 3 && <li className="text-qa-muted">+{file.rejections.length - 3} more in the CSV report</li>}</ul>}
+            </div>
+          </article>
+        ))}
+      </div>
+      <div className="hidden overflow-x-auto border border-qa-border md:block">
         <table className="w-full min-w-[1120px] text-left text-[11px] border-collapse">
+          <caption className="sr-only">Import reconciliation results by file</caption>
           <thead className="bg-[#f7f5ef] font-mono-qa uppercase tracking-wide"><tr>{['File', 'Type / sheet', 'Found', 'Imported', 'Created', 'Updated', 'Unchanged', 'Duplicate / skipped', 'Rejected', 'Validation'].map((header) => <th key={header} className="px-3 py-2 border-b border-qa-border">{header}</th>)}</tr></thead>
           <tbody>{report.files.map((file) => <tr key={file.fileId} className="align-top border-t border-qa-border first:border-t-0">
             <td className="px-3 py-2 font-semibold max-w-[220px] break-all">{file.filename}</td>
@@ -181,6 +211,16 @@ export function ImportStatusPage({ selectedProject, projects, onProjectChange, o
     if (selected) handleFiles(e.dataTransfer.files);
   };
 
+  const openFilePicker = () => {
+    if (selected && !uploadMutation.isPending) fileInputRef.current?.click();
+  };
+
+  const handleUploadKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    event.preventDefault();
+    openFilePicker();
+  };
+
   const downloadReconciliation = async () => {
     if (!lastReconciliation || !selected) return;
     setDownloadError('');
@@ -205,7 +245,18 @@ export function ImportStatusPage({ selectedProject, projects, onProjectChange, o
       </QaSection> : <>
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-[22px] items-start">
         <div>
-          <div onDragOver={(event) => { event.preventDefault(); if (selected && !uploadMutation.isPending) setIsDragging(true); }} onDragLeave={() => setIsDragging(false)} onDrop={handleDrop} onClick={() => selected && !uploadMutation.isPending && fileInputRef.current?.click()} className={clsx('border-2 border-dashed p-10 text-center transition mb-5', selected && !uploadMutation.isPending ? 'cursor-pointer hover:border-qa-ink hover:bg-[#faf8f2]' : 'cursor-not-allowed opacity-60', isDragging ? 'border-qa-ink bg-[#faf8f2]' : 'border-qa-border-mid')}>
+          <div
+            role="button"
+            tabIndex={selected && !uploadMutation.isPending ? 0 : -1}
+            aria-disabled={!selected || uploadMutation.isPending}
+            aria-label={selected ? `Upload Excel files for ${projectLabel(selected)}` : 'Select a project before uploading files'}
+            onDragOver={(event) => { event.preventDefault(); if (selected && !uploadMutation.isPending) setIsDragging(true); }}
+            onDragLeave={() => setIsDragging(false)}
+            onDrop={handleDrop}
+            onClick={openFilePicker}
+            onKeyDown={handleUploadKeyDown}
+            className={clsx('border-2 border-dashed p-6 text-center transition mb-5 sm:p-10', selected && !uploadMutation.isPending ? 'cursor-pointer hover:border-qa-ink hover:bg-[#faf8f2]' : 'cursor-not-allowed opacity-60', isDragging ? 'border-qa-ink bg-[#faf8f2]' : 'border-qa-border-mid')}
+          >
             <div className="text-3xl text-qa-muted-pale mb-3">↓</div><p className="text-qa-ink font-semibold m-0">{uploadMutation.isPending ? 'Uploading, synchronizing, and refreshing tabs…' : selected ? `Drop files for ${projectLabel(selected)} here or click to browse` : 'Select a project before uploading'}</p><p className="text-xs text-qa-muted-light mt-1 m-0">Max 20 MB each · .xlsx / .xls · uploads sync automatically</p>
             <input ref={fileInputRef} type="file" accept=".xlsx,.xls" multiple className="hidden" onChange={(event) => { if (event.target.files) handleFiles(event.target.files); event.target.value = ''; }} />
           </div>

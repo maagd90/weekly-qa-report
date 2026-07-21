@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useId, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   isBlankJiraConnection,
@@ -35,7 +35,7 @@ import { QaPageShell, QaSection } from '../components/layout/QaPageShell';
 import { QA } from '../theme/qaTheme';
 import { userFacingWarnings } from '../lib/userFacingWarnings';
 
-const fieldClass = 'w-full border border-qa-line bg-white px-2.5 py-1.5 text-[12.5px] font-mono-qa';
+const fieldClass = 'min-h-11 w-full border border-qa-border bg-white px-2.5 py-1.5 text-[12.5px] font-mono-qa sm:min-h-0';
 const labelClass = 'block text-[10.5px] font-mono-qa uppercase tracking-wide text-qa-muted-light mb-1';
 const MAX_LOGO_BYTES = 1_500_000;
 
@@ -63,15 +63,17 @@ function rewriteProjectJql(jql: string | undefined, previousKeys: string[], next
 type TestResult = { ok: boolean; count?: number; executions?: number; issues?: number; uat?: number; error?: string };
 
 function Field({ label, ...props }: { label: string } & React.InputHTMLAttributes<HTMLInputElement>) {
-  return <div><label className={labelClass}>{label}</label><input className={fieldClass} {...props} /></div>;
+  const generatedId = useId();
+  const inputId = props.id || generatedId;
+  return <div><label htmlFor={inputId} className={labelClass}>{label}</label><input id={inputId} className={fieldClass} {...props} /></div>;
 }
 
 function SyncBox({ label, note, checked, disabled, onChange }: { label: string; note?: string; checked: boolean; disabled?: boolean; onChange: (checked: boolean) => void }) {
   return <label className={`inline-flex items-start gap-2 text-[12.5px] text-qa-ink ${disabled ? 'opacity-50' : ''}`}><input type="checkbox" checked={checked} disabled={disabled} onChange={(e) => onChange(e.target.checked)} className="mt-0.5 h-4 w-4 accent-[#b95c00]" /><span><span className="font-semibold">{label}</span>{note && <span className="block text-[11px] text-qa-muted-light mt-0.5">{note}</span>}</span></label>;
 }
 
-function DeploymentBox({ label, checked, onSelect }: { label: string; checked: boolean; onSelect: () => void }) {
-  return <label className="inline-flex items-center gap-2 text-[12.5px] text-qa-ink"><input type="checkbox" checked={checked} onChange={(e) => { if (e.target.checked) onSelect(); }} className="h-4 w-4 accent-[#b95c00]" /><span className="font-semibold">{label}</span></label>;
+function DeploymentBox({ label, name, checked, onSelect }: { label: string; name: string; checked: boolean; onSelect: () => void }) {
+  return <label className="inline-flex items-center gap-2 text-[12.5px] text-qa-ink"><input type="radio" name={name} checked={checked} onChange={onSelect} className="h-4 w-4 accent-[#b95c00]" /><span className="font-semibold">{label}</span></label>;
 }
 
 function blankJiraConnection(project: ProjectRecord): JiraConnectionInput {
@@ -119,8 +121,8 @@ function JiraConnectionCard({ conn, onChange, project }: { conn: JiraConnectionI
       <div className="mb-4 p-3 border border-qa-border bg-white">
         <div className="font-mono-qa text-[10.5px] uppercase tracking-wide text-qa-muted-light mb-2">JIRA deployment type</div>
         <div className="flex flex-wrap gap-5">
-          <DeploymentBox label="On-premises" checked={deploymentType === 'on-prem'} onSelect={() => onChange({ ...conn, deploymentType: 'on-prem', authType: 'basic' })} />
-          <DeploymentBox label="On-cloud / JIRA Cloud" checked={deploymentType === 'cloud'} onSelect={() => onChange({ ...conn, deploymentType: 'cloud', authType: 'basic' })} />
+          <DeploymentBox name={`jira-deployment-${conn.id}`} label="On-premises" checked={deploymentType === 'on-prem'} onSelect={() => onChange({ ...conn, deploymentType: 'on-prem', authType: 'basic' })} />
+          <DeploymentBox name={`jira-deployment-${conn.id}`} label="On-cloud / JIRA Cloud" checked={deploymentType === 'cloud'} onSelect={() => onChange({ ...conn, deploymentType: 'cloud', authType: 'basic' })} />
         </div>
       </div>
       <div className="grid grid-cols-1 gap-2.5 mb-2.5 sm:grid-cols-2">
@@ -137,7 +139,7 @@ function JiraConnectionCard({ conn, onChange, project }: { conn: JiraConnectionI
         <Field label="Security token" type={showSecret ? 'text' : 'password'} value={conn.jiraXsrfToken || ''} onChange={(e) => onChange({ ...conn, jiraXsrfToken: e.target.value })} />
       </div>
       <label className={labelClass}>Project-scoped JQL</label>
-      <textarea className="w-full border border-qa-line bg-white px-2.5 py-1.5 text-[12.5px] font-mono-qa min-h-[82px]" value={conn.jql || ''} onChange={(event) => onChange({ ...conn, jql: event.target.value })} />
+      <textarea className="w-full border border-qa-border bg-white px-2.5 py-1.5 text-[12.5px] font-mono-qa min-h-[82px]" value={conn.jql || ''} onChange={(event) => onChange({ ...conn, jql: event.target.value })} />
       <p className="text-[10.5px] text-qa-muted-light mt-1 mb-0">Editable for testing custom filters. The project clause must include every configured source key: <code>{projectSourceKeys(selectedProject).join(', ')}</code>.</p>
       <div className="flex flex-wrap items-center gap-2 mt-2.5"><button type="button" onClick={() => setShowSecret((v) => !v)} className="font-mono-qa text-[10px] px-3 py-1.5 border border-qa-border bg-white cursor-pointer">{showSecret ? 'Hide values' : 'Show values'}</button><button type="button" onClick={() => testMutation.mutate()} disabled={testMutation.isPending || !enabled} className="font-mono-qa text-[10px] px-3 py-1.5 border border-qa-border bg-white cursor-pointer disabled:opacity-50">{testMutation.isPending ? 'Testing...' : 'Test JIRA'}</button>{testResult && <span className={`min-w-0 break-words font-mono-qa text-[10.5px] ${testResult.ok ? 'text-[#2f6a48]' : 'text-[#a13d2c]'}`}>{testResult.ok ? `OK (${testResult.count ?? 0} sample rows)` : testResult.error}</span>}</div>
     </div>

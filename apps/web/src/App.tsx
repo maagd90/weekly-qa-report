@@ -135,6 +135,7 @@ function AppContent() {
 
   const showFilters = !currentTab.hideFilters;
   const hasDashboard = !!display;
+  const appBusy = isLoading || isProjectLoading || applyDateRange.isPending || (activeTab === 'wonder-miles' && isWonderMilesLoading);
   const showRuntimeSearch = activeTab === 'testers' || activeTab === 'cycles' || activeTab === 'trace' || activeTab === 'uat' || activeTab === 'wonder-miles';
   const showInitialDashboardError = Boolean(
     initialDashboardError
@@ -180,9 +181,10 @@ function AppContent() {
   };
 
   return (
-    <div className="min-h-screen w-full min-w-0 overflow-x-hidden bg-qa-bg text-qa-ink flex flex-col qa-scroll">
+    <div className="min-h-screen w-full min-w-0 overflow-x-hidden bg-qa-bg text-qa-ink flex flex-col qa-scroll" aria-busy={appBusy}>
       <QaMasthead dashboard={display} project={filters.project} projects={availableProjects} projectNames={projectNames} onProjectChange={handleProjectChange} />
       <QaTabNav tabs={tabs} activeTab={activeTab} onTabChange={handleTabChange} />
+      {appBusy && <div className="qa-progress-track print:hidden" role="status" aria-label="Updating dashboard"><span className="qa-progress-bar" /></div>}
 
       {showFilters && (
         <QaFilterBar
@@ -206,22 +208,22 @@ function AppContent() {
 
       {applyDateRange.isError && showFilters && (
         <div className="max-w-qa mx-auto w-full px-4 pt-3 sm:px-6 lg:px-8 print:hidden">
-          <div className="p-3 border border-[#ecccc2] bg-[#f8ece8] text-[#a13d2c] text-sm">
+          <div role="alert" className="p-3 border border-[#ecccc2] bg-[#f8ece8] text-[#a13d2c] text-sm">
             {(applyDateRange.error as Error).message}
           </div>
         </div>
       )}
       {(showInitialDashboardError || projectBaseFetch.isError) && showFilters && (
         <div className="max-w-qa mx-auto w-full px-4 pt-3 sm:px-6 lg:px-8 print:hidden">
-          <div className="p-3 border border-[#ecccc2] bg-[#f8ece8] text-[#a13d2c] text-sm">
+          <div role="alert" className="p-3 border border-[#ecccc2] bg-[#f8ece8] text-[#a13d2c] text-sm">
             {(projectBaseFetch.error as Error | null)?.message || (showInitialDashboardError ? (initialDashboardError as Error).message : '') || 'Could not load the selected project dashboard.'}
           </div>
         </div>
       )}
 
       <div className={clsx('flex-1 min-w-0', activeTab === 'ai' ? 'flex flex-col overflow-hidden min-h-0' : 'overflow-x-hidden overflow-y-auto')}>
-        {(isLoading || isProjectLoading || (activeTab === 'wonder-miles' && isWonderMilesLoading)) && showFilters && <div className="flex items-center justify-center h-64 font-mono-qa text-sm text-qa-muted-light">Loading dashboard…</div>}
-        {!isLoading && !isProjectLoading && !(activeTab === 'wonder-miles' && isWonderMilesLoading) && !hasDashboard && showFilters && <EmptyDashboard onGenerate={goGenerate} />}
+        {(isLoading || isProjectLoading || (activeTab === 'wonder-miles' && isWonderMilesLoading)) && showFilters && <div role="status" aria-live="polite" aria-busy="true" className="flex items-center justify-center h-64 font-mono-qa text-sm text-qa-muted-light">Loading dashboard…</div>}
+        {!isLoading && !isProjectLoading && !(activeTab === 'wonder-miles' && isWonderMilesLoading) && !hasDashboard && showFilters && <div role="status"><EmptyDashboard onGenerate={goGenerate} /></div>}
         {display && activeTab === 'overview' && <OverviewPage dashboard={display} kpiStyle={ui.kpiStyle} />}
         {display && activeTab === 'testers' && <TestersPage dashboard={display} kpiStyle={ui.kpiStyle} searchQuery={filters.search} />}
         {display && activeTab === 'cycles' && <CyclesPage dashboard={display} kpiStyle={ui.kpiStyle} selectedCycle={ui.selectedCycle} onSelectCycle={ui.setSelectedCycle} filterParams={filters.filterParams} searchQuery={filters.search} />}

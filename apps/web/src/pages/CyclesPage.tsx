@@ -154,7 +154,19 @@ export function CyclesPage({ dashboard, kpiStyle, selectedCycle, onSelectCycle, 
             <QaThead cols={[{ label: 'Cycle', className: 'pl-[22px]' }, { label: 'Status' }, { label: 'Result split', className: 'w-[170px]' }, { label: 'Pass %', align: 'right' }, { label: 'Coverage', align: 'right' }, { label: 'Cases', align: 'right', className: 'pr-[22px]' }]} />
             <tbody>
               {shown.map((c) => { const exec = c.pass + c.fail + c.blocked + c.na; return (
-                <tr key={c.key} className="border-t border-[#f0ede5] cursor-pointer hover:bg-[#faf8f2]" onClick={() => pickCycle(c.key)}>
+                <tr
+                  key={c.key}
+                  tabIndex={0}
+                  role="button"
+                  aria-label={`Open details for ${c.name}`}
+                  className="border-t border-[#f0ede5] cursor-pointer hover:bg-[#faf8f2] focus-visible:bg-[#faf8f2]"
+                  onClick={() => pickCycle(c.key)}
+                  onKeyDown={(event) => {
+                    if (event.key !== 'Enter' && event.key !== ' ') return;
+                    event.preventDefault();
+                    pickCycle(c.key);
+                  }}
+                >
                   <td className="py-3 pl-[22px]"><div className="font-semibold max-w-[340px] truncate">{c.name}</div><div className="font-mono-qa text-[10px] text-qa-muted-light">{c.key}</div></td>
                   <td className="py-3 px-3"><CycleBadge status={c.status} /></td>
                   <td className="py-3 px-3"><SegBar segments={cycleSegSegments(c.pass, c.fail, c.blocked, c.ne, c.na, c.total)} height={11} /></td>

@@ -29,12 +29,13 @@ export function QaMasthead({ dashboard, project, projects, projectNames = {}, on
             </div>
           </div>
           <div className="min-w-0 text-left pb-0.5 sm:text-right">
-            <div className="font-mono-qa text-[10px] tracking-wider uppercase text-qa-muted-light">Project</div>
+            <label htmlFor="qa-project-select" className="block font-mono-qa text-[10px] tracking-wider uppercase text-qa-muted-light">Project</label>
             <div className="relative flex w-full min-w-0 items-center mt-1 sm:inline-flex sm:w-auto">
               <select
+                id="qa-project-select"
                 value={project}
                 onChange={(e) => onProjectChange(e.target.value)}
-                className="appearance-none w-full min-w-0 max-w-full font-spectral font-semibold text-[15px] py-1 pl-2 pr-7 border border-qa-ink bg-white text-qa-ink cursor-pointer sm:w-auto"
+                className="appearance-none min-h-11 w-full min-w-0 max-w-full font-spectral font-semibold text-[15px] py-2 pl-3 pr-9 border border-qa-ink bg-white text-qa-ink cursor-pointer sm:min-h-0 sm:w-auto sm:py-1"
               >
                 {projects.map((p) => <option key={p} value={p}>{projectNames[p] || projectDisplayName(p)}</option>)}
               </select>
@@ -42,7 +43,7 @@ export function QaMasthead({ dashboard, project, projects, projectNames = {}, on
             </div>
           </div>
         </div>
-        <div className="flex items-center justify-between py-1.5 border-b border-qa-ink">
+        <div className="flex items-center justify-between py-1.5 border-b border-qa-ink" aria-live="polite">
           <div className="min-w-0 font-mono-qa text-[10px] sm:text-[10.5px] tracking-wide uppercase text-qa-muted-light break-words">
             {dashboard
               ? `Test execution data · ${fmt(totalCases)} records · ${cycleCount} cycles`

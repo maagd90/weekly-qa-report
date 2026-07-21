@@ -224,7 +224,7 @@ export function AiReportPage({ dashboard, kpiStyle, project }: AiReportPageProps
     <div className="h-full min-w-0 flex flex-col overflow-hidden">
       <div className="px-4 py-4 border-b border-qa-border sm:px-6 lg:px-8 print:hidden">
         <div className="flex flex-wrap items-end gap-3">
-          <div className="w-full min-w-0 sm:w-auto"><label className="font-mono-qa text-[10px] uppercase tracking-wider text-qa-muted-light block mb-1">Start</label><input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="w-full min-w-0 max-w-full border border-qa-ink px-2 py-1 text-sm bg-white sm:w-auto" /></div>
+          <div className="w-full min-w-0 sm:w-auto"><label className="font-mono-qa text-[10px] uppercase tracking-wider text-qa-muted-light block mb-1">Start</label><input aria-label="Report start date" type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="min-h-11 w-full min-w-0 max-w-full border border-qa-ink bg-white px-2 py-1 text-sm sm:min-h-0 sm:w-auto" /></div>
           <div className="w-full min-w-0 sm:w-auto"><label className="font-mono-qa text-[10px] uppercase tracking-wider text-qa-muted-light block mb-1">End</label><input type="date" value={endDate} max={today} onChange={(e) => setEndDate(e.target.value)} className="w-full min-w-0 max-w-full border border-qa-ink px-2 py-1 text-sm bg-white sm:w-auto" /></div>
           <div className="w-full min-w-0 sm:w-auto"><label className="font-mono-qa text-[10px] uppercase tracking-wider text-qa-muted-light block mb-1">Report type</label><select value={reportType} onChange={(e) => setReportType(e.target.value as ReportType)} className="w-full min-w-0 max-w-full border border-qa-ink px-2 py-1 text-sm bg-white sm:w-auto">{REPORT_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label} — {t.desc}</option>)}</select></div>
           <div className="w-full min-w-0 sm:w-auto"><label className="font-mono-qa text-[10px] uppercase tracking-wider text-qa-muted-light block mb-1">Project</label><select value={reportProject} onChange={(e) => setReportProject(e.target.value)} className="w-full min-w-0 max-w-full border border-qa-ink px-2 py-1 text-sm bg-white sm:w-auto">{projectOptions.map((p) => <option key={p} value={p}>{p === 'all' ? 'All projects' : projectDisplayName(p)}</option>)}</select></div>
@@ -233,7 +233,7 @@ export function AiReportPage({ dashboard, kpiStyle, project }: AiReportPageProps
           <button type="button" onClick={downloadPdf} disabled={downloading || !chartData} className="w-full justify-center px-4 py-2 text-xs font-mono-qa uppercase tracking-wider border border-qa-ink bg-white disabled:opacity-50 inline-flex items-center gap-2 sm:w-auto"><Download size={14} />{downloading ? 'Exporting...' : 'Download PDF'}</button>
         </div>
         <div className="mt-2 text-[12px] text-qa-muted-light">Selected scope: {selectedProjectLabel} · {startDate || 'any'} → {endDate || 'any'}</div>
-        {error && <div className="mt-3 p-3 border border-[#ecccc2] bg-[#f8ece8] text-[#a13d2c] text-sm">{error}</div>}
+        {error && <div role="alert" className="mt-3 p-3 border border-[#ecccc2] bg-[#f8ece8] text-[#a13d2c] text-sm">{error}</div>}
         {notes.length > 0 && <div className="mt-3 p-3 border border-[#d8e3f1] bg-[#edf4fb] text-[#28527a] text-sm"><strong>Data source notes:</strong><ul className="mt-1 mb-0 pl-4">{notes.map((note) => <li key={note}>{note}</li>)}</ul></div>}
       </div>
 
