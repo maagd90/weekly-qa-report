@@ -9,6 +9,7 @@ import { HorizBar, SegBar, testerSegSegments } from './SegBar';
 import { AiReportUatSection } from './AiReportUatSection';
 import { TestersPerformanceSection } from './TestersPerformanceSection';
 import { projectDisplayName } from '../../lib/projectDisplay';
+import { AiReportWonderMilesSection, hasWonderMilesExportData } from './AiReportWonderMilesSection';
 
 interface AiReportChartsProps {
   dashboard: DashboardPayload;
@@ -160,6 +161,8 @@ export function AiReportCharts({ dashboard, kpiStyle, reportType }: AiReportChar
       {showUat && uat && uat.total > 0 && (
         <AiReportUatSection uat={uat} />
       )}
+
+      {showUat && hasWonderMilesExportData(dashboard) && <AiReportWonderMilesSection dashboard={dashboard} />}
 
       {showUat && !uat?.total && (
         <div className="pdf-section border border-qa-border p-5 bg-[#faf8f2] text-[13px] text-qa-muted">

@@ -7,6 +7,7 @@ import { projectDisplayName } from '../../lib/projectDisplay';
 import { ResultDonut } from './ResultDonut';
 import { StackedMonthChart } from './StackedMonthChart';
 import { VendorPortalPhaseChart } from './VendorPortalPhaseChart';
+import { hasWonderMilesExportData } from './AiReportWonderMilesSection';
 
 interface ReportPrintContentProps {
   dashboard: DashboardPayload;
@@ -92,6 +93,14 @@ function ProjectComparison({ dashboard }: { dashboard: DashboardPayload }) {
   const rows = dashboard.byProject || [];
   if (!rows.length) return null;
   return <table className="qa-business-table"><thead><tr><th>Project</th><th>Cases</th><th>Executed</th><th>Pass %</th><th>Open defects</th><th>Blocked</th><th>Cycles</th></tr></thead><tbody>{rows.map((slice) => <tr key={slice.project}><td>{projectDisplayName(slice.project)}</td><td className="qa-business-number">{slice.overview.totalCases}</td><td className="qa-business-number">{slice.overview.executed}</td><td className="qa-business-number">{slice.overview.passRate}%</td><td className="qa-business-number">{slice.storyBug.bugOpen}</td><td className="qa-business-number">{slice.overview.blocked}</td><td className="qa-business-number">{slice.cycles.length}</td></tr>)}</tbody></table>;
+}
+
+function WonderMilesRows({ dashboard }: { dashboard: DashboardPayload }) {
+  const rows = (dashboard.workItems || []).filter((row) => Boolean(row.sourceFile) && /^(DP|DTTRV|WONDERMILES)$/i.test(row.project || ''));
+  const stories = rows.filter((row) => row.issueType === 'Story').length;
+  const bugs = rows.filter((row) => row.issueType === 'Bug').length;
+  const openBugs = rows.filter((row) => row.issueType === 'Bug' && row.status === 'open').length;
+  return <table className="qa-business-table qa-business-stat"><thead><tr><th>Total Export Rows</th><th>Stories</th><th>Bugs</th><th>Open Bugs</th></tr></thead><tbody><tr><td>{rows.length}</td><td>{stories}</td><td>{bugs}</td><td className="qa-business-red">{openBugs}</td></tr></tbody></table>;
 }
 
 function formatReportDate(value: string): string {
@@ -208,6 +217,8 @@ export function ReportPrintContent({ dashboard, reportType, narrative, startDate
             <VendorPortalPhaseChart items={vendorPortalPhases} />
           </div>
         </Section>}
+
+        {showDefects && hasWonderMilesExportData(dashboard) && <Section no={nextNo()} title="Wonder Miles Export Data"><p>Uploaded Wonder Miles Story and Bug export rows included in this report scope.</p><WonderMilesRows dashboard={dashboard} /></Section>}
 
         {showExecution && <Section no={nextNo()} title="Test Execution Summary">
           <table className="qa-business-table"><thead><tr><th>Total Test Cases</th><th>Executed</th><th>Pass Rate</th><th>Failed</th><th>Blocked</th></tr></thead><tbody><tr><td className="qa-business-number">{dashboard.overview.totalCases}</td><td className="qa-business-number">{dashboard.overview.executed}</td><td className="qa-business-number">{dashboard.overview.passRate}%</td><td className="qa-business-number">{dashboard.overview.failed}</td><td className="qa-business-number">{dashboard.overview.blocked}</td></tr></tbody></table>

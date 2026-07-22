@@ -145,7 +145,9 @@ hasAll('src/pages/TestersPage.tsx', [
   'searchText.toLowerCase()',
   'Search updates this page instantly',
   'Quality Assurance Performance by Project',
-  'By Project',
+  'Quality Assurance Performance by Project',
+  'Quality Assurance project breakdown',
+  'projectSliceAsDashboard',
 ]);
 
 hasAll('src/components/qa/TestersPerformanceSection.tsx', [
@@ -159,6 +161,7 @@ hasAll('src/pages/CyclesPage.tsx', [
   'filters loaded cycle names and keys instantly',
   'Test Cycle Summary by Project',
   "`${c.project || ''}:${c.key}`",
+  'Test Cycle project breakdown',
 ]);
 
 hasAll('src/pages/TraceabilityPage.tsx', [
@@ -166,6 +169,7 @@ hasAll('src/pages/TraceabilityPage.tsx', [
   'Search filters these rows instantly',
   'Requirements Traceability by Project',
   'projectDisplayName(w.project)',
+  'Traceability project breakdown',
 ]);
 
 hasAll('src/pages/ImportStatusPage.tsx', [
@@ -176,6 +180,10 @@ hasAll('src/pages/ImportStatusPage.tsx', [
 ]);
 
 hasAll('src/components/qa/AiReportCharts.tsx', ['Project Comparison', 'dashboard.byProject!.map']);
+hasAll('src/components/qa/ProjectBreakdownTabs.tsx', ['projectSliceAsDashboard', "['all', ...projects.map", 'projectDisplayName(project)']);
+hasAll('src/pages/AiReportPage.tsx', ['QA Report project breakdown', 'visibleChartData', 'projectSliceAsDashboard']);
+hasAll('src/components/qa/AiReportWonderMilesSection.tsx', ['Wonder Miles Export Data', 'uploadedRows', 'Open Bugs', 'sourceFile']);
+hasAll('src/components/qa/ReportPrintContent.tsx', ['Wonder Miles Export Data', '<WonderMilesRows dashboard={dashboard} />']);
 hasAll('src/components/qa/ReportPrintContent.tsx', ['Portfolio Project Comparison', '<ProjectComparison dashboard={dashboard} />']);
 
 hasAll('src/pages/WonderMilesExportPage.tsx', [

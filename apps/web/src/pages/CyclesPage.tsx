@@ -13,6 +13,7 @@ import { WarningDetails } from '../components/common/WarningDetails';
 import { batchApi, getQmetryConnections } from '../lib/api';
 import { canonicalProjectOrUndefined } from '../lib/projectKeys';
 import { projectDisplayName } from '../lib/projectDisplay';
+import { ProjectBreakdownTabs, projectSliceAsDashboard } from '../components/qa/ProjectBreakdownTabs';
 
 interface CyclesPageProps {
   dashboard: DashboardPayload;
@@ -59,11 +60,13 @@ function FolderPicker({ selectedFolder, onSelectFolder, connectionId, project }:
 }
 
 export function CyclesPage({ dashboard, kpiStyle, selectedCycle, onSelectCycle, filterParams, searchQuery }: CyclesPageProps) {
+  const [activeProjectTab, setActiveProjectTab] = useState('all');
+  const visibleDashboard = activeProjectTab === 'all' ? dashboard : projectSliceAsDashboard(dashboard, activeProjectTab);
   const [selectedFolder, setSelectedFolder] = useState('');
   const [loadAfterFolderChange, setLoadAfterFolderChange] = useState(false);
   const qmetryConnectionId = useMemo(() => qmetryConnectionIdForProject(filterParams.project), [filterParams.project]);
   const selectedProject = canonicalProjectOrUndefined(filterParams.project);
-  const portfolio = !selectedProject ? (dashboard.byProject || []) : [];
+  const portfolio = !selectedProject && activeProjectTab === 'all' ? (dashboard.byProject || []) : [];
   const lastDashboardGeneration = useRef(dashboard.meta.generatedAt);
   const appliedStartDate = dashboard.scope.startDate;
   const appliedEndDate = dashboard.scope.endDate;
@@ -114,9 +117,9 @@ export function CyclesPage({ dashboard, kpiStyle, selectedCycle, onSelectCycle, 
     ? liveCyclesQuery.data.cycles
     : portfolio.length
       ? portfolio.flatMap((slice) => slice.cycles.map((cycle) => ({ ...cycle, project: slice.project })))
-      : dashboard.cycles;
+      : visibleDashboard.cycles;
   const cycles = sourceCycles.filter((cycle) => !runtimeSearch || `${cycle.key} ${cycle.name}`.toLowerCase().includes(runtimeSearch));
-  const overview = dashboard.overview;
+  const overview = visibleDashboard.overview;
   const notStarted = cycles.filter((c) => c.pass + c.fail + c.blocked + c.na === 0).length;
   const fullPass = cycles.filter((c) => { const exec = c.pass + c.fail + c.blocked + c.na; return exec > 0 && c.fail === 0 && c.blocked === 0; }).length;
   const totalCases = cycles.reduce((sum, c) => sum + c.total, 0);
@@ -131,9 +134,10 @@ export function CyclesPage({ dashboard, kpiStyle, selectedCycle, onSelectCycle, 
   return (
     <>
       <QaPageShell title="Test Cycle Health" subtitle={portfolio.length ? 'portfolio cycles grouped by owning project' : 'selected dates choose the cycles; result splits show current live QMetry progress'}>
-        {portfolio.length === 0 && <FolderPicker selectedFolder={selectedFolder} onSelectFolder={handleSelectFolder} connectionId={qmetryConnectionId} project={selectedProject} />}
+        <ProjectBreakdownTabs dashboard={dashboard} value={activeProjectTab} onChange={(project) => { setActiveProjectTab(project); onSelectCycle(null); }} label="Test Cycle project breakdown" />
+        {Boolean(selectedProject) && <FolderPicker selectedFolder={selectedFolder} onSelectFolder={handleSelectFolder} connectionId={qmetryConnectionId} project={selectedProject} />}
         {portfolio.length > 0 && <QaSection title="Test Cycle Summary by Project" subtitle="Choose a specific project in the masthead before loading live QMetry folders" noPadding className="mb-4"><QaTable><QaThead cols={[{ label: 'Project', className: 'pl-[22px]' }, { label: 'Cycles', align: 'right' }, { label: 'Cases', align: 'right' }, { label: 'Executed', align: 'right' }, { label: 'Failed', align: 'right' }, { label: 'Blocked', align: 'right' }, { label: 'Coverage', align: 'right', className: 'pr-[22px]' }]} /><tbody>{portfolio.map((slice) => { const cases = slice.cycles.reduce((sum, cycle) => sum + cycle.total, 0); const done = slice.cycles.reduce((sum, cycle) => sum + cycle.pass + cycle.fail + cycle.blocked + cycle.na, 0); return <tr key={slice.project} className="border-t border-[#f0ede5]"><td className="py-3 pl-[22px] font-semibold">{projectDisplayName(slice.project)}</td><td className="py-3 px-3 text-right font-mono-qa">{slice.cycles.length}</td><td className="py-3 px-3 text-right font-mono-qa">{cases}</td><td className="py-3 px-3 text-right font-mono-qa">{done}</td><td className="py-3 px-3 text-right font-mono-qa text-[#a13d2c]">{slice.overview.failed}</td><td className="py-3 px-3 text-right font-mono-qa text-[#9a6a12]">{slice.overview.blocked}</td><td className="py-3 pr-[22px] text-right font-mono-qa">{cases ? Math.round((done / cases) * 100) : 0}%</td></tr>; })}</tbody></QaTable></QaSection>}
-        {portfolio.length === 0 &&
+        {Boolean(selectedProject) &&
         <div className="mb-4 flex items-center gap-3 flex-wrap">
           <button type="button" onClick={() => liveCyclesQuery.refetch()} disabled={!selectedFolder || liveCyclesQuery.isFetching || Boolean(selectedProject && !qmetryConnectionId)} className="font-mono-qa text-[10px] px-3 py-1.5 border border-qa-border bg-white cursor-pointer disabled:opacity-50">
             {liveCyclesQuery.isFetching ? 'Searching...' : 'Search test cycles'}

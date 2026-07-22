@@ -12,6 +12,7 @@ import { AiReportCharts } from '../components/qa/AiReportCharts';
 import { projectDisplayName } from '../lib/projectDisplay';
 import { defaultReportingPeriod } from '../lib/reportingPeriod';
 import { userFacingWarnings } from '../lib/userFacingWarnings';
+import { ProjectBreakdownTabs, projectSliceAsDashboard } from '../components/qa/ProjectBreakdownTabs';
 
 const REPORT_TYPES: { value: ReportType; label: string; desc: string }[] = [
   { value: 'full', label: 'Full', desc: 'all sections' },
@@ -88,6 +89,7 @@ export function AiReportPage({ dashboard, kpiStyle, project }: AiReportPageProps
   const [startDate, setStartDate] = useState(seededRange.startDate);
   const [endDate, setEndDate] = useState(seededRange.endDate);
   const [reportType, setReportType] = useState<ReportType>('executive');
+  const [activeProjectTab, setActiveProjectTab] = useState('all');
   const [error, setError] = useState<string | null>(null);
   const [warning, setWarning] = useState<string | null>(null);
   const [reportMarkdown, setReportMarkdown] = useState('');
@@ -178,6 +180,7 @@ export function AiReportPage({ dashboard, kpiStyle, project }: AiReportPageProps
   const chartData = reportMatchesSelection(reportDashboard, reportMeta, { startDate, endDate, reportType, project: selectedProject })
     ? reportDashboard
     : null;
+  const visibleChartData = chartData && activeProjectTab !== 'all' ? projectSliceAsDashboard(chartData, activeProjectTab) : chartData;
   const generating = generateMutation.isPending;
   const hasNarrative = Boolean(chartData && reportMarkdown);
   const hasReport = !generating && (Boolean(chartData) || hasNarrative);
@@ -232,7 +235,8 @@ export function AiReportPage({ dashboard, kpiStyle, project }: AiReportPageProps
           </div>
           {hasReport ? (
             <div className="p-4 space-y-6 sm:p-6 sm:space-y-8 lg:p-8">
-              {chartData && <AiReportCharts dashboard={chartData} kpiStyle={kpiStyle} reportType={reportType} />}
+              {chartData && <ProjectBreakdownTabs dashboard={chartData} value={activeProjectTab} onChange={setActiveProjectTab} label="QA Report project breakdown" />}
+              {visibleChartData && <AiReportCharts dashboard={visibleChartData} kpiStyle={kpiStyle} reportType={reportType} />}
               {hasNarrative ? <article className="prose prose-sm max-w-none prose-headings:font-spectral prose-table:text-sm"><ReactMarkdown remarkPlugins={[remarkGfm]}>{reportMarkdown}</ReactMarkdown></article> : <div className="border border-qa-border bg-[#faf8f2] p-6 text-qa-muted">Charts are ready. Configure an LLM key and generate to add narrative.</div>}
             </div>
           ) : (
