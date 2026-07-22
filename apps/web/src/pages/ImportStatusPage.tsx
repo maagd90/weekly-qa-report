@@ -10,7 +10,6 @@ import { QA } from '../theme/qaTheme';
 interface ImportStatusPageProps {
   selectedProject: string;
   projects: ProjectRecord[];
-  onProjectChange: (projectKey: string) => void;
   onImportedDataChanged?: (dashboard: DashboardPayload | null) => void;
 }
 
@@ -124,16 +123,30 @@ function ReconciliationPanel({ report, onDownload }: { report: ProjectSyncReport
   );
 }
 
-export function ImportStatusPage({ selectedProject, projects, onProjectChange, onImportedDataChanged }: ImportStatusPageProps) {
+export function ImportStatusPage({ selectedProject, projects, onImportedDataChanged }: ImportStatusPageProps) {
   const queryClient = useQueryClient();
   const [isDragging, setIsDragging] = useState(false);
   const [lastReconciliation, setLastReconciliation] = useState<ProjectSyncReport | null>(null);
   const [downloadError, setDownloadError] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const selected = useMemo(() => projects.find((project) => project.key === selectedProject) || null, [projects, selectedProject]);
+  const [importProjectKey, setImportProjectKey] = useState(() => selectedProject === 'all' ? localStorage.getItem('qa-import-project') || '' : selectedProject);
+  const effectiveProjectKey = selectedProject === 'all' ? importProjectKey : selectedProject;
+  const selected = useMemo(() => projects.find((project) => project.key === effectiveProjectKey) || null, [projects, effectiveProjectKey]);
   const selectedProjectIdRef = useRef<string | undefined>(selected?.id);
   selectedProjectIdRef.current = selected?.id;
   const expectedFiles = useMemo(() => expectedFileTypes(selected), [selected]);
+
+  useEffect(() => {
+    if (selectedProject !== 'all') {
+      setImportProjectKey(selectedProject);
+      return;
+    }
+    if (!projects.some((project) => project.key === importProjectKey)) setImportProjectKey(projects[0]?.key || '');
+  }, [selectedProject, projects, importProjectKey]);
+
+  useEffect(() => {
+    if (selectedProject === 'all' && importProjectKey) localStorage.setItem('qa-import-project', importProjectKey);
+  }, [selectedProject, importProjectKey]);
 
   useEffect(() => {
     setLastReconciliation(null);
@@ -229,10 +242,10 @@ export function ImportStatusPage({ selectedProject, projects, onProjectChange, o
   };
 
   return (
-    <QaPageShell title="Import Data" intro="File upload and imported-data sync are available only for one selected project. All Projects is an aggregate dashboard and live-connection scope only.">
-      <QaSection title="Project selection" subtitle="Only the selected project's files are listed and processed" className="mb-[22px]">
+    <QaPageShell title="Import Data" intro="Files always belong to one project. When the masthead is All Projects, the file-project selector below changes only this page and keeps the portfolio scope unchanged.">
+      <QaSection title="File project" subtitle={selectedProject === 'all' ? 'Choose which project files to manage; the masthead remains All Projects' : 'Inherited from the masthead project'} className="mb-[22px]">
         <div className="max-w-xl">
-          <label className="text-[11px] font-mono-qa uppercase tracking-wide text-qa-muted">Project<select value={selected?.key || 'all'} onChange={(event) => { setLastReconciliation(null); onProjectChange(event.target.value); }} className="block w-full mt-1.5 border border-qa-ink bg-white px-3 py-2.5 text-[13px] normal-case font-sans"><option value="all">All Projects — import disabled</option>{projects.map((project) => <option key={project.id} value={project.key}>{projectLabel(project)} ({project.key})</option>)}</select></label>
+          <label className="text-[11px] font-mono-qa uppercase tracking-wide text-qa-muted">Project<select value={selected?.key || ''} disabled={selectedProject !== 'all'} onChange={(event) => { setLastReconciliation(null); setImportProjectKey(event.target.value); }} className="block w-full mt-1.5 border border-qa-ink bg-white px-3 py-2.5 text-[13px] normal-case font-sans disabled:bg-[#f3f0e8]"><option value="">Select project…</option>{projects.map((project) => <option key={project.id} value={project.key}>{projectLabel(project)} ({project.key})</option>)}</select></label>
           {!projects.length && <div className="mt-3 p-3 text-[13px] border border-[#e6d6b8] bg-[#fff8e8] text-[#7a5612]">No projects exist yet. Open Settings to create the first project.</div>}
         </div>
       </QaSection>

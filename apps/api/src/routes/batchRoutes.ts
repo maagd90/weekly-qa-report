@@ -283,6 +283,30 @@ function mergedSourceDataset(updatedMode?: BuildMode, updatedDataset?: Dataset):
   return mergeDatasets(parts);
 }
 
+function withRegisteredPortfolioProjects(dataset: Dataset, project?: string): Dataset {
+  if (cleanProject(project)) return dataset;
+  const registeredKeys = projectImports.listProjects().map((record) => record.key);
+  if (!registeredKeys.length) return dataset;
+  const present = new Set([
+    ...dataset.executions.map((row) => row.project),
+    ...dataset.issues.map((row) => row.project),
+    ...dataset.uat.map((row) => row.project),
+    ...dataset.files.filter((file) => file.rows > 0).map((file) => file.project),
+  ].map(canonicalProjectKey));
+  const missing = registeredKeys.filter((key) => !present.has(canonicalProjectKey(key)));
+  return {
+    ...dataset,
+    projects: [...new Set([...dataset.projects, ...registeredKeys])],
+    meta: {
+      ...dataset.meta,
+      warnings: [
+        ...dataset.meta.warnings,
+        ...missing.map((key) => `[${key}] No data was available for this project in the selected portfolio source snapshot.`),
+      ],
+    },
+  };
+}
+
 async function refreshGeneratedOutputs(req: Request, connections: UserConnections, apiScope?: ApiFetchScope, dashboardFilter: Partial<FilterParams> = {}, mode: BuildMode = 'live') {
   return serializeOutputs(async () => {
   const options = buildOptions(mode, apiScope, !req.header('x-user-connections'));
@@ -306,8 +330,9 @@ async function refreshGeneratedOutputs(req: Request, connections: UserConnection
     return { rebuilt: false, rowCounts: counts, removed, warnings: dataset.meta.warnings, files: dataset.files, projects: dataset.projects };
   }
   saveRawDataset(OUTPUT_DIR, dataset, fingerprint);
-  const payload = refilterDashboard(dataset, { ...dashboardFilter, project: cleanProject(dashboardFilter.project) });
-  writeJsonFile(outputPath('dashboard-data.json'), refilterDashboard(dataset, {}));
+  const portfolioDataset = withRegisteredPortfolioProjects(dataset, dashboardFilter.project);
+  const payload = refilterDashboard(portfolioDataset, { ...dashboardFilter, project: cleanProject(dashboardFilter.project) });
+  writeJsonFile(outputPath('dashboard-data.json'), refilterDashboard(withRegisteredPortfolioProjects(dataset), {}));
   log(req, 'generated outputs refreshed', { mode, rowCounts: counts, warnings: dataset.meta.warnings, projects: dataset.projects, apiScope: options.apiScope });
   return { rebuilt: true, rowCounts: counts, removed, warnings: dataset.meta.warnings, files: dataset.files, projects: dataset.projects, dashboard: payload };
   });
@@ -325,8 +350,9 @@ function publishProjectImportOutputs(req: Request, dashboardFilter: Partial<Filt
   }
   const fingerprint = `project-import:${imported.meta.parsedAt}:${totalRows(imported)}`;
   saveRawDataset(OUTPUT_DIR, dataset, fingerprint);
-  const dashboard = refilterDashboard(dataset, { ...dashboardFilter, project: cleanProject(dashboardFilter.project) });
-  writeJsonFile(outputPath('dashboard-data.json'), refilterDashboard(dataset, {}));
+  const portfolioDataset = withRegisteredPortfolioProjects(dataset, dashboardFilter.project);
+  const dashboard = refilterDashboard(portfolioDataset, { ...dashboardFilter, project: cleanProject(dashboardFilter.project) });
+  writeJsonFile(outputPath('dashboard-data.json'), refilterDashboard(withRegisteredPortfolioProjects(dataset), {}));
   log(req, 'project-scoped import outputs published', { rowCounts: counts, projects: dataset.projects });
   return { rebuilt: true, rowCounts: counts, removed, warnings: dataset.meta.warnings, files: dataset.files, projects: dataset.projects, dashboard };
   });
@@ -498,7 +524,7 @@ router.post('/generate', async (req: Request, res: Response) => {
   try {
     const filter = filterFromBody({ startDate, endDate, search, result: (result as FilterParams['result']) || 'all', project: clean });
     if (hasLiveSources(connections)) await refreshGeneratedOutputs(req, connections, apiScopeFromFilter(filter), filter, 'live');
-    const sourceDataset = mergedSourceDataset();
+    const sourceDataset = withRegisteredPortfolioProjects(mergedSourceDataset(), clean);
     const resultPayload = await runGenerate({ startDate, endDate, reportType: type, search, result: (result as 'all') || 'all', project: clean, inputDir: INPUT_DIR, outputDir: OUTPUT_DIR, configDir: CONFIG_DIR, apiKey: key.key || undefined, llm, connections, sourceDataset });
     log(req, 'POST /generate:done', { ok: resultPayload.ok, rowCounts: resultPayload.rowCounts, warnings: resultPayload.warnings, error: resultPayload.error, paths: resultPayload.paths });
     return res.status(200).json({ ...resultPayload, requestId: requestId(req) });
@@ -513,9 +539,9 @@ router.get('/dashboard', async (req: Request, res: Response) => {
   const connections = resolveConnections(req);
   log(req, 'GET /dashboard:start', { filter, mode: 'cached-refilter', connections: connectionSummary(connections) });
   const cached = await ensureDataset(req, connections, undefined, 'cached');
-  if (cached) return res.json(refilterDashboard(cached.dataset, filter));
+  if (cached) return res.json(refilterDashboard(withRegisteredPortfolioProjects(cached.dataset, filter.project), filter));
   const imported = await ensureDataset(req, emptyConnections(), undefined, 'import-only');
-  if (imported) return res.json(refilterDashboard(imported.dataset, filter));
+  if (imported) return res.json(refilterDashboard(withRegisteredPortfolioProjects(imported.dataset, filter.project), filter));
   const file = path.join(OUTPUT_DIR, 'dashboard-data.json');
   if (!fs.existsSync(file)) return res.status(404).json({ error: 'No dashboard generated yet. Import files, then Sync imported data, or use Settings → Sync JIRA/QMetry. Dataset contains: no projects / 0 rows.', requestId: requestId(req) });
   if (!canUseDashboardPayloadFallback(filter)) {

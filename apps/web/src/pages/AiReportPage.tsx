@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -88,7 +88,6 @@ export function AiReportPage({ dashboard, kpiStyle, project }: AiReportPageProps
   const [startDate, setStartDate] = useState(seededRange.startDate);
   const [endDate, setEndDate] = useState(seededRange.endDate);
   const [reportType, setReportType] = useState<ReportType>('executive');
-  const [reportProject, setReportProject] = useState(project || 'all');
   const [error, setError] = useState<string | null>(null);
   const [warning, setWarning] = useState<string | null>(null);
   const [reportMarkdown, setReportMarkdown] = useState('');
@@ -98,22 +97,9 @@ export function AiReportPage({ dashboard, kpiStyle, project }: AiReportPageProps
 
   const { data: reportData } = useQuery({ queryKey: ['report'], queryFn: () => batchApi.getReport(), retry: false });
 
-  const projectOptions = useMemo(() => {
-    const values = new Set<string>(['all']);
-    for (const p of dashboard?.scope.projects || []) if (p) values.add(p);
-    for (const p of reportDashboard?.scope.projects || []) if (p) values.add(p);
-    if (project) values.add(project);
-    if (reportProject) values.add(reportProject);
-    return [...values];
-  }, [dashboard?.scope.projects, reportDashboard?.scope.projects, project, reportProject]);
-
-  const selectedProject = reportProject && reportProject !== 'all' ? reportProject : undefined;
+  const selectedProject = project && project !== 'all' ? project : undefined;
   const selectedProjectLabel = selectedProject ? projectDisplayName(selectedProject) : 'All projects';
   const notes = sourceNotes(warning);
-
-  useEffect(() => {
-    if (project && project !== reportProject) setReportProject(project);
-  }, [project]);
 
   useEffect(() => {
     if (!dashboard) return;
@@ -122,11 +108,13 @@ export function AiReportPage({ dashboard, kpiStyle, project }: AiReportPageProps
       setStartDate(next.startDate);
       setEndDate(next.endDate);
     }
-  }, [dashboard?.meta.dataMin, dashboard?.meta.dataMax, dashboard?.scope.startDate, dashboard?.scope.endDate, reportProject]);
+  }, [dashboard?.meta.dataMin, dashboard?.meta.dataMax, dashboard?.scope.startDate, dashboard?.scope.endDate, project]);
 
   useEffect(() => {
     if (!reportData) return;
     const meta = reportData.meta as ReportMeta | undefined;
+    const storedProject = meta?.params?.project;
+    if (storedProject !== selectedProject) return;
     if (reportData.dashboard) {
       setReportDashboard(reportData.dashboard);
       const visibleWarnings = userFacingWarnings(reportData.dashboard.meta.warnings);
@@ -138,7 +126,6 @@ export function AiReportPage({ dashboard, kpiStyle, project }: AiReportPageProps
     if (params?.startDate) setStartDate(params.startDate);
     if (params?.endDate) setEndDate(params.endDate);
     if (params?.reportType) setReportType(params.reportType);
-    if (params) setReportProject(params.project || 'all');
   }, [reportData]);
 
   const generateMutation = useMutation({
@@ -227,7 +214,6 @@ export function AiReportPage({ dashboard, kpiStyle, project }: AiReportPageProps
           <div className="w-full min-w-0 sm:w-auto"><label className="font-mono-qa text-[10px] uppercase tracking-wider text-qa-muted-light block mb-1">Start</label><input aria-label="Report start date" type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="min-h-11 w-full min-w-0 max-w-full border border-qa-ink bg-white px-2 py-1 text-sm sm:min-h-0 sm:w-auto" /></div>
           <div className="w-full min-w-0 sm:w-auto"><label className="font-mono-qa text-[10px] uppercase tracking-wider text-qa-muted-light block mb-1">End</label><input type="date" value={endDate} max={today} onChange={(e) => setEndDate(e.target.value)} className="w-full min-w-0 max-w-full border border-qa-ink px-2 py-1 text-sm bg-white sm:w-auto" /></div>
           <div className="w-full min-w-0 sm:w-auto"><label className="font-mono-qa text-[10px] uppercase tracking-wider text-qa-muted-light block mb-1">Report type</label><select value={reportType} onChange={(e) => setReportType(e.target.value as ReportType)} className="w-full min-w-0 max-w-full border border-qa-ink px-2 py-1 text-sm bg-white sm:w-auto">{REPORT_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label} — {t.desc}</option>)}</select></div>
-          <div className="w-full min-w-0 sm:w-auto"><label className="font-mono-qa text-[10px] uppercase tracking-wider text-qa-muted-light block mb-1">Project</label><select value={reportProject} onChange={(e) => setReportProject(e.target.value)} className="w-full min-w-0 max-w-full border border-qa-ink px-2 py-1 text-sm bg-white sm:w-auto">{projectOptions.map((p) => <option key={p} value={p}>{p === 'all' ? 'All projects' : projectDisplayName(p)}</option>)}</select></div>
           <div className="flex gap-1">{datePresets.map((p) => <button type="button" key={p.label} onClick={() => setPreset(p.days)} className="px-2 py-1 text-xs border border-qa-border bg-white">{p.label}</button>)}</div>
           <button type="button" onClick={() => generateMutation.mutate()} disabled={generating} className={clsx('w-full px-4 py-2 text-xs font-mono-qa uppercase tracking-wider text-white border-0 sm:w-auto', generating ? 'opacity-60 cursor-wait' : 'cursor-pointer')} style={{ background: QA.accent }}>{generating ? 'Generating...' : 'Generate Report'}</button>
           <button type="button" onClick={downloadPdf} disabled={downloading || !chartData} className="w-full justify-center px-4 py-2 text-xs font-mono-qa uppercase tracking-wider border border-qa-ink bg-white disabled:opacity-50 inline-flex items-center gap-2 sm:w-auto"><Download size={14} />{downloading ? 'Exporting...' : 'Download PDF'}</button>

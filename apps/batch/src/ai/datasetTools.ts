@@ -10,6 +10,7 @@ export const AI_TOOLS = [
   { name: 'get_defect_backlog', description: 'Open bugs by priority and assignee' },
   { name: 'get_traceability', description: 'Feature area traceability matrix (stories, bugs, completion)' },
   { name: 'get_uat_summary', description: 'Vendor Portal bugs: totals, open/closed, reported phase/environment, CR, area, submitter, status, and priority' },
+  { name: 'get_project_comparison', description: 'Portfolio metrics grouped by owning project when All Projects is selected' },
 ] as const;
 
 export type ToolName = typeof AI_TOOLS[number]['name'];
@@ -31,6 +32,18 @@ export function executeTool(name: string, dataset: Dataset, filter: FilterParams
       return payload.traceability;
     case 'get_uat_summary':
       return payload.uat ?? { total: 0, open: 0, closed: 0, message: 'No Vendor Portal bugs in scope for this date range' };
+    case 'get_project_comparison':
+      return (payload.byProject || []).map((slice) => ({
+        project: slice.project,
+        totalCases: slice.overview.totalCases,
+        executed: slice.overview.executed,
+        passRate: slice.overview.passRate,
+        failed: slice.overview.failed,
+        blocked: slice.overview.blocked,
+        openBugs: slice.storyBug.bugOpen,
+        cycles: slice.cycles.length,
+        traceabilityAreas: slice.traceability.length,
+      }));
     default:
       return { error: `Unknown tool: ${name}` };
   }
@@ -48,5 +61,6 @@ export function summarizeForPrompt(payload: DashboardPayload): string {
     uat: payload.uat ? { total: payload.uat.total, open: payload.uat.open, closed: payload.uat.closed } : null,
     testerCount: payload.testers.length,
     cycleCount: payload.cycles.length,
+    byProject: payload.byProject?.map((slice) => ({ project: slice.project, overview: slice.overview, storyBug: slice.storyBug, cycleCount: slice.cycles.length })),
   });
 }

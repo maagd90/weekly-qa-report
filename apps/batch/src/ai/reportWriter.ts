@@ -54,6 +54,7 @@ function reportPrompt(reportType: ReportType, filter: FilterParams, metricsJson:
     'Content rules:',
     '- Use only numbers and facts present in the verified metrics JSON.',
     '- Cover execution progress, pass/fail/block status, cycle health, defect position, ownership/risk concentration, traceability, and UAT only when those metrics exist.',
+    '- When get_project_comparison is present, compare the registered projects and keep project-specific risks attributed to the correct project.',
     '- Explain what the metrics mean for sprint health and release readiness; do not only restate numbers.',
     '- Highlight risks only when supported by failed, blocked, open, at-risk, low-coverage, or pending metrics.',
     '- For missing areas, write Not available and state which data is missing.',

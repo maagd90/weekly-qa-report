@@ -8,6 +8,7 @@ import { StackedMonthChart } from './StackedMonthChart';
 import { HorizBar, SegBar, testerSegSegments } from './SegBar';
 import { AiReportUatSection } from './AiReportUatSection';
 import { TestersPerformanceSection } from './TestersPerformanceSection';
+import { projectDisplayName } from '../../lib/projectDisplay';
 
 interface AiReportChartsProps {
   dashboard: DashboardPayload;
@@ -40,6 +41,12 @@ export function AiReportCharts({ dashboard, kpiStyle, reportType }: AiReportChar
 
   return (
     <div className="flex flex-col gap-6">
+      {dashboard.scope.project === 'all' && Boolean(dashboard.byProject?.length) && (
+        <div className="pdf-section border border-qa-border bg-white p-5">
+          <div className="font-mono-qa text-[10px] tracking-wider uppercase text-qa-muted-light mb-3">Project Comparison</div>
+          <div className="overflow-x-auto"><table className="w-full min-w-[720px] text-[12.5px] border-collapse"><thead><tr className="border-b border-qa-border text-left font-mono-qa text-[10px] uppercase text-qa-muted-light"><th className="py-2 pr-3">Project</th><th className="py-2 pr-3 text-right">Cases</th><th className="py-2 pr-3 text-right">Executed</th><th className="py-2 pr-3 text-right">Pass %</th><th className="py-2 pr-3 text-right">Open bugs</th><th className="py-2 pr-3 text-right">Blocked</th><th className="py-2 text-right">Cycles</th></tr></thead><tbody>{dashboard.byProject!.map((slice) => <tr key={slice.project} className="border-b border-[#f3f0e8] last:border-b-0"><td className="py-2 pr-3 font-semibold">{projectDisplayName(slice.project)}</td><td className="py-2 pr-3 text-right font-mono-qa">{fmt(slice.overview.totalCases)}</td><td className="py-2 pr-3 text-right font-mono-qa">{fmt(slice.overview.executed)}</td><td className="py-2 pr-3 text-right font-mono-qa" style={{ color: passRateColor(slice.overview.passRate) }}>{slice.overview.passRate}%</td><td className="py-2 pr-3 text-right font-mono-qa">{slice.storyBug.bugOpen}</td><td className="py-2 pr-3 text-right font-mono-qa">{slice.overview.blocked}</td><td className="py-2 text-right font-mono-qa">{slice.cycles.length}</td></tr>)}</tbody></table></div>
+        </div>
+      )}
       {showOverview && (
         <div className="pdf-section flex flex-col gap-5">
           <QaKpiGrid cols={5}>

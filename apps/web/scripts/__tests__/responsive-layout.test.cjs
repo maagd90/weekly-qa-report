@@ -122,7 +122,7 @@ hasAll('src/pages/AiReportPage.tsx', [
   'Generate Report',
   'No report yet',
 ]);
-hasNone('src/pages/AiReportPage.tsx', ['Generate AI report', 'No AI report yet']);
+hasNone('src/pages/AiReportPage.tsx', ['Generate AI report', 'No AI report yet', 'setReportProject', 'projectOptions']);
 
 hasAll('src/App.tsx', [
   'showRuntimeSearch',
@@ -134,9 +134,9 @@ hasAll('src/App.tsx', [
   'batchApi.getDashboard(vars.params)',
   'batchApi.getUploadedIssueDashboard',
   'batchApi.searchDashboardByDates(vars.params)',
-  'project.capabilities.vendorPortal',
   'selectedProjectRecord?.capabilities.wonderMilesExport',
   'selectedProjectRecord?.capabilities.vendorPortal',
+  "filters.project !== 'all'",
   'projectRequestSequence.current === 0',
 ]);
 
@@ -144,6 +144,8 @@ hasAll('src/pages/TestersPage.tsx', [
   'qualityAssuranceSearch',
   'searchText.toLowerCase()',
   'Search updates this page instantly',
+  'Quality Assurance Performance by Project',
+  'By Project',
 ]);
 
 hasAll('src/components/qa/TestersPerformanceSection.tsx', [
@@ -155,12 +157,26 @@ hasAll('src/components/qa/TestersPerformanceSection.tsx', [
 hasAll('src/pages/CyclesPage.tsx', [
   'searchQuery.trim().toLowerCase()',
   'filters loaded cycle names and keys instantly',
+  'Test Cycle Summary by Project',
+  "`${c.project || ''}:${c.key}`",
 ]);
 
 hasAll('src/pages/TraceabilityPage.tsx', [
   'searchQuery.trim().toLowerCase()',
   'Search filters these rows instantly',
+  'Requirements Traceability by Project',
+  'projectDisplayName(w.project)',
 ]);
+
+hasAll('src/pages/ImportStatusPage.tsx', [
+  'qa-import-project',
+  "selectedProject === 'all' ? importProjectKey : selectedProject",
+  'the masthead remains All Projects',
+  'setImportProjectKey(event.target.value)',
+]);
+
+hasAll('src/components/qa/AiReportCharts.tsx', ['Project Comparison', 'dashboard.byProject!.map']);
+hasAll('src/components/qa/ReportPrintContent.tsx', ['Portfolio Project Comparison', '<ProjectComparison dashboard={dashboard} />']);
 
 hasAll('src/pages/WonderMilesExportPage.tsx', [
   'Wonder Miles Export Data',
@@ -247,13 +263,12 @@ hasAll('src/pages/ImportStatusPage.tsx', [
   'Promise.all(selectedFiles.map',
   'multiple className="hidden"',
   'handleFiles(e.dataTransfer.files)',
-  'All Projects — import disabled',
-  'Import is unavailable while All Projects is selected.',
-  'All Projects cannot own files or run an imported-data sync',
+  'File project',
+  'Choose which project files to manage; the masthead remains All Projects',
+  "disabled={selectedProject !== 'all'}",
   'uploads sync automatically',
   'batchApi.syncInputFiles(selected.id',
   'onImportedDataChanged?.(result.dashboard ?? null)',
-  'Live Jira/QMetry synchronization for all projects remains available in Settings.',
   '!selected ?',
 ]);
 hasNone('src/pages/ImportStatusPage.tsx', ['New project key', 'New project name', 'Create project']);

@@ -7,6 +7,7 @@ import { QaKpiCard, QaKpiGrid } from '../components/qa/QaKpiCard';
 import { HorizBar } from '../components/qa/SegBar';
 import { TraceBadge, QaTable, QaThead } from '../components/qa/QaBadge';
 import { PRIORITY_COLORS } from '../theme/qaTheme';
+import { projectDisplayName } from '../lib/projectDisplay';
 
 interface TraceabilityPageProps {
   dashboard: DashboardPayload;
@@ -97,15 +98,16 @@ function StatusTabs({ rows, value, onChange, label }: {
   );
 }
 
-function WorkItemsTable({ rows, emptyText }: { rows: WorkItem[]; emptyText: string }) {
+function WorkItemsTable({ rows, emptyText, showProject = false }: { rows: WorkItem[]; emptyText: string; showProject?: boolean }) {
   return (
     <>
       <QaTable>
-        <QaThead cols={[{ label: 'Key', className: 'pl-[22px]' }, { label: 'Sprint No.' }, { label: 'Summary' }, { label: 'Priority' }, { label: 'Status' }, { label: 'Updated' }, { label: 'Assignee', className: 'pr-[22px]' }]} />
+        <QaThead cols={[...(showProject ? [{ label: 'Project', className: 'pl-[22px]' }] : []), { label: 'Key', className: showProject ? '' : 'pl-[22px]' }, { label: 'Sprint No.' }, { label: 'Summary' }, { label: 'Priority' }, { label: 'Status' }, { label: 'Updated' }, { label: 'Assignee', className: 'pr-[22px]' }]} />
         <tbody>
           {rows.map((w) => (
-            <tr key={w.key} className="border-t border-[#f0ede5]">
-              <td className="py-2.5 pl-[22px] font-mono-qa text-[11.5px]" style={{ color: w.issueType === 'Bug' ? QA.FAIL : QA.accent }}>{w.key}</td>
+            <tr key={`${w.project}:${w.key}`} className="border-t border-[#f0ede5]">
+              {showProject && <td className="py-2.5 pl-[22px] font-semibold whitespace-nowrap">{projectDisplayName(w.project)}</td>}
+              <td className={`py-2.5 font-mono-qa text-[11.5px] ${showProject ? 'px-3' : 'pl-[22px]'}`} style={{ color: w.issueType === 'Bug' ? QA.FAIL : QA.accent }}>{w.key}</td>
               <td className="py-2.5 px-3 font-mono-qa text-[11px] text-qa-muted whitespace-nowrap">{w.sprint || 'Not mapped'}</td>
               <td className="py-2.5 px-3 max-w-[420px]"><div className="whitespace-normal break-words leading-relaxed">{w.summary || w.area}</div></td>
               <td className="py-2.5 px-3 text-[12px]">{w.priority}</td>
@@ -128,6 +130,7 @@ export function TraceabilityPage({ dashboard, kpiStyle, searchQuery }: Traceabil
   const [storyStatus, setStoryStatus] = useState<WorkItemStatusFilter>('all');
   const [bugStatus, setBugStatus] = useState<WorkItemStatusFilter>('all');
   const normalizedSearch = searchQuery.trim().toLowerCase();
+  const portfolio = dashboard.scope.project === 'all' ? (dashboard.byProject || []) : [];
 
   const allWorkItems = useMemo(() => {
     const rows = (((dashboard as unknown as { workItems?: WorkItem[] }).workItems) || []);
@@ -182,6 +185,18 @@ export function TraceabilityPage({ dashboard, kpiStyle, searchQuery }: Traceabil
       subtitle="Story and Bug rows are shown separately with pagination"
       intro="Every Story and Bug work item from JIRA is shown with sprint information when available. Search filters these rows instantly; change the dates and apply them only when you need a different reporting period."
     >
+      {portfolio.length > 0 && (
+        <QaSection title="Requirements Traceability by Project" subtitle="Portfolio comparison; expand the detailed Story and Bug tables below" noPadding className="mb-[22px]">
+          <QaTable>
+            <QaThead cols={[{ label: 'Project', className: 'pl-[22px]' }, { label: 'Requirements', align: 'right' }, { label: 'Done', align: 'right' }, { label: 'Open', align: 'right' }, { label: 'Bugs', align: 'right' }, { label: 'Open bugs', align: 'right' }, { label: 'Completion', align: 'right', className: 'pr-[22px]' }]} />
+            <tbody>{portfolio.map((slice) => {
+              const requirements = slice.storyBug.story;
+              const completion = requirements ? Math.round((slice.storyBug.storyDone / requirements) * 100) : 0;
+              return <tr key={slice.project} className="border-t border-[#f0ede5]"><td className="py-3 pl-[22px] font-semibold">{projectDisplayName(slice.project)}</td><td className="py-3 px-3 text-right font-mono-qa">{requirements}</td><td className="py-3 px-3 text-right font-mono-qa text-[#2f6a48]">{slice.storyBug.storyDone}</td><td className="py-3 px-3 text-right font-mono-qa">{slice.storyBug.storyOpen}</td><td className="py-3 px-3 text-right font-mono-qa">{slice.storyBug.bug}</td><td className="py-3 px-3 text-right font-mono-qa text-[#a13d2c]">{slice.storyBug.bugOpen}</td><td className="py-3 pr-[22px] text-right font-mono-qa" style={{ color: coverageColor(completion) }}>{completion}%</td></tr>;
+            })}</tbody>
+          </QaTable>
+        </QaSection>
+      )}
       <QaKpiGrid cols={4}>
         <QaKpiCard kpiStyle={kpiStyle} label="Story Requirements" value={fmt(storyBug.story)} sub={`${traceKpis.areas} feature areas`} color={QA.accent} />
         <QaKpiCard kpiStyle={kpiStyle} label="Verified" value={traceKpis.verified} sub="all stories done, no open bugs" color="#2F7D5A" />
@@ -222,7 +237,7 @@ export function TraceabilityPage({ dashboard, kpiStyle, searchQuery }: Traceabil
           </div>
         )}
       >
-        <WorkItemsTable rows={visibleStories} emptyText="No Story rows available for the current filters." />
+        <WorkItemsTable rows={visibleStories} emptyText="No Story rows available for the current filters." showProject={portfolio.length > 0} />
       </QaSection>
 
       <QaSection
@@ -237,7 +252,7 @@ export function TraceabilityPage({ dashboard, kpiStyle, searchQuery }: Traceabil
           </div>
         )}
       >
-        <WorkItemsTable rows={visibleBugs} emptyText="No Bug rows available for the current filters." />
+        <WorkItemsTable rows={visibleBugs} emptyText="No Bug rows available for the current filters." showProject={portfolio.length > 0} />
       </QaSection>
 
       <QaSection>

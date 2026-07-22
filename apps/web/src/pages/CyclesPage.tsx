@@ -12,6 +12,7 @@ import { CycleDetailDrawer } from '../components/qa/CycleDetailDrawer';
 import { WarningDetails } from '../components/common/WarningDetails';
 import { batchApi, getQmetryConnections } from '../lib/api';
 import { canonicalProjectOrUndefined } from '../lib/projectKeys';
+import { projectDisplayName } from '../lib/projectDisplay';
 
 interface CyclesPageProps {
   dashboard: DashboardPayload;
@@ -22,7 +23,7 @@ interface CyclesPageProps {
   searchQuery: string;
 }
 
-type CycleRow = DashboardPayload['cycles'][number] | CycleHealth;
+type CycleRow = (DashboardPayload['cycles'][number] | CycleHealth) & { project?: string };
 
 function qmetryConnectionIdForProject(project?: string): string | undefined {
   const selected = canonicalProjectOrUndefined(project);
@@ -62,6 +63,7 @@ export function CyclesPage({ dashboard, kpiStyle, selectedCycle, onSelectCycle, 
   const [loadAfterFolderChange, setLoadAfterFolderChange] = useState(false);
   const qmetryConnectionId = useMemo(() => qmetryConnectionIdForProject(filterParams.project), [filterParams.project]);
   const selectedProject = canonicalProjectOrUndefined(filterParams.project);
+  const portfolio = !selectedProject ? (dashboard.byProject || []) : [];
   const lastDashboardGeneration = useRef(dashboard.meta.generatedAt);
   const appliedStartDate = dashboard.scope.startDate;
   const appliedEndDate = dashboard.scope.endDate;
@@ -108,7 +110,11 @@ export function CyclesPage({ dashboard, kpiStyle, selectedCycle, onSelectCycle, 
     setLoadAfterFolderChange(Boolean(folderId));
   }
 
-  const sourceCycles: CycleRow[] = liveCyclesQuery.data?.source === 'qmetry-live' ? liveCyclesQuery.data.cycles : dashboard.cycles;
+  const sourceCycles: CycleRow[] = liveCyclesQuery.data?.source === 'qmetry-live'
+    ? liveCyclesQuery.data.cycles
+    : portfolio.length
+      ? portfolio.flatMap((slice) => slice.cycles.map((cycle) => ({ ...cycle, project: slice.project })))
+      : dashboard.cycles;
   const cycles = sourceCycles.filter((cycle) => !runtimeSearch || `${cycle.key} ${cycle.name}`.toLowerCase().includes(runtimeSearch));
   const overview = dashboard.overview;
   const notStarted = cycles.filter((c) => c.pass + c.fail + c.blocked + c.na === 0).length;
@@ -117,21 +123,23 @@ export function CyclesPage({ dashboard, kpiStyle, selectedCycle, onSelectCycle, 
   const executed = cycles.reduce((sum, c) => sum + c.pass + c.fail + c.blocked + c.na, 0);
   const coveragePct = totalCases ? Math.round((executed / totalCases) * 100) : (overview.totalCases ? Math.round((overview.executed / overview.totalCases) * 100) : 0);
   const shown = cycles.slice(0, selectedFolder ? 50 : 16);
-  const selected = cycles.find((c) => c.key === selectedCycle) ?? null;
+  const selected = cycles.find((c) => `${c.project || ''}:${c.key}` === selectedCycle || (!c.project && c.key === selectedCycle)) ?? null;
   const liveWarnings = liveCyclesQuery.data?.warnings || [];
 
   function pickCycle(key: string): void { onSelectCycle(key); }
 
   return (
     <>
-      <QaPageShell title="Test Cycle Health" subtitle="selected dates choose the cycles; result splits show current live QMetry progress">
-        <FolderPicker selectedFolder={selectedFolder} onSelectFolder={handleSelectFolder} connectionId={qmetryConnectionId} project={selectedProject} />
+      <QaPageShell title="Test Cycle Health" subtitle={portfolio.length ? 'portfolio cycles grouped by owning project' : 'selected dates choose the cycles; result splits show current live QMetry progress'}>
+        {portfolio.length === 0 && <FolderPicker selectedFolder={selectedFolder} onSelectFolder={handleSelectFolder} connectionId={qmetryConnectionId} project={selectedProject} />}
+        {portfolio.length > 0 && <QaSection title="Test Cycle Summary by Project" subtitle="Choose a specific project in the masthead before loading live QMetry folders" noPadding className="mb-4"><QaTable><QaThead cols={[{ label: 'Project', className: 'pl-[22px]' }, { label: 'Cycles', align: 'right' }, { label: 'Cases', align: 'right' }, { label: 'Executed', align: 'right' }, { label: 'Failed', align: 'right' }, { label: 'Blocked', align: 'right' }, { label: 'Coverage', align: 'right', className: 'pr-[22px]' }]} /><tbody>{portfolio.map((slice) => { const cases = slice.cycles.reduce((sum, cycle) => sum + cycle.total, 0); const done = slice.cycles.reduce((sum, cycle) => sum + cycle.pass + cycle.fail + cycle.blocked + cycle.na, 0); return <tr key={slice.project} className="border-t border-[#f0ede5]"><td className="py-3 pl-[22px] font-semibold">{projectDisplayName(slice.project)}</td><td className="py-3 px-3 text-right font-mono-qa">{slice.cycles.length}</td><td className="py-3 px-3 text-right font-mono-qa">{cases}</td><td className="py-3 px-3 text-right font-mono-qa">{done}</td><td className="py-3 px-3 text-right font-mono-qa text-[#a13d2c]">{slice.overview.failed}</td><td className="py-3 px-3 text-right font-mono-qa text-[#9a6a12]">{slice.overview.blocked}</td><td className="py-3 pr-[22px] text-right font-mono-qa">{cases ? Math.round((done / cases) * 100) : 0}%</td></tr>; })}</tbody></QaTable></QaSection>}
+        {portfolio.length === 0 &&
         <div className="mb-4 flex items-center gap-3 flex-wrap">
           <button type="button" onClick={() => liveCyclesQuery.refetch()} disabled={!selectedFolder || liveCyclesQuery.isFetching || Boolean(selectedProject && !qmetryConnectionId)} className="font-mono-qa text-[10px] px-3 py-1.5 border border-qa-border bg-white cursor-pointer disabled:opacity-50">
             {liveCyclesQuery.isFetching ? 'Searching...' : 'Search test cycles'}
           </button>
           <span className="font-mono-qa text-[10px] text-qa-muted-light">The search box filters loaded cycle names and keys instantly. Search test cycles refreshes the selected folder directly from QMetry.</span>
-        </div>
+        </div>}
         {selectedFolder && liveCyclesQuery.isLoading && <div className="mb-4 text-[12px] text-qa-muted-light">Loading cycles and execution results for selected folder...</div>}
         {selectedFolder && liveCyclesQuery.error && <div className="mb-4 text-[12px] text-[#a13d2c]">Could not load folder cycles: {(liveCyclesQuery.error as Error).message}</div>}
         {selectedFolder && liveCyclesQuery.data?.source === 'qmetry-live' && (
@@ -151,23 +159,24 @@ export function CyclesPage({ dashboard, kpiStyle, selectedCycle, onSelectCycle, 
         </QaKpiGrid>
         <QaSection title={selectedFolder ? 'Cycles in Selected Folder' : 'Cycles by Volume'} noPadding headerRight={<span className="font-mono-qa text-[10.5px] text-qa-muted-light">showing top {shown.length}</span>}>
           <QaTable>
-            <QaThead cols={[{ label: 'Cycle', className: 'pl-[22px]' }, { label: 'Status' }, { label: 'Result split', className: 'w-[170px]' }, { label: 'Pass %', align: 'right' }, { label: 'Coverage', align: 'right' }, { label: 'Cases', align: 'right', className: 'pr-[22px]' }]} />
+            <QaThead cols={[...(portfolio.length ? [{ label: 'Project', className: 'pl-[22px]' }] : []), { label: 'Cycle', className: portfolio.length ? '' : 'pl-[22px]' }, { label: 'Status' }, { label: 'Result split', className: 'w-[170px]' }, { label: 'Pass %', align: 'right' }, { label: 'Coverage', align: 'right' }, { label: 'Cases', align: 'right', className: 'pr-[22px]' }]} />
             <tbody>
               {shown.map((c) => { const exec = c.pass + c.fail + c.blocked + c.na; return (
                 <tr
-                  key={c.key}
+                  key={`${c.project || ''}:${c.key}`}
                   tabIndex={0}
                   role="button"
                   aria-label={`Open details for ${c.name}`}
                   className="border-t border-[#f0ede5] cursor-pointer hover:bg-[#faf8f2] focus-visible:bg-[#faf8f2]"
-                  onClick={() => pickCycle(c.key)}
+                  onClick={() => pickCycle(`${c.project || ''}:${c.key}`)}
                   onKeyDown={(event) => {
                     if (event.key !== 'Enter' && event.key !== ' ') return;
                     event.preventDefault();
-                    pickCycle(c.key);
+                    pickCycle(`${c.project || ''}:${c.key}`);
                   }}
                 >
-                  <td className="py-3 pl-[22px]"><div className="font-semibold max-w-[340px] truncate">{c.name}</div><div className="font-mono-qa text-[10px] text-qa-muted-light">{c.key}</div></td>
+                  {portfolio.length > 0 && <td className="py-3 pl-[22px] font-semibold whitespace-nowrap">{projectDisplayName(c.project || '')}</td>}
+                  <td className={`py-3 ${portfolio.length ? 'px-3' : 'pl-[22px]'}`}><div className="font-semibold max-w-[340px] truncate">{c.name}</div><div className="font-mono-qa text-[10px] text-qa-muted-light">{c.key}</div></td>
                   <td className="py-3 px-3"><CycleBadge status={c.status} /></td>
                   <td className="py-3 px-3"><SegBar segments={cycleSegSegments(c.pass, c.fail, c.blocked, c.ne, c.na, c.total)} height={11} /></td>
                   <td className="py-3 px-3 text-right font-mono-qa" style={{ color: exec ? passRateColor(c.passPct) : '#b3aea3' }}>{exec ? `${c.passPct}%` : '-'}</td>

@@ -88,6 +88,12 @@ function ProjectStatus({ dashboard }: { dashboard: DashboardPayload }) {
   return <table className="qa-business-table"><thead><tr><th>Area</th><th>Status</th></tr></thead><tbody>{rows.map((r) => <tr key={r.area}><td>{r.area}</td><td><StatusDot status={r.status} /></td></tr>)}</tbody></table>;
 }
 
+function ProjectComparison({ dashboard }: { dashboard: DashboardPayload }) {
+  const rows = dashboard.byProject || [];
+  if (!rows.length) return null;
+  return <table className="qa-business-table"><thead><tr><th>Project</th><th>Cases</th><th>Executed</th><th>Pass %</th><th>Open defects</th><th>Blocked</th><th>Cycles</th></tr></thead><tbody>{rows.map((slice) => <tr key={slice.project}><td>{projectDisplayName(slice.project)}</td><td className="qa-business-number">{slice.overview.totalCases}</td><td className="qa-business-number">{slice.overview.executed}</td><td className="qa-business-number">{slice.overview.passRate}%</td><td className="qa-business-number">{slice.storyBug.bugOpen}</td><td className="qa-business-number">{slice.overview.blocked}</td><td className="qa-business-number">{slice.cycles.length}</td></tr>)}</tbody></table>;
+}
+
 function formatReportDate(value: string): string {
   const d = new Date(`${value}T00:00:00`);
   if (Number.isNaN(d.getTime())) return value;
@@ -180,6 +186,8 @@ export function ReportPrintContent({ dashboard, reportType, narrative, startDate
           <p className="qa-business-stub-sub">of {dashboard.cycles.length} total</p>
         </div>
       </div>
+
+      {dashboard.scope.project === 'all' && Boolean(dashboard.byProject?.length) && <Section no={nextNo()} title="Portfolio Project Comparison"><ProjectComparison dashboard={dashboard} /></Section>}
 
       <div className="px-6 pb-6">
         <Section no={nextNo()} title="Objective">

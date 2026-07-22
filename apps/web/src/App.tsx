@@ -121,11 +121,7 @@ function AppContent() {
     },
   });
 
-  const showVendorPortalBugs = Boolean(
-    filters.project === 'all'
-      ? registeredProjects.some((project) => project.capabilities.vendorPortal)
-      : selectedProjectRecord?.capabilities.vendorPortal,
-  );
+  const showVendorPortalBugs = filters.project !== 'all' && Boolean(selectedProjectRecord?.capabilities.vendorPortal);
   const showWonderMilesExport = Boolean(wonderMilesProject);
   const tabs = buildTabs(showVendorPortalBugs, showWonderMilesExport);
   const currentTab = tabs.find((t) => t.id === activeTab) ?? tabs[0];
@@ -177,7 +173,12 @@ function AppContent() {
     // because baseDashboard intentionally takes precedence over query data.
     dateRequestSequence.current += 1;
     applyDateRange.reset();
-    setBaseDashboard(freshDashboard);
+    if (activeProjectRef.current === 'all') {
+      projectRequestSequence.current += 1;
+      projectBaseFetch.mutate({ project: 'all', sequence: projectRequestSequence.current });
+    } else {
+      setBaseDashboard(freshDashboard);
+    }
     setFilteredByTab({});
   };
 
@@ -231,7 +232,7 @@ function AppContent() {
         {display && activeTab === 'trace' && <TraceabilityPage dashboard={display} kpiStyle={ui.kpiStyle} searchQuery={filters.search} />}
         {display && activeTab === 'uat' && showVendorPortalBugs && <UatPage dashboard={display} kpiStyle={ui.kpiStyle} searchQuery={filters.search} />}
         {display && activeTab === 'wonder-miles' && showWonderMilesExport && <WonderMilesExportPage dashboard={display} kpiStyle={ui.kpiStyle} searchQuery={filters.search} />}
-        {activeTab === 'import' && <ImportStatusPage selectedProject={filters.project} projects={registeredProjects} onProjectChange={handleProjectChange} onImportedDataChanged={handleImportedDataChanged} />}
+        {activeTab === 'import' && <ImportStatusPage selectedProject={filters.project} projects={registeredProjects} onImportedDataChanged={handleImportedDataChanged} />}
         {activeTab === 'ai' && <AiReportPage dashboard={display} kpiStyle={ui.kpiStyle} project={filters.project} />}
         {activeTab === 'settings' && <SettingsPage selectedProject={filters.project} onProjectChange={handleProjectChange} onLiveDataChanged={handleImportedDataChanged} />}
       </div>

@@ -220,6 +220,9 @@ export interface DashboardByProject {
   defectBacklog: DashboardDefectBacklog;
   cycles: DashboardCycleItem[];
   testers: DashboardTesterItem[];
+  qualityAssuranceSearch?: DashboardQualityAssuranceSearchItem[];
+  traceability: DashboardTraceabilityItem[];
+  workItems: DashboardWorkItem[];
   uat: DashboardUatPayload | null;
 }
 

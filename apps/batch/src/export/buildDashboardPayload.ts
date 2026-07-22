@@ -283,7 +283,18 @@ export function buildDashboardPayload(
   const isAllProjects = !normalizedProject;
   const byProject = includeByProject && isAllProjects && projects.length > 1 ? projects.map((project) => {
     const slice = buildDashboardPayload(dataset, { ...params, project }, { includeByProject: false });
-    return { project, overview: slice.overview, storyBug: slice.storyBug, defectBacklog: slice.defectBacklog, cycles: slice.cycles, testers: slice.testers, uat: slice.uat };
+    return {
+      project,
+      overview: slice.overview,
+      storyBug: slice.storyBug,
+      defectBacklog: slice.defectBacklog,
+      cycles: slice.cycles,
+      testers: slice.testers,
+      qualityAssuranceSearch: slice.qualityAssuranceSearch,
+      traceability: slice.traceability,
+      workItems: slice.workItems || [],
+      uat: slice.uat,
+    };
   }) : undefined;
 
   return {
