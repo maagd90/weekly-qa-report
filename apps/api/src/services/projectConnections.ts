@@ -208,6 +208,29 @@ export function validateProjectConnections(
   return { jira, qmetry };
 }
 
+/**
+ * Limits a validated browser connection collection to one logical dashboard
+ * project. All Projects intentionally retains the complete collection.
+ *
+ * Connection ownership is matched through workspaceProjectKey because Jira and
+ * QMetry source keys may differ from the logical dashboard key (for example,
+ * DTTRV can own DP). validateProjectConnections always normalizes this field.
+ */
+export function scopeProjectConnections(
+  connections: UserConnections,
+  project?: string,
+): UserConnections {
+  const selected = canonicalProjectKey(project);
+  if (!selected || selected === 'all') return connections;
+  const ownsSelectedProject = (connection: ProjectConnection): boolean => (
+    canonicalProjectKey(connection.workspaceProjectKey) === selected
+  );
+  return {
+    jira: connections.jira.filter(ownsSelectedProject),
+    qmetry: connections.qmetry.filter(ownsSelectedProject),
+  };
+}
+
 /** Consolidates external source keys into the owning dashboard project's primary key. */
 export function normalizeDatasetProjectOwnership(dataset: Dataset, projects: ProjectRecord[]): Dataset {
   const owners = new Map(projects.flatMap((project) => projectSourceKeys(project).map((key) => [key, project.key] as const)));

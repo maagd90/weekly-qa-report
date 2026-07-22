@@ -15,6 +15,8 @@ export interface BuildDatasetOptions {
   apiScope?: ApiFetchScope;
   liveSync?: boolean;
   includeFiles?: boolean;
+  /** When false, an explicitly supplied empty connection list must not fall back to server config. */
+  useConfiguredFallback?: boolean;
 }
 
 export interface QmetryDateScopeResult {
@@ -105,8 +107,8 @@ async function buildJiraConnectionDataset(configDir: string, connections?: UserC
   const apiScope = cleanApiScope(options?.apiScope);
   const selected = canonicalProjectOrUndefined(apiScope?.project);
   if (!liveSyncEnabled(options)) return parts;
-  if (connections?.jira?.length) {
-    for (const conn of connections.jira) {
+  if (connections?.jira?.length || options?.useConfiguredFallback === false) {
+    for (const conn of connections?.jira || []) {
       if (conn.enabled === false || conn.syncIssues === false) continue;
       if (!jiraProjectMatches(conn.projectKeys, apiScope, conn.workspaceProjectKey)) {
         parts.push(skippedLiveDataset('jira', conn.name || 'JIRA', `JIRA connection skipped because selected project ${selected} does not match configured projects ${projectListLabel(conn.projectKeys)}.`));
@@ -146,8 +148,8 @@ async function buildQmetryConnectionDataset(configDir: string, connections?: Use
   const apiScope = cleanApiScope(options?.apiScope);
   const selected = canonicalProjectOrUndefined(apiScope?.project);
   if (!liveSyncEnabled(options)) return parts;
-  if (connections?.qmetry?.length) {
-    for (const conn of connections.qmetry) {
+  if (connections?.qmetry?.length || options?.useConfiguredFallback === false) {
+    for (const conn of connections?.qmetry || []) {
       if (conn.enabled === false || conn.syncExecutions === false) continue;
       if (!qmetryProjectMatches(conn.projectKey, apiScope, conn.workspaceProjectKey)) {
         parts.push(skippedLiveDataset('qmetry', conn.name || 'QMetry', `QMetry connection skipped because selected project ${selected} does not match configured project ${canonicalProjectKey(conn.projectKey) || conn.projectKey || 'none'}.`));

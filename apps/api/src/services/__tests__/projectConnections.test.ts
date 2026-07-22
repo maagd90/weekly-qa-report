@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import type { JiraConnectionInput, QmetryConnectionInput, UserConnections } from 'qa-dashboard-batch';
 import { emptyDataset } from 'qa-dashboard-batch';
 import type { ProjectRecord } from '../projectImports';
-import { normalizeDatasetProjectOwnership, planConnectionProjectMigration, validateProjectConnections } from '../projectConnections';
+import { normalizeDatasetProjectOwnership, planConnectionProjectMigration, scopeProjectConnections, validateProjectConnections } from '../projectConnections';
 
 const projects: ProjectRecord[] = [
   { id: 'project-a', key: 'AAA', sourceKeys: ['AAA'], name: 'Project A', createdAt: '2026-07-21T00:00:00.000Z', updatedAt: '2026-07-21T00:00:00.000Z' },
@@ -30,6 +30,13 @@ assert.equal(valid.jira[0].jql, 'project = AAA AND status != Closed ORDER BY upd
 assert.equal(valid.jira[1].jql, 'project in (BBB, BBC) AND issuetype in (Story, Bug)');
 assert.deepEqual(valid.qmetry.map((connection) => connection.projectKey), ['AAA', 'BBC']);
 assert.deepEqual(valid.qmetry.map((connection) => connection.workspaceProjectKey), ['AAA', 'BBB']);
+
+const scopedToB = scopeProjectConnections(valid, 'BBB');
+assert.deepEqual(scopedToB.jira.map((connection) => connection.id), ['jira-b']);
+assert.deepEqual(scopedToB.qmetry.map((connection) => connection.id), ['qmetry-b']);
+assert.equal(scopedToB.jira[0].workspaceProjectKey, 'BBB');
+assert.deepEqual(scopeProjectConnections(valid, 'all'), valid);
+assert.deepEqual(scopeProjectConnections(valid), valid);
 
 expectValidationError(
   { jira: [jira('jira-a', 'project-a', 'AAA'), jira('jira-a-2', 'project-a', 'AAA')], qmetry: [] },

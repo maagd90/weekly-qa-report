@@ -24,6 +24,7 @@ import {
   searchQmetryTestCycles,
   emptyConnections,
   emptyDataset,
+  applyFilters,
   isUsableJiraConnection,
   isUsableQmetryConnection,
   canonicalProjectKey,
@@ -55,6 +56,7 @@ import {
   normalizeDatasetProjectOwnership,
   planConnectionProjectMigration,
   ProjectConnectionValidationError,
+  scopeProjectConnections,
   validateProjectConnections,
 } from '../services/projectConnections';
 
@@ -156,6 +158,11 @@ function rowCounts(dataset: Dataset): { executions: number; issues: number; uat:
   return { executions: dataset.executions.length, issues: dataset.issues.length, uat: dataset.uat.length };
 }
 
+function filteredRowCounts(dataset: Dataset, filter: Partial<FilterParams>): { executions: number; issues: number; uat: number } {
+  const filtered = applyFilters(dataset, filterFromBody(filter));
+  return { executions: filtered.executions.length, issues: filtered.issues.length, uat: filtered.uat.length };
+}
+
 function totalRows(dataset: Dataset): number {
   const counts = rowCounts(dataset);
   return counts.executions + counts.issues + counts.uat;
@@ -185,8 +192,8 @@ function filterFromBody(body: Partial<FilterParams>): FilterParams {
   return { startDate: body.startDate, endDate: body.endDate, search: body.search, result: body.result || 'all', project: cleanProject(body.project) };
 }
 
-function buildOptions(mode: BuildMode, apiScope?: ApiFetchScope) {
-  return { apiScope: mode === 'live' ? cleanApiScope(apiScope) : undefined, liveSync: mode === 'live', includeFiles: mode !== 'live' };
+function buildOptions(mode: BuildMode, apiScope?: ApiFetchScope, useConfiguredFallback = true) {
+  return { apiScope: mode === 'live' ? cleanApiScope(apiScope) : undefined, liveSync: mode === 'live', includeFiles: mode !== 'live', useConfiguredFallback };
 }
 
 function hasMetrics(payload: DashboardPayload): boolean {
@@ -278,8 +285,10 @@ function mergedSourceDataset(updatedMode?: BuildMode, updatedDataset?: Dataset):
 
 async function refreshGeneratedOutputs(req: Request, connections: UserConnections, apiScope?: ApiFetchScope, dashboardFilter: Partial<FilterParams> = {}, mode: BuildMode = 'live') {
   return serializeOutputs(async () => {
-  const options = buildOptions(mode, apiScope);
-  const sourceConnections = mode === 'live' ? connections : emptyConnections();
+  const options = buildOptions(mode, apiScope, !req.header('x-user-connections'));
+  const sourceConnections = mode === 'live'
+    ? scopeProjectConnections(connections, apiScope?.project)
+    : emptyConnections();
   const fingerprint = computeFingerprint(INPUT_DIR, CONFIG_DIR, sourceConnections, options);
   const builtSourceDataset = await buildDataset(INPUT_DIR, CONFIG_DIR, sourceConnections, options);
   const freshSourceDataset = mode === 'live'
@@ -289,7 +298,7 @@ async function refreshGeneratedOutputs(req: Request, connections: UserConnection
   const sourceCacheFile = cacheFileForMode(mode);
   if (sourceCacheFile) saveDatasetFile(sourceCacheFile, sourceDataset);
   const dataset = mergedSourceDataset(mode, sourceDataset);
-  const counts = rowCounts(dataset);
+  const counts = mode === 'live' ? filteredRowCounts(sourceDataset, dashboardFilter) : rowCounts(dataset);
   const removed = clearOutputFiles(REPORT_OUTPUT_FILES);
   if (totalRows(dataset) === 0) {
     removed.push(...clearOutputFiles(['raw-dataset.json', 'dataset-fingerprint.txt', 'dashboard-data.json']));
@@ -657,9 +666,15 @@ router.post('/integrations/test', async (req: Request, res: Response) => {
   const connections = resolveConnections(req);
   const filter = filterFromBody(req.body as Partial<FilterParams>);
   const apiScope = apiScopeFromFilter(filter);
-  log(req, 'POST /integrations/test:start', { filter, apiScope, connections: connectionSummary(connections) });
+  const scopedConnections = scopeProjectConnections(connections, apiScope?.project);
+  log(req, 'POST /integrations/test:start', { filter, apiScope, connections: connectionSummary(scopedConnections) });
   try {
-    const dataset = await buildDataset(INPUT_DIR, CONFIG_DIR, connections, { liveSync: true, apiScope, includeFiles: false });
+    const dataset = await buildDataset(INPUT_DIR, CONFIG_DIR, scopedConnections, {
+      liveSync: true,
+      apiScope,
+      includeFiles: false,
+      useConfiguredFallback: !req.header('x-user-connections'),
+    });
     log(req, 'POST /integrations/test:done', { executions: dataset.executions.length, issues: dataset.issues.length, uat: dataset.uat.length, warnings: dataset.meta.warnings });
     res.json({ ok: true, executions: dataset.executions.length, issues: dataset.issues.length, uat: dataset.uat.length, warnings: dataset.meta.warnings });
   } catch (err) {
