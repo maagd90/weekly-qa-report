@@ -117,6 +117,11 @@ export function emptyDataset(): Dataset {
 
 export type ReportType = 'full' | 'executive' | 'defects' | 'cycles' | 'testers';
 
+export interface ProjectCapabilities {
+  vendorPortal: boolean;
+  wonderMilesExport: boolean;
+}
+
 export interface FilterParams {
   startDate?: string;
   endDate?: string;
@@ -141,6 +146,8 @@ export interface GenerateParams extends FilterParams {
   connections?: import('./connections').UserConnections;
   /** Optional canonical source supplied by the API after project-scoped imports are reconciled. */
   sourceDataset?: Dataset;
+  /** Authoritative project feature configuration supplied by the API project registry. */
+  capabilitiesByProject?: Record<string, ProjectCapabilities>;
 }
 
 export function resultColor(code: string): string {
@@ -227,7 +234,16 @@ export interface DashboardByProject {
 }
 
 export interface DashboardPayload {
-  scope: { startDate?: string; endDate?: string; search: string; result: string; project: string; projects: string[] };
+  scope: {
+    startDate?: string;
+    endDate?: string;
+    search: string;
+    result: string;
+    project: string;
+    projects: string[];
+    /** Optional for compatibility with dashboard snapshots generated before project capabilities were embedded. */
+    capabilitiesByProject?: Record<string, ProjectCapabilities>;
+  };
   overview: DashboardOverview;
   testers: DashboardTesterItem[];
   /** Optional runtime-search metadata. Kept separate from tester metrics so AI/report tools do not receive a large search-only field. */

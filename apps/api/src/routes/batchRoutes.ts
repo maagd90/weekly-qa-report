@@ -307,6 +307,13 @@ function withRegisteredPortfolioProjects(dataset: Dataset, project?: string): Da
   };
 }
 
+function capabilitiesByProject(): NonNullable<import('qa-dashboard-batch').DashboardPayload['scope']['capabilitiesByProject']> {
+  return Object.fromEntries(projectImports.listProjects().map((project) => [
+    project.key,
+    project.capabilities || { vendorPortal: false, wonderMilesExport: false },
+  ]));
+}
+
 async function refreshGeneratedOutputs(req: Request, connections: UserConnections, apiScope?: ApiFetchScope, dashboardFilter: Partial<FilterParams> = {}, mode: BuildMode = 'live') {
   return serializeOutputs(async () => {
   const options = buildOptions(mode, apiScope, !req.header('x-user-connections'));
@@ -525,7 +532,7 @@ router.post('/generate', async (req: Request, res: Response) => {
     const filter = filterFromBody({ startDate, endDate, search, result: (result as FilterParams['result']) || 'all', project: clean });
     if (hasLiveSources(connections)) await refreshGeneratedOutputs(req, connections, apiScopeFromFilter(filter), filter, 'live');
     const sourceDataset = withRegisteredPortfolioProjects(mergedSourceDataset(), clean);
-    const resultPayload = await runGenerate({ startDate, endDate, reportType: type, search, result: (result as 'all') || 'all', project: clean, inputDir: INPUT_DIR, outputDir: OUTPUT_DIR, configDir: CONFIG_DIR, apiKey: key.key || undefined, llm, connections, sourceDataset });
+    const resultPayload = await runGenerate({ startDate, endDate, reportType: type, search, result: (result as 'all') || 'all', project: clean, inputDir: INPUT_DIR, outputDir: OUTPUT_DIR, configDir: CONFIG_DIR, apiKey: key.key || undefined, llm, connections, sourceDataset, capabilitiesByProject: capabilitiesByProject() });
     log(req, 'POST /generate:done', { ok: resultPayload.ok, rowCounts: resultPayload.rowCounts, warnings: resultPayload.warnings, error: resultPayload.error, paths: resultPayload.paths });
     return res.status(200).json({ ...resultPayload, requestId: requestId(req) });
   } catch (err) {

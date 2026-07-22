@@ -10,6 +10,7 @@ import type {
   JiraConnectionInput,
   QmetryConnectionInput,
   UserConnections,
+  ProjectCapabilities as DashboardProjectCapabilities,
 } from 'qa-dashboard-batch';
 import {
   isBlankJiraConnection,
@@ -41,7 +42,7 @@ const REPORT_BRANDING_STORAGE = 'qa_dashboard_report_branding';
 type RequestMeta = { requestId: string; startedAt: number };
 
 export interface ReportBranding { logoUrl?: string; logoAlt?: string; title?: string; subtitle?: string }
-export interface ProjectCapabilities { vendorPortal: boolean; wonderMilesExport: boolean }
+export type ProjectCapabilities = DashboardProjectCapabilities;
 export interface ProjectRecord { id: string; key: string; sourceKeys: string[]; name: string; capabilities: ProjectCapabilities; createdAt: string; updatedAt: string; fileCount?: number }
 export interface ProjectDeletionResult { project: ProjectRecord; filesDeleted: number; syncReportsDeleted: number }
 export interface ConnectionMigrationResult { projects: ProjectRecord[]; assignments: Array<{ type: 'jira' | 'qmetry'; connectionId: string; projectId: string; projectKey: string }> }

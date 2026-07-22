@@ -7,7 +7,7 @@ import { hasDashboardMetrics, noMetricsForScopeMessage } from './export/reportMe
 import { generateReportFromDataset, resolveReportLlmConfig } from './ai/reportWriter';
 import { LLM_PROVIDER_LABELS, envKeyForProvider, providerRequiresApiKey } from './ai/llmProviders';
 import { discoverInputFiles } from './parse/dispatcher';
-import { canonicalProjectOrUndefined } from './projects/projectKey';
+import { canonicalProjectOrUndefined, normalizeProjectPrimaryKey } from './projects/projectKey';
 import { validIsoDate } from './filters/scopeMatching';
 import { ensureRuntimeDirectories, resolveRuntimePaths } from './runtime/runtimePaths';
 import { readJsonFile, writeJsonFile } from './utils/jsonFile';
@@ -196,6 +196,14 @@ export async function runGenerate(params: GenerateParams): Promise<GenerateResul
   saveReportDataset(rawPath, fingerprintPath, dataset, fingerprint);
 
   const payload = buildDashboardPayload(dataset, filterParams);
+  if (params.capabilitiesByProject) {
+    payload.scope.capabilitiesByProject = Object.fromEntries(
+      Object.entries(params.capabilitiesByProject).map(([key, capabilities]) => [
+        normalizeProjectPrimaryKey(key) || key,
+        { ...capabilities },
+      ]),
+    );
+  }
   const counts = reportRowCounts(payload);
 
   if (!hasDashboardMetrics(payload)) {

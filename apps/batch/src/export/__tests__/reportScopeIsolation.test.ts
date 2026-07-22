@@ -44,6 +44,10 @@ async function main(): Promise<void> {
       inputDir,
       outputDir,
       configDir,
+      capabilitiesByProject: {
+        DLM: { vendorPortal: true, wonderMilesExport: false },
+        WONDERMILES: { vendorPortal: false, wonderMilesExport: true },
+      },
     });
 
     assert.equal(result.ok, true);
@@ -60,7 +64,18 @@ async function main(): Promise<void> {
     assert.equal(fs.readFileSync(path.join(outputDir, 'dataset-fingerprint.txt'), 'utf8'), globalFingerprint, 'report generation must not overwrite the global dataset fingerprint');
 
     const reportDashboard = JSON.parse(fs.readFileSync(path.join(outputDir, 'report-dashboard.json'), 'utf8')) as { scope: { startDate?: string; endDate?: string; project?: string } };
-    assert.deepEqual(reportDashboard.scope, { startDate: '2026-07-01', endDate: '2026-07-14', search: '', result: 'all', project: 'DLM', projects: ['DLM'] });
+    assert.deepEqual(reportDashboard.scope, {
+      startDate: '2026-07-01',
+      endDate: '2026-07-14',
+      search: '',
+      result: 'all',
+      project: 'DLM',
+      projects: ['DLM'],
+      capabilitiesByProject: {
+        DLM: { vendorPortal: true, wonderMilesExport: false },
+        WONDERMILES: { vendorPortal: false, wonderMilesExport: true },
+      },
+    });
     console.log('report scope isolation tests passed');
   } finally {
     fs.rmSync(root, { recursive: true, force: true });

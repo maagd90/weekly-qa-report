@@ -7,7 +7,8 @@ import { projectDisplayName } from '../../lib/projectDisplay';
 import { ResultDonut } from './ResultDonut';
 import { StackedMonthChart } from './StackedMonthChart';
 import { VendorPortalPhaseChart } from './VendorPortalPhaseChart';
-import { hasWonderMilesExportData } from './AiReportWonderMilesSection';
+import { hasWonderMilesExportData, uploadedRows, wonderMilesEmptyMessage } from './AiReportWonderMilesSection';
+import { scopeHasReportCapability } from '../../lib/reportCapabilities';
 
 interface ReportPrintContentProps {
   dashboard: DashboardPayload;
@@ -48,15 +49,13 @@ function QualityAssuranceRows({ dashboard }: { dashboard: DashboardPayload }) {
   return <table className="qa-business-table"><thead><tr><th>Quality Assurance member</th><th>Executed</th><th>Passed</th><th>Failed</th><th>Blocked</th><th>N/A</th><th>Pass %</th></tr></thead><tbody>{dashboard.testers.map((member) => <tr key={member.name}><td>{member.name}</td><td className="qa-business-number">{member.executed}</td><td className="qa-business-number">{member.pass}</td><td className="qa-business-number">{member.fail}</td><td className="qa-business-number">{member.blocked}</td><td className="qa-business-number">{member.na}</td><td className="qa-business-number">{member.passPct}%</td></tr>)}</tbody></table>;
 }
 
-function StatTable({ dashboard }: { dashboard: DashboardPayload }) {
-  const totalDefects = dashboard.storyBug.bug;
-  const closed = dashboard.storyBug.bugDone;
-  const open = dashboard.storyBug.bugOpen;
-  const inProgress = Math.max(0, totalDefects - closed - open);
+function VendorPortalStatTable({ dashboard }: { dashboard: DashboardPayload }) {
+  const uat = dashboard.uat;
+  if (!uat?.total) return <p>No Vendor Portal bugs fall within the selected date range.</p>;
   return (
     <table className="qa-business-table qa-business-stat">
-      <thead><tr><th>Closed / Done</th><th>Fix in Progress</th><th>Open in Period</th><th>Total Defects</th></tr></thead>
-      <tbody><tr><td className="qa-business-green">{closed}</td><td className="qa-business-amber">{inProgress}</td><td className="qa-business-red">{open}</td><td className="qa-business-red">{totalDefects}</td></tr></tbody>
+      <thead><tr><th>Closed / Done</th><th>Open in Period</th><th>Total Reported</th><th>Closure Rate</th></tr></thead>
+      <tbody><tr><td className="qa-business-green">{uat.closed}</td><td className="qa-business-red">{uat.open}</td><td>{uat.total}</td><td>{uat.closureRate}%</td></tr></tbody>
     </table>
   );
 }
@@ -96,7 +95,7 @@ function ProjectComparison({ dashboard }: { dashboard: DashboardPayload }) {
 }
 
 function WonderMilesRows({ dashboard }: { dashboard: DashboardPayload }) {
-  const rows = (dashboard.workItems || []).filter((row) => Boolean(row.sourceFile) && /^(DP|DTTRV|WONDERMILES)$/i.test(row.project || ''));
+  const rows = uploadedRows(dashboard);
   const stories = rows.filter((row) => row.issueType === 'Story').length;
   const bugs = rows.filter((row) => row.issueType === 'Bug').length;
   const openBugs = rows.filter((row) => row.issueType === 'Bug' && row.status === 'open').length;
@@ -139,8 +138,10 @@ export function ReportPrintContent({ dashboard, reportType, narrative, startDate
   const showCycles = fullReport || cycleReport;
   const showStatus = fullReport || executiveReport;
   const showPlan = fullReport || executiveReport;
+  const showVendorPortal = showDefects && scopeHasReportCapability(dashboard, 'vendorPortal');
+  const showWonderMiles = showDefects && scopeHasReportCapability(dashboard, 'wonderMilesExport');
   const vendorPortalPhases = dashboard.uat?.byReportedPhase || [];
-  const showVendorPortalPhaseChart = showDefects && vendorPortalPhases.some((item) => item.count > 0);
+  const showVendorPortalPhaseChart = showVendorPortal && vendorPortalPhases.some((item) => item.count > 0);
 
   let sectionNo = 1;
   const nextNo = () => sectionNo++;
@@ -203,11 +204,11 @@ export function ReportPrintContent({ dashboard, reportType, narrative, startDate
           <p>The objective of this sprint report is to summarize QA validation progress, execution health, defect verification, open risks, and upcoming validation focus for the selected reporting window.</p>
           <p>The report is generated from verified dashboard data only and is intended for business and delivery stakeholders.</p>
           <div className="qa-business-subtitle">Validation Focused On:</div>
-          <div className="qa-business-panel"><ul><li>Test execution and pass/fail validation</li><li>JIRA defect and story status review</li><li>Period defect activity and priority analysis</li><li>Cycle health, coverage, and at-risk areas</li><li>Vendor Portal bug summary and closure tracking</li></ul></div>
+          <div className="qa-business-panel"><ul><li>Test execution and pass/fail validation</li><li>JIRA defect and story status review</li><li>Period defect activity and priority analysis</li><li>Cycle health, coverage, and at-risk areas</li>{showVendorPortal && <li>Vendor Portal bug summary and closure tracking</li>}{showWonderMiles && <li>Wonder Miles uploaded Story and Bug export review</li>}</ul></div>
         </Section>
 
-        {showDefects && <Section no={nextNo()} title="Vendor Portal Bug Verification Summary">
-          <StatTable dashboard={dashboard} />
+        {showVendorPortal && <Section no={nextNo()} title="Vendor Portal Bug Verification Summary">
+          <VendorPortalStatTable dashboard={dashboard} />
           <p><em>Most defects verified in this sprint directly impact delivery readiness, execution stability, user validation, or production sign-off confidence.</em></p>
         </Section>}
 
@@ -218,7 +219,7 @@ export function ReportPrintContent({ dashboard, reportType, narrative, startDate
           </div>
         </Section>}
 
-        {showDefects && hasWonderMilesExportData(dashboard) && <Section no={nextNo()} title="Wonder Miles Export Data"><p>Uploaded Wonder Miles Story and Bug export rows included in this report scope.</p><WonderMilesRows dashboard={dashboard} /></Section>}
+        {showWonderMiles && <Section no={nextNo()} title="Wonder Miles Export Data">{hasWonderMilesExportData(dashboard) ? <><p>Uploaded Wonder Miles Story and Bug export rows included in this report scope.</p><WonderMilesRows dashboard={dashboard} /></> : <p>{wonderMilesEmptyMessage(dashboard)}</p>}</Section>}
 
         {showExecution && <Section no={nextNo()} title="Test Execution Summary">
           <table className="qa-business-table"><thead><tr><th>Total Test Cases</th><th>Executed</th><th>Pass Rate</th><th>Failed</th><th>Blocked</th></tr></thead><tbody><tr><td className="qa-business-number">{dashboard.overview.totalCases}</td><td className="qa-business-number">{dashboard.overview.executed}</td><td className="qa-business-number">{dashboard.overview.passRate}%</td><td className="qa-business-number">{dashboard.overview.failed}</td><td className="qa-business-number">{dashboard.overview.blocked}</td></tr></tbody></table>

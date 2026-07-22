@@ -9,7 +9,12 @@ import { HorizBar, SegBar, testerSegSegments } from './SegBar';
 import { AiReportUatSection } from './AiReportUatSection';
 import { TestersPerformanceSection } from './TestersPerformanceSection';
 import { projectDisplayName } from '../../lib/projectDisplay';
-import { AiReportWonderMilesSection, hasWonderMilesExportData } from './AiReportWonderMilesSection';
+import {
+  AiReportWonderMilesEmptyState,
+  AiReportWonderMilesSection,
+  hasWonderMilesExportData,
+} from './AiReportWonderMilesSection';
+import { scopeHasReportCapability } from '../../lib/reportCapabilities';
 
 interface AiReportChartsProps {
   dashboard: DashboardPayload;
@@ -30,7 +35,9 @@ export function AiReportCharts({ dashboard, kpiStyle, reportType }: AiReportChar
   const showTestersFull = reportType === 'testers';
   const showCycles = reportType === 'full' || reportType === 'cycles';
   const showDefects = reportType === 'full' || defectReport;
-  const showUat = reportType === 'full' || reportType === 'executive' || defectReport;
+  const showProjectExports = reportType === 'full' || reportType === 'executive' || defectReport;
+  const showVendorPortal = showProjectExports && scopeHasReportCapability(dashboard, 'vendorPortal');
+  const showWonderMiles = showProjectExports && scopeHasReportCapability(dashboard, 'wonderMilesExport');
   const topTesters = [...testers].sort((a, b) => b.executed - a.executed).slice(0, 6);
   const atRiskCycles = dashboard.cyclesByPassPctAsc.slice(0, 5);
 
@@ -158,13 +165,15 @@ export function AiReportCharts({ dashboard, kpiStyle, reportType }: AiReportChar
         </div>
       )}
 
-      {showUat && uat && uat.total > 0 && (
+      {showVendorPortal && uat && uat.total > 0 && (
         <AiReportUatSection uat={uat} />
       )}
 
-      {showUat && hasWonderMilesExportData(dashboard) && <AiReportWonderMilesSection dashboard={dashboard} />}
+      {showWonderMiles && hasWonderMilesExportData(dashboard) && <AiReportWonderMilesSection dashboard={dashboard} />}
 
-      {showUat && !uat?.total && (
+      {showWonderMiles && !hasWonderMilesExportData(dashboard) && <AiReportWonderMilesEmptyState dashboard={dashboard} />}
+
+      {showVendorPortal && !uat?.total && (
         <div className="pdf-section border border-qa-border p-5 bg-[#faf8f2] text-[13px] text-qa-muted">
           No Vendor Portal bugs in the selected date range. Widen the date range or check that an ODL/production export is staged under Import Data.
         </div>
