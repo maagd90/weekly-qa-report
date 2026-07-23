@@ -145,6 +145,59 @@ try {
   store.deleteFile(projectA.id, fileA.id);
   const afterDelete = store.syncProject(projectA.id, 'QA tester');
   assert.equal(afterDelete.newTotals.executions, 0);
+
+  const projectC = store.createProject({
+    key: 'PROJC',
+    name: 'Project C',
+    dedicatedTab: { enabled: true, label: 'Project C Export Data' },
+  });
+  assert.equal(projectC.tabs.length, 1);
+  assert.equal(projectC.tabs[0].label, 'Project C Export Data');
+  assert.equal(projectC.tabs[0].mappings.length, 0);
+  const projectCFile = store.stageFile(projectC.id, 'project-c-custom.xlsx', jiraFile);
+  const inspection = store.inspectFile(projectC.id, projectCFile.id);
+  const keyHeader = inspection.headers.includes('Key') ? 'Key' : 'Issue key';
+  assert.ok(inspection.headers.includes(keyHeader));
+  const savedMapping = store.saveFileMapping(projectC.id, projectCFile.id, {
+    tabId: projectC.tabs[0].id,
+    uniqueKey: 'ticket',
+    columns: [
+      { fieldKey: 'ticket', sourceHeader: keyHeader, label: 'Ticket', type: 'text', visible: true, filterable: true, searchable: true, required: true },
+      { fieldKey: 'summary', sourceHeader: 'Summary', label: 'Summary', type: 'text', visible: true, filterable: false, searchable: true },
+      { fieldKey: 'status', sourceHeader: 'Status', label: 'Status', type: 'text', visible: true, filterable: true, searchable: true },
+    ],
+  });
+  assert.equal(savedMapping.mapping.version, 1);
+  assert.equal(savedMapping.file.mappingStatus, 'mapped');
+  assert.equal(
+    store.getTabData(projectC.id, projectC.tabs[0].id).dataset.rows.length,
+    0,
+    'saving a mapping must leave rows staged until the user explicitly imports data',
+  );
+  const mappedSync = store.syncProject(projectC.id, 'Project C mapper');
+  assert.equal(mappedSync.rowCounts.generic, 779);
+  assert.equal(mappedSync.newTotals.customRows, 779);
+  assert.equal(mappedSync.files[0].detectedType, 'mapped');
+  const mappedData = store.getTabData(projectC.id, projectC.tabs[0].id);
+  assert.equal(mappedData.dataset.rows.length, 779);
+  assert.equal(new Set(mappedData.dataset.rows.map((row) => row.id)).size, 779);
+  assert.ok(mappedData.dataset.rows.every((row) => row.projectId === projectC.id && row.tabId === projectC.tabs[0].id));
+
+  const reusedFile = store.stageFile(projectC.id, 'project-c-next-snapshot.xlsx', jiraFile);
+  assert.equal(reusedFile.mappingStatus, 'mapped', 'the saved mapping must be reused for the same header schema');
+  assert.equal(reusedFile.mappingVersion, 1);
+  const reusedSync = store.syncProject(projectC.id, 'Project C mapper');
+  assert.equal(reusedSync.rowCounts.generic, 779, 'overlapping snapshots must not duplicate project-tab rows');
+  assert.ok(reusedSync.files.some((file) => file.duplicateOrSkippedRows >= 779));
+
+  const disabledProjectC = store.updateProject(projectC.id, { dedicatedTab: { enabled: false } });
+  assert.equal(disabledProjectC.tabs[0].enabled, false);
+  assert.throws(() => store.getTabData(projectC.id, projectC.tabs[0].id), /disabled/i);
+  const reenabledProjectC = store.updateProject(projectC.id, { dedicatedTab: { enabled: true, label: 'Project C Data' } });
+  assert.equal(reenabledProjectC.tabs[0].id, projectC.tabs[0].id, 're-enabling must preserve tab identity');
+  assert.equal(reenabledProjectC.tabs[0].label, 'Project C Data');
+  assert.equal(store.getTabData(projectC.id, projectC.tabs[0].id).dataset.rows.length, 779, 'disabling must not delete mapped data');
+  store.deleteProject(projectC.id, projectC.key);
   console.log('✓ Project-scoped import isolation, reconciliation, update, and deletion');
 } finally {
   fs.rmSync(root, { recursive: true, force: true });

@@ -71,7 +71,9 @@ export function SettingsPage({ selectedProject: selectedProjectKey, onProjectCha
   const [newProjectKey, setNewProjectKey] = useState('');
   const [newProjectSourceKeys, setNewProjectSourceKeys] = useState('');
   const [newProjectName, setNewProjectName] = useState('');
-  const [projectDrafts, setProjectDrafts] = useState<Record<string, { key: string; sourceKeys: string; name: string; vendorPortal: boolean; wonderMilesExport: boolean }>>({});
+  const [newDedicatedTab, setNewDedicatedTab] = useState(false);
+  const [newDedicatedTabLabel, setNewDedicatedTabLabel] = useState('');
+  const [projectDrafts, setProjectDrafts] = useState<Record<string, { key: string; sourceKeys: string; name: string; vendorPortal: boolean; wonderMilesExport: boolean; dedicatedTab: boolean; tabLabel: string }>>({});
   const [newProjectCapabilities, setNewProjectCapabilities] = useState({ vendorPortal: false, wonderMilesExport: false });
   const [projectMessage, setProjectMessage] = useState<string | null>(null);
 
@@ -94,7 +96,14 @@ export function SettingsPage({ selectedProject: selectedProjectKey, onProjectCha
 
   useEffect(() => {
     if (!projectsData) return;
-    setProjectDrafts(Object.fromEntries(projectsData.map((project) => [project.id, { key: project.key, sourceKeys: projectSourceKeys(project).filter((key) => key !== project.key).join(', '), name: project.name, ...project.capabilities }])));
+    setProjectDrafts(Object.fromEntries(projectsData.map((project) => [project.id, {
+      key: project.key,
+      sourceKeys: projectSourceKeys(project).filter((key) => key !== project.key).join(', '),
+      name: project.name,
+      ...project.capabilities,
+      dedicatedTab: Boolean(project.tabs[0]?.enabled),
+      tabLabel: project.tabs[0]?.label || `${project.name} Data`,
+    }])));
     if (projectsData.length === 0) {
       if (jiraConnections.length || qmetryConnections.length) {
         setConnectionNotice('Saved browser connections were preserved because the server project registry is empty. Use Migrate saved connections below to create projects only from their explicit workspace/source keys.');
@@ -184,11 +193,19 @@ export function SettingsPage({ selectedProject: selectedProjectKey, onProjectCha
   }
 
   const createProject = useMutation({
-    mutationFn: () => batchApi.createProject({ key: newProjectKey, sourceKeys: [newProjectKey, ...parseSourceKeys(newProjectSourceKeys)], name: newProjectName, capabilities: newProjectCapabilities }),
+    mutationFn: () => batchApi.createProject({
+      key: newProjectKey,
+      sourceKeys: [newProjectKey, ...parseSourceKeys(newProjectSourceKeys)],
+      name: newProjectName,
+      capabilities: newProjectCapabilities,
+      dedicatedTab: { enabled: newDedicatedTab, label: newDedicatedTab ? newDedicatedTabLabel : undefined },
+    }),
     onSuccess: async (project) => {
       setNewProjectKey('');
       setNewProjectSourceKeys('');
       setNewProjectName('');
+      setNewDedicatedTab(false);
+      setNewDedicatedTabLabel('');
       setNewProjectCapabilities({ vendorPortal: false, wonderMilesExport: false });
       setProjectMessage(`${project.key} created. Select it from the main Project dropdown to configure JIRA, QMetry, or import files.`);
       await queryClient.invalidateQueries({ queryKey: ['projects'] });
@@ -207,7 +224,13 @@ export function SettingsPage({ selectedProject: selectedProjectKey, onProjectCha
     },
   });
   const updateProject = useMutation({
-    mutationFn: ({ project, draft }: { project: ProjectRecord; draft: { key: string; sourceKeys: string; name: string; vendorPortal: boolean; wonderMilesExport: boolean } }) => batchApi.updateProject(project.id, { key: draft.key, sourceKeys: [draft.key, ...parseSourceKeys(draft.sourceKeys)], name: draft.name, capabilities: { vendorPortal: draft.vendorPortal, wonderMilesExport: draft.wonderMilesExport } }),
+    mutationFn: ({ project, draft }: { project: ProjectRecord; draft: { key: string; sourceKeys: string; name: string; vendorPortal: boolean; wonderMilesExport: boolean; dedicatedTab: boolean; tabLabel: string } }) => batchApi.updateProject(project.id, {
+      key: draft.key,
+      sourceKeys: [draft.key, ...parseSourceKeys(draft.sourceKeys)],
+      name: draft.name,
+      capabilities: { vendorPortal: draft.vendorPortal, wonderMilesExport: draft.wonderMilesExport },
+      dedicatedTab: { enabled: draft.dedicatedTab, label: draft.tabLabel },
+    }),
     onSuccess: async (project, variables) => {
       const nextProjects = projects.map((candidate) => candidate.id === project.id ? project : candidate);
       const previousSourceKeys = projectSourceKeys(variables.project);
@@ -321,30 +344,48 @@ export function SettingsPage({ selectedProject: selectedProjectKey, onProjectCha
             <Field label="New project key" placeholder="e.g. ACE" maxLength={32} value={newProjectKey} onChange={(event) => setNewProjectKey(event.target.value.toUpperCase())} />
             <Field label="Additional source keys" placeholder="e.g. DP, DTTRV" value={newProjectSourceKeys} onChange={(event) => setNewProjectSourceKeys(event.target.value.toUpperCase())} />
             <Field label="New project name" placeholder="e.g. ACE Backoffice" maxLength={100} value={newProjectName} onChange={(event) => setNewProjectName(event.target.value)} />
-            <button type="button" onClick={() => createProject.mutate()} disabled={createProject.isPending || newProjectKey.trim().length < 2 || newProjectName.trim().length < 2} className="font-mono-qa text-[10px] uppercase tracking-wider border border-qa-ink bg-white px-4 py-2.5 cursor-pointer disabled:opacity-50">{createProject.isPending ? 'Creating…' : 'Create project'}</button>
+            <button type="button" onClick={() => createProject.mutate()} disabled={createProject.isPending || newProjectKey.trim().length < 2 || newProjectName.trim().length < 2 || (newDedicatedTab && newDedicatedTabLabel.trim().length < 2)} className="font-mono-qa text-[10px] uppercase tracking-wider border border-qa-ink bg-white px-4 py-2.5 cursor-pointer disabled:opacity-50">{createProject.isPending ? 'Creating…' : 'Create project'}</button>
           </div>
           <div className="mt-3 flex flex-wrap gap-5">
             <SyncBox label="Vendor Portal tab" checked={newProjectCapabilities.vendorPortal} onChange={(vendorPortal) => setNewProjectCapabilities((current) => ({ ...current, vendorPortal }))} />
             <SyncBox label="Wonder Miles export tab" checked={newProjectCapabilities.wonderMilesExport} onChange={(wonderMilesExport) => setNewProjectCapabilities((current) => ({ ...current, wonderMilesExport }))} />
+            <SyncBox label="Dedicated imported-data tab" checked={newDedicatedTab} onChange={setNewDedicatedTab} />
           </div>
+          {newDedicatedTab && <div className="mt-3 max-w-xl"><Field label="Dedicated tab name" placeholder="e.g. Project C Export Data" maxLength={80} value={newDedicatedTabLabel} onChange={(event) => setNewDedicatedTabLabel(event.target.value)} /></div>}
           <div className="mt-5 space-y-3">
             {projects.map((project) => {
-              const draft = projectDrafts[project.id] || { key: project.key, sourceKeys: projectSourceKeys(project).filter((key) => key !== project.key).join(', '), name: project.name, ...project.capabilities };
+              const draft = projectDrafts[project.id] || {
+                key: project.key,
+                sourceKeys: projectSourceKeys(project).filter((key) => key !== project.key).join(', '),
+                name: project.name,
+                ...project.capabilities,
+                dedicatedTab: Boolean(project.tabs[0]?.enabled),
+                tabLabel: project.tabs[0]?.label || `${project.name} Data`,
+              };
               const draftKeys = [...new Set([draft.key.trim().toUpperCase(), ...parseSourceKeys(draft.sourceKeys)])].filter(Boolean).sort();
               const currentKeys = [...projectSourceKeys(project)].sort();
-              const changed = draft.key.trim().toUpperCase() !== project.key || draft.name.trim() !== project.name || draftKeys.join('|') !== currentKeys.join('|') || draft.vendorPortal !== project.capabilities.vendorPortal || draft.wonderMilesExport !== project.capabilities.wonderMilesExport;
+              const changed = draft.key.trim().toUpperCase() !== project.key
+                || draft.name.trim() !== project.name
+                || draftKeys.join('|') !== currentKeys.join('|')
+                || draft.vendorPortal !== project.capabilities.vendorPortal
+                || draft.wonderMilesExport !== project.capabilities.wonderMilesExport
+                || draft.dedicatedTab !== Boolean(project.tabs[0]?.enabled)
+                || (draft.dedicatedTab && draft.tabLabel.trim() !== (project.tabs[0]?.label || ''));
               return <div key={project.id} className="border border-qa-border bg-[#faf8f2] p-3.5">
                 <div className="grid grid-cols-1 gap-3 items-end lg:grid-cols-[minmax(130px,0.5fr)_minmax(190px,0.75fr)_minmax(220px,1fr)_auto_auto]">
                   <Field label="Project key" maxLength={32} value={draft.key} onChange={(event) => setProjectDrafts((current) => ({ ...current, [project.id]: { ...draft, key: event.target.value.toUpperCase() } }))} />
                   <Field label="Additional source keys" placeholder="e.g. DP, DTTRV" value={draft.sourceKeys} onChange={(event) => setProjectDrafts((current) => ({ ...current, [project.id]: { ...draft, sourceKeys: event.target.value.toUpperCase() } }))} />
                   <Field label="Project name" maxLength={100} value={draft.name} onChange={(event) => setProjectDrafts((current) => ({ ...current, [project.id]: { ...draft, name: event.target.value } }))} />
-                  <button type="button" onClick={() => updateProject.mutate({ project, draft })} disabled={updateProject.isPending || !changed || draft.key.trim().length < 2 || draft.name.trim().length < 2} className="font-mono-qa text-[10px] uppercase tracking-wider border border-qa-ink bg-white px-4 py-2.5 cursor-pointer disabled:opacity-50">{updateProject.isPending && updateProject.variables?.project.id === project.id ? 'Updating…' : 'Update project'}</button>
+                  <button type="button" onClick={() => updateProject.mutate({ project, draft })} disabled={updateProject.isPending || !changed || draft.key.trim().length < 2 || draft.name.trim().length < 2 || (draft.dedicatedTab && draft.tabLabel.trim().length < 2)} className="font-mono-qa text-[10px] uppercase tracking-wider border border-qa-ink bg-white px-4 py-2.5 cursor-pointer disabled:opacity-50">{updateProject.isPending && updateProject.variables?.project.id === project.id ? 'Updating…' : 'Update project'}</button>
                   <button type="button" onClick={() => confirmProjectDeletion(project)} disabled={deleteProject.isPending} className="font-mono-qa text-[10px] uppercase tracking-wider border border-[#a13d2c] text-[#a13d2c] bg-white px-4 py-2.5 cursor-pointer disabled:opacity-50">{deleteProject.isPending && deleteProject.variables?.project.id === project.id ? 'Deleting…' : 'Delete project'}</button>
                 </div>
                 <div className="mt-3 flex flex-wrap gap-5">
                   <SyncBox label="Vendor Portal tab" checked={draft.vendorPortal} onChange={(vendorPortal) => setProjectDrafts((current) => ({ ...current, [project.id]: { ...draft, vendorPortal } }))} />
                   <SyncBox label="Wonder Miles export tab" checked={draft.wonderMilesExport} onChange={(wonderMilesExport) => setProjectDrafts((current) => ({ ...current, [project.id]: { ...draft, wonderMilesExport } }))} />
+                  <SyncBox label="Dedicated imported-data tab" checked={draft.dedicatedTab} onChange={(dedicatedTab) => setProjectDrafts((current) => ({ ...current, [project.id]: { ...draft, dedicatedTab } }))} />
                 </div>
+                {draft.dedicatedTab && <div className="mt-3 max-w-xl"><Field label="Dedicated tab name" maxLength={80} value={draft.tabLabel} onChange={(event) => setProjectDrafts((current) => ({ ...current, [project.id]: { ...draft, tabLabel: event.target.value } }))} /></div>}
+                {project.tabs[0]?.mappings.length ? <p className="m-0 mt-2 text-[11.5px] text-qa-muted">Active column mapping v{project.tabs[0].activeMappingVersion || project.tabs[0].mappings.length} · {project.tabs[0].mappings[project.tabs[0].mappings.length - 1].columns.length} mapped column(s). Mapping changes are created from Import Data after inspecting a file.</p> : null}
                 <p className="m-0 mt-2 text-[11.5px] text-qa-muted">Sources: {projectSourceKeys(project).join(', ')} · {project.fileCount || 0} imported file{project.fileCount === 1 ? '' : 's'} · created {new Date(project.createdAt).toLocaleString()}. Rows from every configured source key are consolidated under {project.key}.</p>
               </div>;
             })}

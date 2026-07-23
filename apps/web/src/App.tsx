@@ -14,6 +14,7 @@ import { WonderMilesExportPage } from './pages/WonderMilesExportPage';
 import { ImportStatusPage } from './pages/ImportStatusPage';
 import { AiReportPage } from './pages/AiReportPage';
 import { SettingsPage } from './pages/SettingsPage';
+import { ProjectDataPage } from './pages/ProjectDataPage';
 import { EmptyDashboard } from './components/common/EmptyDashboard';
 import { usePerTabFilters } from './hooks/usePerTabFilters';
 import { useUiPreferences } from './hooks/useUiPreferences';
@@ -123,7 +124,10 @@ function AppContent() {
 
   const showVendorPortalBugs = filters.project !== 'all' && Boolean(selectedProjectRecord?.capabilities.vendorPortal);
   const showWonderMilesExport = Boolean(wonderMilesProject);
-  const tabs = buildTabs(showVendorPortalBugs, showWonderMilesExport);
+  const projectOwnedTabs = filters.project === 'all'
+    ? []
+    : (selectedProjectRecord?.tabs || []).filter((tab) => tab.enabled).map((tab) => ({ id: tab.id, label: tab.label }));
+  const tabs = buildTabs(showVendorPortalBugs, showWonderMilesExport, projectOwnedTabs);
   const currentTab = tabs.find((t) => t.id === activeTab) ?? tabs[0];
 
   useEffect(() => {
@@ -232,6 +236,7 @@ function AppContent() {
         {display && activeTab === 'trace' && <TraceabilityPage dashboard={display} kpiStyle={ui.kpiStyle} searchQuery={filters.search} />}
         {display && activeTab === 'uat' && showVendorPortalBugs && <UatPage dashboard={display} kpiStyle={ui.kpiStyle} searchQuery={filters.search} />}
         {display && activeTab === 'wonder-miles' && showWonderMilesExport && <WonderMilesExportPage dashboard={display} kpiStyle={ui.kpiStyle} searchQuery={filters.search} />}
+        {selectedProjectRecord && activeTab.startsWith('project:') && <ProjectDataPage project={selectedProjectRecord} tabId={activeTab.slice('project:'.length)} startDate={filters.startDate} endDate={filters.endDate} />}
         {activeTab === 'import' && <ImportStatusPage selectedProject={filters.project} projects={registeredProjects} onImportedDataChanged={handleImportedDataChanged} />}
         {activeTab === 'ai' && <AiReportPage dashboard={display} kpiStyle={ui.kpiStyle} project={filters.project} />}
         {activeTab === 'settings' && <SettingsPage selectedProject={filters.project} onProjectChange={handleProjectChange} onLiveDataChanged={handleImportedDataChanged} />}

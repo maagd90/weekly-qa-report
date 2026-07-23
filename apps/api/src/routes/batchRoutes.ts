@@ -803,7 +803,13 @@ router.get('/projects', (_req: Request, res: Response) => {
 
 router.post('/projects', (req: Request, res: Response) => {
   try {
-    const project = projectImports.createProject(req.body as { key?: string; sourceKeys?: string[]; name?: string; capabilities?: { vendorPortal?: boolean; wonderMilesExport?: boolean } });
+    const project = projectImports.createProject(req.body as {
+      key?: string;
+      sourceKeys?: string[];
+      name?: string;
+      capabilities?: { vendorPortal?: boolean; wonderMilesExport?: boolean };
+      dedicatedTab?: { enabled: boolean; label?: string };
+    });
     return res.status(201).json({ ok: true, project, requestId: requestId(req) });
   } catch (err) {
     return res.status(projectErrorStatus(err)).json({ ok: false, error: toErrorMessage(err), requestId: requestId(req) });
@@ -849,7 +855,13 @@ router.post('/projects/migrate-connections', (req: Request, res: Response) => {
 
 router.patch('/projects/:projectId', async (req: Request, res: Response) => {
   try {
-    const project = projectImports.updateProject(req.params.projectId, req.body as { key?: string; sourceKeys?: string[]; name?: string; capabilities?: { vendorPortal?: boolean; wonderMilesExport?: boolean } });
+    const project = projectImports.updateProject(req.params.projectId, req.body as {
+      key?: string;
+      sourceKeys?: string[];
+      name?: string;
+      capabilities?: { vendorPortal?: boolean; wonderMilesExport?: boolean };
+      dedicatedTab?: { enabled: boolean; label?: string };
+    });
     const published = await publishProjectImportOutputs(req);
     return res.json({ ok: true, project, ...published, requestId: requestId(req) });
   } catch (err) {
@@ -882,9 +894,58 @@ router.post('/projects/:projectId/files', upload.single('file'), (req: Request, 
   try {
     const file = projectImports.stageFile(req.params.projectId, req.file.originalname, req.file.buffer);
     log(req, 'project file staged', { projectId: req.params.projectId, fileId: file.id, filename: file.originalName, size: file.size });
-    return res.status(201).json({ ok: true, file, message: 'File uploaded for the selected project. The Import Data workflow will automatically synchronize it.' });
+    const message = file.mappingStatus === 'required'
+      ? 'File staged. Map its columns to the project tab before publishing.'
+      : file.mappingStatus === 'mapped'
+        ? 'File staged and matched to the saved project mapping.'
+        : 'File uploaded for the selected project. The Import Data workflow will automatically synchronize it.';
+    return res.status(201).json({ ok: true, file, message });
   } catch (err) {
     return res.status(projectErrorStatus(err)).json({ ok: false, error: toErrorMessage(err), requestId: requestId(req) });
+  }
+});
+
+router.get('/projects/:projectId/files/:fileId/inspect', (req: Request, res: Response) => {
+  try {
+    return res.json(projectImports.inspectFile(req.params.projectId, req.params.fileId));
+  } catch (err) {
+    return res.status(projectErrorStatus(err)).json({ error: toErrorMessage(err), requestId: requestId(req) });
+  }
+});
+
+router.put('/projects/:projectId/files/:fileId/mapping', (req: Request, res: Response) => {
+  try {
+    const saved = projectImports.saveFileMapping(req.params.projectId, req.params.fileId, req.body as {
+      tabId?: string;
+      columns?: Array<{
+        fieldKey: string;
+        sourceHeader: string;
+        label: string;
+        type: 'text' | 'number' | 'date' | 'boolean';
+        visible: boolean;
+        filterable: boolean;
+        searchable: boolean;
+        required?: boolean;
+      }>;
+      uniqueKey?: string;
+    });
+    return res.json({
+      ok: true,
+      ...saved,
+      message: 'Column mapping saved. Review it, then use Import Data to publish the staged rows.',
+      requestId: requestId(req),
+    });
+  } catch (err) {
+    logError(req, 'project file mapping save failed', err, { projectId: req.params.projectId, fileId: req.params.fileId });
+    return res.status(projectErrorStatus(err)).json({ ok: false, error: toErrorMessage(err), requestId: requestId(req) });
+  }
+});
+
+router.get('/projects/:projectId/tabs/:tabId/data', (req: Request, res: Response) => {
+  try {
+    return res.json(projectImports.getTabData(req.params.projectId, req.params.tabId));
+  } catch (err) {
+    return res.status(projectErrorStatus(err)).json({ error: toErrorMessage(err), requestId: requestId(req) });
   }
 });
 

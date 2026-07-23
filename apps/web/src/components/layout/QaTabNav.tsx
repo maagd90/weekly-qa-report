@@ -86,7 +86,11 @@ export function QaTabNav({ tabs, activeTab, onTabChange }: QaTabNavProps) {
   );
 }
 
-export function buildTabs(showVendorPortalBugs: boolean, showWonderMilesExport = false): TabDef[] {
+export function buildTabs(
+  showVendorPortalBugs: boolean,
+  showWonderMilesExport = false,
+  projectTabs: Array<{ id: string; label: string }> = [],
+): TabDef[] {
   const tabs: TabDef[] = [];
   const append = (id: QaTab, label: string, hideFilters = false) => tabs.push({
     id,
@@ -100,6 +104,7 @@ export function buildTabs(showVendorPortalBugs: boolean, showWonderMilesExport =
   append('trace', 'Traceability');
   if (showVendorPortalBugs) append('uat', 'Vendor Portal Bugs');
   if (showWonderMilesExport) append('wonder-miles', 'Wonder Miles Export Data');
+  for (const tab of projectTabs) append(`project:${tab.id}`, tab.label);
   append('ai', 'QA Report', true);
   append('import', 'Import Data', true);
   append('settings', 'Settings', true);

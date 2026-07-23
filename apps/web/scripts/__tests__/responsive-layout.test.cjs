@@ -177,6 +177,11 @@ hasAll('src/pages/ImportStatusPage.tsx', [
   "selectedProject === 'all' ? importProjectKey : selectedProject",
   'the masthead remains All Projects',
   'setImportProjectKey(event.target.value)',
+  'Save Mapping',
+  'Import Data',
+  'Mapping profile v',
+  'currentMappingIsSaved',
+  'pendingMappingCount',
 ]);
 
 hasAll('src/components/qa/AiReportCharts.tsx', ['Project Comparison', 'dashboard.byProject!.map']);
@@ -275,7 +280,7 @@ hasAll('src/pages/ImportStatusPage.tsx', [
   'File project',
   'Choose which project files to manage; the masthead remains All Projects',
   "disabled={selectedProject !== 'all'}",
-  'uploads sync automatically',
+  'custom layouts pause for mapping',
   'batchApi.syncInputFiles(selected.id',
   'onImportedDataChanged?.(result.dashboard ?? null)',
   '!selected ?',

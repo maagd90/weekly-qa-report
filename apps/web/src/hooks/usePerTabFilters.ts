@@ -37,7 +37,7 @@ export function usePerTabFilters(activeTab: QaTab, baseDashboard: DashboardPaylo
   const [tabFilters, setTabFilters] = useState<Record<string, TabFilter>>(() => blankMap(baseDashboard));
   const [project, setProjectState] = useState(canonicalProjectOrAll(getActiveProject()) || 'all');
   const [seededFor, setSeededFor] = useState<string | undefined>(undefined);
-  const [customized, setCustomized] = useState<Partial<Record<QaTab, boolean>>>({});
+  const [customized, setCustomized] = useState<Record<string, boolean>>({});
 
   // Re-seed ranges once when a baseDashboard for a project first arrives.
   // Preserve date ranges for tabs the user has already customized manually.
@@ -56,12 +56,12 @@ export function usePerTabFilters(activeTab: QaTab, baseDashboard: DashboardPaylo
     }
   }, [dataKey, seededFor, baseDashboard, customized]);
 
-  const key = FILTERABLE.includes(activeTab) ? activeTab : 'overview';
-  const current = tabFilters[key] || blankMap(baseDashboard)[key];
+  const key = FILTERABLE.includes(activeTab) || activeTab.startsWith('project:') ? activeTab : 'overview';
+  const current = tabFilters[key] || { ...seedRange(baseDashboard), search: '' };
 
   const patch = useCallback((p: Partial<TabFilter>) => {
-    setTabFilters((prev) => ({ ...prev, [key]: { ...prev[key], ...p } }));
-  }, [key]);
+    setTabFilters((prev) => ({ ...prev, [key]: { ...(prev[key] || { ...seedRange(baseDashboard), search: '' }), ...p } }));
+  }, [baseDashboard, key]);
 
   const patchDate = useCallback((p: Partial<Pick<TabFilter, 'startDate' | 'endDate'>>) => {
     setCustomized((prev) => ({ ...prev, [key]: true }));

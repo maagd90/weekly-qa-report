@@ -3,6 +3,15 @@ export * from './types/connections';
 export { runGenerate, refilterDashboard } from './runGenerate';
 export { discoverInputFiles, parseFile, parseAllFiles, sniffFileType, inspectImportFile } from './parse/dispatcher';
 export type { ImportFileInspection, ImportRowRejection, InspectedImportFile } from './parse/dispatcher';
+export { inspectWorkbookColumns, parseMappedWorkbook } from './parse/mappedImport';
+export type {
+  MappedColumnDefinition,
+  MappedColumnType,
+  MappedImportParseResult,
+  MappedImportProfile,
+  MappedImportRow,
+  WorkbookColumnInspection,
+} from './parse/mappedImport';
 export { parseExecutionExport } from './parse/parseExecutionExport';
 export { parseJira } from './parse/parseJira';
 export { parseOdl } from './parse/parseOdl';

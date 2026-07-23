@@ -5,8 +5,8 @@ import type { ProjectRecord } from '../projectImports';
 import { normalizeDatasetProjectOwnership, planConnectionProjectMigration, scopeProjectConnections, validateProjectConnections } from '../projectConnections';
 
 const projects: ProjectRecord[] = [
-  { id: 'project-a', key: 'AAA', sourceKeys: ['AAA'], name: 'Project A', createdAt: '2026-07-21T00:00:00.000Z', updatedAt: '2026-07-21T00:00:00.000Z' },
-  { id: 'project-b', key: 'BBB', sourceKeys: ['BBB', 'BBC'], name: 'Project B', createdAt: '2026-07-21T00:00:00.000Z', updatedAt: '2026-07-21T00:00:00.000Z' },
+  { id: 'project-a', key: 'AAA', sourceKeys: ['AAA'], name: 'Project A', tabs: [], createdAt: '2026-07-21T00:00:00.000Z', updatedAt: '2026-07-21T00:00:00.000Z' },
+  { id: 'project-b', key: 'BBB', sourceKeys: ['BBB', 'BBC'], name: 'Project B', tabs: [], createdAt: '2026-07-21T00:00:00.000Z', updatedAt: '2026-07-21T00:00:00.000Z' },
 ];
 
 function jira(id: string, workspaceProjectId: string, projectKey: string): JiraConnectionInput {
@@ -48,6 +48,7 @@ const dlmProject: ProjectRecord = {
   key: 'DLM',
   sourceKeys: ['DLM', 'DN4_FT'],
   name: 'DLM',
+  tabs: [],
   createdAt: '2026-07-21T00:00:00.000Z',
   updatedAt: '2026-07-21T00:00:00.000Z',
 };
