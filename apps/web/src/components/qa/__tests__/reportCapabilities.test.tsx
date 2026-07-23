@@ -10,6 +10,7 @@ function dashboardFixture(args: {
   capabilities: ProjectCapabilities;
   workItems?: DashboardWorkItem[];
   includeJiraFile?: boolean;
+  includeOdlFile?: boolean;
   vendorTotal?: number;
 }): DashboardPayload {
   const workItems = args.workItems || [];
@@ -55,7 +56,10 @@ function dashboardFixture(args: {
       sourceFiles: [],
       rows: [],
     } : null,
-    files: args.includeJiraFile ? [{ name: 'wonder-export.xlsx', ext: '.xlsx', project: args.project, rows: workItems.length, status: 'parsed', detectedType: 'jira', source: 'file' }] : [],
+    files: [
+      ...(args.includeJiraFile ? [{ name: 'wonder-export.xlsx', ext: '.xlsx', project: args.project, rows: workItems.length, status: 'parsed' as const, detectedType: 'jira' as const, source: 'file' as const }] : []),
+      ...(args.includeOdlFile ? [{ name: 'vendor-export.xlsx', ext: '.xlsx', project: args.project, rows: 1, status: 'parsed' as const, detectedType: 'odl' as const, source: 'file' as const }] : []),
+    ],
     meta: { generatedAt: '2026-07-22T08:00:00.000Z', parsedAt: '2026-07-22T07:00:00.000Z', fetchedAt: null, warnings: [] },
   };
 }
@@ -100,8 +104,16 @@ const vendorDashboard = dashboardFixture({
   capabilities: { vendorPortal: true, wonderMilesExport: false },
 });
 const vendorCharts = renderToStaticMarkup(<AiReportCharts dashboard={vendorDashboard} kpiStyle="editorial" reportType="defects" />);
-assert.match(vendorCharts, /No Vendor Portal bugs in the selected date range/);
+assert.match(vendorCharts, /No Vendor Portal export is staged/);
 assert.doesNotMatch(vendorCharts, /No Wonder Miles/);
+
+const outOfRangeVendorDashboard = dashboardFixture({
+  project: 'VENDOR',
+  capabilities: { vendorPortal: true, wonderMilesExport: false },
+  includeOdlFile: true,
+});
+const outOfRangeVendorCharts = renderToStaticMarkup(<AiReportCharts dashboard={outOfRangeVendorDashboard} kpiStyle="editorial" reportType="defects" />);
+assert.match(outOfRangeVendorCharts, /No Vendor Portal bugs fall within the selected date range/);
 
 const wonderPdf = renderToStaticMarkup(
   <ReportPrintContent

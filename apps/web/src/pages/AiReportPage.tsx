@@ -4,7 +4,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import clsx from 'clsx';
 import { Download } from 'lucide-react';
-import type { DashboardPayload } from 'qa-dashboard-batch';
+import type { DashboardPayload, StructuredReportNarrative } from 'qa-dashboard-batch';
 import { batchApi, apiErrorMessage, getReportBranding, type GeneratedReportData, type ReportType } from '../lib/api';
 import type { KpiStyle } from '../theme/qaTheme';
 import { QA } from '../theme/qaTheme';
@@ -93,6 +93,7 @@ export function AiReportPage({ dashboard, kpiStyle, project }: AiReportPageProps
   const [error, setError] = useState<string | null>(null);
   const [warning, setWarning] = useState<string | null>(null);
   const [reportMarkdown, setReportMarkdown] = useState('');
+  const [reportNarrative, setReportNarrative] = useState<StructuredReportNarrative | null>(null);
   const [reportDashboard, setReportDashboard] = useState<DashboardPayload | null>(null);
   const [reportMeta, setReportMeta] = useState<ReportMeta | null>(null);
   const [downloading, setDownloading] = useState(false);
@@ -124,6 +125,7 @@ export function AiReportPage({ dashboard, kpiStyle, project }: AiReportPageProps
     }
     setReportMeta(meta || null);
     setReportMarkdown(reportData.markdown || '');
+    setReportNarrative(reportData.narrative || null);
     const params = meta?.params;
     if (params?.startDate) setStartDate(params.startDate);
     if (params?.endDate) setEndDate(params.endDate);
@@ -138,6 +140,7 @@ export function AiReportPage({ dashboard, kpiStyle, project }: AiReportPageProps
       setReportDashboard(null);
       setReportMeta(null);
       setReportMarkdown('');
+      setReportNarrative(null);
     },
     onSuccess: (result) => {
       if (result.payload) setReportDashboard(result.payload);
@@ -149,6 +152,7 @@ export function AiReportPage({ dashboard, kpiStyle, project }: AiReportPageProps
         setReportDashboard(null);
         setReportMeta(null);
         setReportMarkdown('');
+        setReportNarrative(null);
         setError(result.error || 'No metrics found for the selected report scope. Narrative was not generated.');
         setWarning(null);
         return;
@@ -160,19 +164,23 @@ export function AiReportPage({ dashboard, kpiStyle, project }: AiReportPageProps
         queryClient.setQueryData<GeneratedReportData>(['report'], {
           dashboard: result.payload,
           markdown: result.report?.markdown || '',
+          narrative: result.report?.narrative,
           meta: nextMeta,
         });
       }
       if (result.report?.markdown) {
         setReportMarkdown(result.report.markdown);
+        setReportNarrative(result.report.narrative || null);
       } else {
         setReportMarkdown('');
+        setReportNarrative(null);
       }
     },
     onError: (err: unknown) => {
       setReportDashboard(null);
       setReportMeta(null);
       setReportMarkdown('');
+      setReportNarrative(null);
       setError(apiErrorMessage(err, 'Report generation failed'));
     },
   });
@@ -182,8 +190,25 @@ export function AiReportPage({ dashboard, kpiStyle, project }: AiReportPageProps
     : null;
   const visibleChartData = chartData && activeProjectTab !== 'all' ? projectSliceAsDashboard(chartData, activeProjectTab) : chartData;
   const generating = generateMutation.isPending;
-  const hasNarrative = Boolean(chartData && reportMarkdown);
+  const visibleNarrative = reportNarrative
+    ? activeProjectTab === 'all'
+      ? reportNarrative.assembledMarkdown
+      : reportNarrative.projects[activeProjectTab]?.markdown || ''
+    : activeProjectTab === 'all' || chartData?.scope.project !== 'all'
+      ? reportMarkdown
+      : '';
+  const narrativeUnavailable = Boolean(
+    chartData
+    && activeProjectTab !== 'all'
+    && reportNarrative
+    && !reportNarrative.projects[activeProjectTab],
+  );
+  const hasNarrative = Boolean(chartData && visibleNarrative);
   const hasReport = !generating && (Boolean(chartData) || hasNarrative);
+
+  useEffect(() => {
+    setActiveProjectTab('all');
+  }, [reportDashboard?.meta.generatedAt, selectedProject]);
 
   const datePresets = [
     { label: '7d', days: 7 },
@@ -237,7 +262,7 @@ export function AiReportPage({ dashboard, kpiStyle, project }: AiReportPageProps
             <div className="p-4 space-y-6 sm:p-6 sm:space-y-8 lg:p-8">
               {chartData && <ProjectBreakdownTabs dashboard={chartData} value={activeProjectTab} onChange={setActiveProjectTab} label="QA Report project breakdown" />}
               {visibleChartData && <AiReportCharts dashboard={visibleChartData} kpiStyle={kpiStyle} reportType={reportType} />}
-              {hasNarrative ? <article className="prose prose-sm max-w-none prose-headings:font-spectral prose-table:text-sm"><ReactMarkdown remarkPlugins={[remarkGfm]}>{reportMarkdown}</ReactMarkdown></article> : <div className="border border-qa-border bg-[#faf8f2] p-6 text-qa-muted">Charts are ready. Configure an LLM key and generate to add narrative.</div>}
+              {hasNarrative ? <article className="prose prose-sm max-w-none prose-headings:font-spectral prose-table:text-sm"><ReactMarkdown remarkPlugins={[remarkGfm]}>{visibleNarrative}</ReactMarkdown></article> : <div role={narrativeUnavailable ? 'status' : undefined} className="border border-qa-border bg-[#faf8f2] p-6 text-qa-muted">{narrativeUnavailable ? 'Narration is not available for this project in the saved report. Generate the report again.' : 'Charts are ready. Configure an LLM key and generate to add narrative.'}</div>}
             </div>
           ) : (
             <div className="p-6 text-center text-qa-muted sm:p-12">

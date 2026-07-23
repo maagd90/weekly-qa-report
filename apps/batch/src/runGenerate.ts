@@ -93,6 +93,18 @@ function reportRowCounts(payload: DashboardPayload): { executions: number; issue
   };
 }
 
+const SENSITIVE_FIELD_NAME = /token|cookie|secret|password|credential|session|xsrf|authorization/i;
+
+function redactSensitiveFields<T>(value: T): T {
+  if (Array.isArray(value)) return value.map((item) => redactSensitiveFields(item)) as T;
+  if (!value || typeof value !== 'object') return value;
+  const redacted = Object.fromEntries(Object.entries(value as Record<string, unknown>).map(([key, item]) => [
+    key,
+    SENSITIVE_FIELD_NAME.test(key) ? (item ? '***redacted***' : item) : redactSensitiveFields(item),
+  ]));
+  return redacted as T;
+}
+
 /**
  * Removes credentials before request parameters are stored in report metadata.
  *
@@ -103,13 +115,10 @@ function sanitizeParamsForMeta(params: GenerateParams): GenerateParams {
   const safe: GenerateParams = { ...params };
   delete safe.apiKey;
   delete safe.sourceDataset;
+  delete safe.capabilitiesByProject;
+  delete safe.projectNamesByKey;
   if (safe.llm) safe.llm = { provider: safe.llm.provider, model: safe.llm.model, baseUrl: safe.llm.baseUrl };
-  if (safe.connections) {
-    safe.connections = {
-      jira: safe.connections.jira.map((c) => ({ ...c, apiToken: c.apiToken ? '***redacted***' : '', credential: c.credential ? '***redacted***' : '' })),
-      qmetry: safe.connections.qmetry.map((c) => ({ ...c, apiToken: c.apiToken ? '***redacted***' : '', credential: c.credential ? '***redacted***' : '' })),
-    };
-  }
+  if (safe.connections) safe.connections = redactSensitiveFields(safe.connections);
   return safe;
 }
 
@@ -204,6 +213,20 @@ export async function runGenerate(params: GenerateParams): Promise<GenerateResul
       ]),
     );
   }
+  if (params.projectNamesByKey) {
+    payload.scope.projectNamesByKey = Object.fromEntries(
+      Object.entries(params.projectNamesByKey).map(([key, name]) => [
+        normalizeProjectPrimaryKey(key) || key,
+        name.trim() || normalizeProjectPrimaryKey(key) || key,
+      ]),
+    );
+    if (payload.byProject?.length) {
+      const order = new Map(Object.keys(payload.scope.projectNamesByKey).map((key, index) => [key, index]));
+      payload.byProject.sort((left, right) =>
+        (order.get(left.project) ?? Number.MAX_SAFE_INTEGER) - (order.get(right.project) ?? Number.MAX_SAFE_INTEGER)
+        || left.project.localeCompare(right.project));
+    }
+  }
   const counts = reportRowCounts(payload);
 
   if (!hasDashboardMetrics(payload)) {
@@ -236,10 +259,22 @@ export async function runGenerate(params: GenerateParams): Promise<GenerateResul
 
   try {
     const report = await generateReportFromDataset(dataset, { ...params, project }, llmConfig.apiKey, filterParams);
-    const reportMeta = { ...baseReportMeta, toolCalls: report.toolCalls, llm: report.llm };
+    const reportMeta = { ...baseReportMeta, toolCalls: report.toolCalls, llm: report.llm, narrative: report.narrative };
+    const narrativeWarnings = [
+      report.narrative.portfolio?.warning,
+      ...report.narrative.projectOrder.map((key) => report.narrative.projects[key]?.warning),
+    ].filter((warning): warning is string => Boolean(warning));
     fs.writeFileSync(reportPath, report.markdown);
     writeJsonFile(metaPath, reportMeta);
-    return { ok: true, filesParsed: fileCount, rowCounts: counts, warnings: dataset.meta.warnings, paths: { dashboard: dashboardPath, report: reportPath, meta: metaPath, raw: rawPath }, payload, report: { markdown: report.markdown, meta: reportMeta } };
+    return {
+      ok: true,
+      filesParsed: fileCount,
+      rowCounts: counts,
+      warnings: [...dataset.meta.warnings, ...narrativeWarnings],
+      paths: { dashboard: dashboardPath, report: reportPath, meta: metaPath, raw: rawPath },
+      payload,
+      report: { markdown: report.markdown, narrative: report.narrative, meta: reportMeta },
+    };
   } catch (err) {
     removeIfExists(reportPath);
     const msg = toErrorMessage(err);

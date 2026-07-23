@@ -148,6 +148,8 @@ export interface GenerateParams extends FilterParams {
   sourceDataset?: Dataset;
   /** Authoritative project feature configuration supplied by the API project registry. */
   capabilitiesByProject?: Record<string, ProjectCapabilities>;
+  /** Configured display names keyed by canonical project key, in portfolio display order. */
+  projectNamesByKey?: Record<string, string>;
 }
 
 export function resultColor(code: string): string {
@@ -231,6 +233,29 @@ export interface DashboardByProject {
   traceability: DashboardTraceabilityItem[];
   workItems: DashboardWorkItem[];
   uat: DashboardUatPayload | null;
+  /**
+   * Project-owned file metadata. Optional only so snapshots generated before
+   * portfolio specialised sections were introduced remain parseable.
+   */
+  files?: FileMeta[];
+}
+
+export type ReportNarrativeSectionStatus = 'generated' | 'fallback' | 'unavailable';
+
+export interface ReportNarrativeSection {
+  project?: string;
+  projectName: string;
+  markdown: string;
+  status: ReportNarrativeSectionStatus;
+  warning?: string;
+}
+
+export interface StructuredReportNarrative {
+  version: 1;
+  portfolio?: ReportNarrativeSection;
+  projectOrder: string[];
+  projects: Record<string, ReportNarrativeSection>;
+  assembledMarkdown: string;
 }
 
 export interface DashboardPayload {
@@ -243,6 +268,8 @@ export interface DashboardPayload {
     projects: string[];
     /** Optional for compatibility with dashboard snapshots generated before project capabilities were embedded. */
     capabilitiesByProject?: Record<string, ProjectCapabilities>;
+    /** Configured display names keyed by canonical project key. */
+    projectNamesByKey?: Record<string, string>;
   };
   overview: DashboardOverview;
   testers: DashboardTesterItem[];
@@ -269,6 +296,6 @@ export interface GenerateResult {
   warnings: string[];
   paths: { dashboard: string; report: string; meta: string; raw: string };
   payload?: DashboardPayload;
-  report?: { markdown: string; meta: unknown };
+  report?: { markdown: string; narrative?: StructuredReportNarrative; meta: unknown };
   error?: string;
 }

@@ -3,7 +3,7 @@ import type {
 } from '../types/dataset';
 import { resultColor } from '../types/dataset';
 import { applyFilters } from '../filters/applyFilters';
-import { canonicalProjectKey, canonicalProjectOrUndefined, uniqueCanonicalProjects } from '../projects/projectKey';
+import { canonicalProjectKey, canonicalProjectOrUndefined } from '../projects/projectKey';
 import { classifyVendorPortalPhase, vendorPortalPhaseBreakdown } from '../analysis/vendorPortalPhaseClassification';
 
 interface CycleAgg {
@@ -89,6 +89,25 @@ function monthBucket(row: ExecutionRow): { key: string; label?: string } | null 
 }
 
 const MLAB = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+function portfolioProjectKeys(dataset: Dataset): string[] {
+  const ordered = [
+    ...dataset.projects,
+    ...dataset.executions.map((row) => row.project),
+    ...dataset.issues.map((row) => row.project),
+    ...dataset.uat.map((row) => row.project),
+    ...dataset.files.map((file) => file.project),
+  ];
+  const seen = new Set<string>();
+  const projects: string[] = [];
+  for (const value of ordered) {
+    const project = canonicalProjectKey(value);
+    if (!project || project === 'all' || seen.has(project)) continue;
+    seen.add(project);
+    projects.push(project);
+  }
+  return projects;
+}
 
 export function buildDashboardPayload(
   dataset: Dataset,
@@ -195,7 +214,7 @@ export function buildDashboardPayload(
   }).sort((a, b) => b.total - a.total);
   const cyclesByPassPctAsc = [...cycles].sort((a, b) => a.passPct - b.passPct);
 
-  const projects = uniqueCanonicalProjects([...dataset.projects, ...dataset.executions.map((e) => e.project), ...dataset.issues.map((i) => i.project)]);
+  const projects = portfolioProjectKeys(dataset);
   const jStory = issues.filter((r) => r.issueType === 'Story');
   const jBug = issues.filter((r) => r.issueType === 'Bug');
   const storyBug = { story: jStory.length, bug: jBug.length, storyOpen: jStory.filter((r) => r.status === 'open').length, storyDone: jStory.filter((r) => r.status === 'done').length, bugOpen: jBug.filter((r) => r.status === 'open').length, bugDone: jBug.filter((r) => r.status === 'done').length };
@@ -239,7 +258,7 @@ export function buildDashboardPayload(
   const byOwner = Object.entries(ownerMap).map(([name, open]) => ({ name, open })).sort((a, b) => b.open - a.open);
 
   let uatPayload: DashboardPayload['uat'] = null;
-  if (uat.length > 0 && (!normalizedProject || normalizedProject === 'DLM')) {
+  if (uat.length > 0) {
     const total = uat.length;
     const closed = uat.filter((r) => !r.open).length;
     const open = total - closed;
@@ -248,7 +267,13 @@ export function buildDashboardPayload(
     const areaCounts: Record<string, number> = {};
     const submitterCounts: Record<string, number> = {};
     const sourceFileCounts: Record<string, number> = {};
-    uat.forEach((r) => { stCounts[r.status] = (stCounts[r.status] || 0) + 1; prCounts[r.priority] = (prCounts[r.priority] || 0) + 1; areaCounts[r.area] = (areaCounts[r.area] || 0) + 1; submitterCounts[r.submitter] = (submitterCounts[r.submitter] || 0) + 1; });
+    uat.forEach((r) => {
+      const status = r.status.trim() || 'Unknown';
+      stCounts[status] = (stCounts[status] || 0) + 1;
+      prCounts[r.priority] = (prCounts[r.priority] || 0) + 1;
+      areaCounts[r.area] = (areaCounts[r.area] || 0) + 1;
+      submitterCounts[r.submitter] = (submitterCounts[r.submitter] || 0) + 1;
+    });
     uat.forEach((r) => {
       if (r.sourceFile) sourceFileCounts[r.sourceFile] = (sourceFileCounts[r.sourceFile] || 0) + 1;
     });
@@ -269,7 +294,7 @@ export function buildDashboardPayload(
         subject: r.subject,
         area: r.area,
         priority: r.priority,
-        status: r.status,
+        status: r.status.trim() || 'Unknown',
         submitter: r.submitter,
         submittedAt: r.submittedAt || '',
         updatedAt: r.updatedAt,
@@ -281,7 +306,7 @@ export function buildDashboardPayload(
   }
 
   const isAllProjects = !normalizedProject;
-  const byProject = includeByProject && isAllProjects && projects.length > 1 ? projects.map((project) => {
+  const byProject = includeByProject && isAllProjects && projects.length > 0 ? projects.map((project) => {
     const slice = buildDashboardPayload(dataset, { ...params, project }, { includeByProject: false });
     return {
       project,
@@ -294,8 +319,13 @@ export function buildDashboardPayload(
       traceability: slice.traceability,
       workItems: slice.workItems || [],
       uat: slice.uat,
+      files: slice.files,
     };
   }) : undefined;
+
+  const files = normalizedProject
+    ? dataset.files.filter((file) => canonicalProjectKey(file.project) === normalizedProject)
+    : dataset.files;
 
   return {
     scope: { startDate: params.startDate, endDate: params.endDate, search: params.search || '', result: params.result || 'all', project: normalizedProject || 'all', projects },
@@ -311,7 +341,7 @@ export function buildDashboardPayload(
     defectBacklog: { openTotal: openBugs.length, byPriority, topPriorities: byPriority.slice(0, 6), byOwner },
     uat: uatPayload,
     byProject,
-    files: dataset.files,
+    files,
     meta: { generatedAt: new Date().toISOString(), parsedAt: dataset.meta.parsedAt, fetchedAt: dataset.meta.fetchedAt, warnings: dataset.meta.warnings, dataMin: filtered.dataMin, dataMax: filtered.dataMax, deduped: dataset.meta.deduped },
   } as DashboardPayload & { workItems: typeof workItems };
 }

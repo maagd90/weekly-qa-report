@@ -1,20 +1,27 @@
 import React from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import type { DashboardPayload, ReportType } from 'qa-dashboard-batch';
+import type { DashboardPayload, ReportType, StructuredReportNarrative } from 'qa-dashboard-batch';
 import type { KpiStyle } from '../../theme/qaTheme';
 import { projectDisplayName } from '../../lib/projectDisplay';
 import { ResultDonut } from './ResultDonut';
 import { StackedMonthChart } from './StackedMonthChart';
 import { VendorPortalPhaseChart } from './VendorPortalPhaseChart';
 import { hasWonderMilesExportData, uploadedRows, wonderMilesEmptyMessage } from './AiReportWonderMilesSection';
-import { scopeHasReportCapability } from '../../lib/reportCapabilities';
+import {
+  resolveVendorPortalSection,
+  resolveWonderMilesSection,
+  scopeHasReportCapability,
+  vendorPortalEmptyMessage,
+} from '../../lib/reportCapabilities';
+import { resolveProjectDashboard } from '../../lib/projectDashboardSlice';
 
 interface ReportPrintContentProps {
   dashboard: DashboardPayload;
   kpiStyle: KpiStyle;
   reportType: ReportType;
   narrative: string;
+  structuredNarrative?: StructuredReportNarrative;
   startDate: string;
   endDate: string;
   title?: string;
@@ -60,6 +67,24 @@ function VendorPortalStatTable({ dashboard }: { dashboard: DashboardPayload }) {
   );
 }
 
+function VendorPortalProjectContent({ dashboard, includePhaseChart = true }: { dashboard: DashboardPayload; includePhaseChart?: boolean }) {
+  const resolution = resolveVendorPortalSection(dashboard);
+  if (resolution.state === 'populated') {
+    const phases = dashboard.uat?.byReportedPhase || [];
+    return (
+      <>
+        <VendorPortalStatTable dashboard={dashboard} />
+        {includePhaseChart && phases.some((item) => item.count > 0) && (
+          <div className="qa-business-chart qa-business-vendor-phase-chart">
+            <VendorPortalPhaseChart items={phases} />
+          </div>
+        )}
+      </>
+    );
+  }
+  return <p>{vendorPortalEmptyMessage(dashboard)}</p>;
+}
+
 function StatusDot({ status }: { status: string }) {
   const color = /complete|closed|done|healthy/i.test(status) ? '#2f6a48' : /risk|open|fail/i.test(status) ? '#a13d2c' : '#9a6a12';
   return <span style={{ color, fontWeight: 600 }}>■ {status}</span>;
@@ -79,7 +104,7 @@ function CycleRows({ dashboard, limit = 8 }: { dashboard: DashboardPayload; limi
 
 function ProjectStatus({ dashboard }: { dashboard: DashboardPayload }) {
   const rows = dashboard.byProject?.length
-    ? dashboard.byProject.map((p) => ({ area: projectDisplayName(p.project), status: p.defectBacklog.openTotal > 0 ? 'In Progress' : 'Completed' }))
+    ? dashboard.byProject.map((p) => ({ area: projectDisplayName(p.project, dashboard.scope.projectNamesByKey), status: p.defectBacklog.openTotal > 0 ? 'In Progress' : 'Completed' }))
     : [
       { area: 'Test Execution', status: dashboard.overview.failed || dashboard.overview.blocked ? 'In Progress' : 'Completed' },
       { area: 'Defect Verification', status: dashboard.storyBug.bugOpen ? 'Open Issue Active in Period' : 'Completed' },
@@ -91,7 +116,7 @@ function ProjectStatus({ dashboard }: { dashboard: DashboardPayload }) {
 function ProjectComparison({ dashboard }: { dashboard: DashboardPayload }) {
   const rows = dashboard.byProject || [];
   if (!rows.length) return null;
-  return <table className="qa-business-table"><thead><tr><th>Project</th><th>Cases</th><th>Executed</th><th>Pass %</th><th>Open defects</th><th>Blocked</th><th>Cycles</th></tr></thead><tbody>{rows.map((slice) => <tr key={slice.project}><td>{projectDisplayName(slice.project)}</td><td className="qa-business-number">{slice.overview.totalCases}</td><td className="qa-business-number">{slice.overview.executed}</td><td className="qa-business-number">{slice.overview.passRate}%</td><td className="qa-business-number">{slice.storyBug.bugOpen}</td><td className="qa-business-number">{slice.overview.blocked}</td><td className="qa-business-number">{slice.cycles.length}</td></tr>)}</tbody></table>;
+  return <table className="qa-business-table"><thead><tr><th>Project</th><th>Cases</th><th>Executed</th><th>Pass %</th><th>Open defects</th><th>Blocked</th><th>Cycles</th></tr></thead><tbody>{rows.map((slice) => <tr key={slice.project}><td>{projectDisplayName(slice.project, dashboard.scope.projectNamesByKey)}</td><td className="qa-business-number">{slice.overview.totalCases}</td><td className="qa-business-number">{slice.overview.executed}</td><td className="qa-business-number">{slice.overview.passRate}%</td><td className="qa-business-number">{slice.storyBug.bugOpen}</td><td className="qa-business-number">{slice.overview.blocked}</td><td className="qa-business-number">{slice.cycles.length}</td></tr>)}</tbody></table>;
 }
 
 function WonderMilesRows({ dashboard }: { dashboard: DashboardPayload }) {
@@ -100,6 +125,84 @@ function WonderMilesRows({ dashboard }: { dashboard: DashboardPayload }) {
   const bugs = rows.filter((row) => row.issueType === 'Bug').length;
   const openBugs = rows.filter((row) => row.issueType === 'Bug' && row.status === 'open').length;
   return <table className="qa-business-table qa-business-stat"><thead><tr><th>Total Export Rows</th><th>Stories</th><th>Bugs</th><th>Open Bugs</th></tr></thead><tbody><tr><td>{rows.length}</td><td>{stories}</td><td>{bugs}</td><td className="qa-business-red">{openBugs}</td></tr></tbody></table>;
+}
+
+function WonderMilesProjectContent({ dashboard }: { dashboard: DashboardPayload }) {
+  return hasWonderMilesExportData(dashboard)
+    ? <><p>Uploaded Wonder Miles Story and Bug export rows included in this report scope.</p><WonderMilesRows dashboard={dashboard} /></>
+    : <p>{wonderMilesEmptyMessage(dashboard)}</p>;
+}
+
+function PortfolioProjectBreakdown({
+  dashboard,
+  narrative,
+}: {
+  dashboard: DashboardPayload;
+  narrative?: StructuredReportNarrative;
+}) {
+  const slices = dashboard.byProject || [];
+  const resolved = slices.map((slice) => ({
+    slice,
+    resolution: resolveProjectDashboard(dashboard, slice.project),
+  }));
+  const unsafeLegacy = resolved.some(({ resolution }) => {
+    const projectDashboard = resolution.dashboard;
+    return Boolean(
+      projectDashboard
+      && resolution.legacyFilesMissing
+      && (
+        scopeHasReportCapability(projectDashboard, 'vendorPortal')
+        || scopeHasReportCapability(projectDashboard, 'wonderMilesExport')
+      )
+    );
+  });
+
+  return (
+    <div className="qa-business-project-breakdown">
+      {unsafeLegacy && (
+        <div className="qa-business-panel" role="status">
+          Project-scoped file metadata is not available in this saved report. Regenerate the report before using Vendor Portal or Wonder Miles portfolio sections.
+        </div>
+      )}
+      {resolved.map(({ slice, resolution }, index) => {
+        const projectDashboard = resolution.dashboard;
+        if (!projectDashboard) return null;
+        const projectNarrative = narrative?.projects[slice.project]?.markdown;
+        const vendorEnabled = scopeHasReportCapability(projectDashboard, 'vendorPortal');
+        const wonderEnabled = scopeHasReportCapability(projectDashboard, 'wonderMilesExport');
+        if (!projectNarrative && !vendorEnabled && !wonderEnabled) return null;
+        return (
+          <article
+            className={`qa-business-project-chapter ${index === 0 ? 'qa-business-project-chapter-first' : ''}`}
+            key={slice.project}
+            data-project={slice.project}
+          >
+            <h3>{projectDisplayName(slice.project, dashboard.scope.projectNamesByKey)}</h3>
+            {!unsafeLegacy && vendorEnabled && (
+              <section className="qa-business-project-specialised-section">
+                <h4>Vendor Portal Bugs</h4>
+                <VendorPortalProjectContent dashboard={projectDashboard} />
+              </section>
+            )}
+            {!unsafeLegacy && wonderEnabled && (
+              <section className="qa-business-project-specialised-section">
+                <h4>Wonder Miles Export Data</h4>
+                <WonderMilesProjectContent dashboard={projectDashboard} />
+              </section>
+            )}
+            {projectNarrative && (
+              <section className="qa-business-project-narrative">
+                <h4>Project narration</h4>
+                <div className="prose prose-slate max-w-none prose-sm">
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{projectNarrative}</ReactMarkdown>
+                </div>
+              </section>
+            )}
+          </article>
+        );
+      })}
+    </div>
+  );
 }
 
 function formatReportDate(value: string): string {
@@ -123,8 +226,9 @@ function formatGeneratedAt(value: string | undefined): string {
   });
 }
 
-export function ReportPrintContent({ dashboard, reportType, narrative, startDate, endDate, title, subtitle, logoUrl, logoAlt }: ReportPrintContentProps) {
-  const projectLabel = dashboard.scope.project && dashboard.scope.project !== 'all' ? projectDisplayName(dashboard.scope.project) : 'All Projects';
+export function ReportPrintContent({ dashboard, reportType, narrative, structuredNarrative, startDate, endDate, title, subtitle, logoUrl, logoAlt }: ReportPrintContentProps) {
+  const portfolioReport = dashboard.scope.project === 'all';
+  const projectLabel = !portfolioReport ? projectDisplayName(dashboard.scope.project, dashboard.scope.projectNamesByKey) : 'All Projects';
   const sprintLabel = `${formatReportDate(startDate)} – ${formatReportDate(endDate)}`;
   const generatedLabel = formatGeneratedAt(dashboard.meta.generatedAt);
   const failedOrBlocked = dashboard.overview.failed + dashboard.overview.blocked;
@@ -138,10 +242,14 @@ export function ReportPrintContent({ dashboard, reportType, narrative, startDate
   const showCycles = fullReport || cycleReport;
   const showStatus = fullReport || executiveReport;
   const showPlan = fullReport || executiveReport;
-  const showVendorPortal = showDefects && scopeHasReportCapability(dashboard, 'vendorPortal');
-  const showWonderMiles = showDefects && scopeHasReportCapability(dashboard, 'wonderMilesExport');
+  const showVendorPortal = showDefects && !portfolioReport && scopeHasReportCapability(dashboard, 'vendorPortal');
+  const showWonderMiles = showDefects && !portfolioReport && scopeHasReportCapability(dashboard, 'wonderMilesExport');
+  const showPortfolioBreakdown = showDefects && portfolioReport && Boolean(dashboard.byProject?.length);
   const vendorPortalPhases = dashboard.uat?.byReportedPhase || [];
   const showVendorPortalPhaseChart = showVendorPortal && vendorPortalPhases.some((item) => item.count > 0);
+  const commonNarrative = portfolioReport
+    ? structuredNarrative?.portfolio?.markdown || (!structuredNarrative ? narrative : '')
+    : structuredNarrative?.projects[dashboard.scope.project]?.markdown || narrative;
 
   let sectionNo = 1;
   const nextNo = () => sectionNo++;
@@ -208,7 +316,7 @@ export function ReportPrintContent({ dashboard, reportType, narrative, startDate
         </Section>
 
         {showVendorPortal && <Section no={nextNo()} title="Vendor Portal Bug Verification Summary">
-          <VendorPortalStatTable dashboard={dashboard} />
+          <VendorPortalProjectContent dashboard={dashboard} includePhaseChart={false} />
           <p><em>Most defects verified in this sprint directly impact delivery readiness, execution stability, user validation, or production sign-off confidence.</em></p>
         </Section>}
 
@@ -220,6 +328,8 @@ export function ReportPrintContent({ dashboard, reportType, narrative, startDate
         </Section>}
 
         {showWonderMiles && <Section no={nextNo()} title="Wonder Miles Export Data">{hasWonderMilesExportData(dashboard) ? <><p>Uploaded Wonder Miles Story and Bug export rows included in this report scope.</p><WonderMilesRows dashboard={dashboard} /></> : <p>{wonderMilesEmptyMessage(dashboard)}</p>}</Section>}
+
+        {showPortfolioBreakdown && <Section no={nextNo()} title="Project-specific data"><PortfolioProjectBreakdown dashboard={dashboard} narrative={structuredNarrative} /></Section>}
 
         {showExecution && <Section no={nextNo()} title="Test Execution Summary">
           <table className="qa-business-table"><thead><tr><th>Total Test Cases</th><th>Executed</th><th>Pass Rate</th><th>Failed</th><th>Blocked</th></tr></thead><tbody><tr><td className="qa-business-number">{dashboard.overview.totalCases}</td><td className="qa-business-number">{dashboard.overview.executed}</td><td className="qa-business-number">{dashboard.overview.passRate}%</td><td className="qa-business-number">{dashboard.overview.failed}</td><td className="qa-business-number">{dashboard.overview.blocked}</td></tr></tbody></table>
@@ -243,7 +353,7 @@ export function ReportPrintContent({ dashboard, reportType, narrative, startDate
 
         {showPlan && <Section no={nextNo()} title="Upcoming Sprint Plan"><div className="qa-business-panel"><ul><li>Re-test all fixes currently in progress.</li><li>Continue regression coverage for impacted business flows.</li><li>Prioritize validation of high-impact defects active in the selected period.</li><li>Prepare final sign-off evidence for closed defects.</li><li>Strengthen automation coverage for repeated UAT scenarios.</li></ul></div></Section>}
 
-        {narrative && <Section no={nextNo()} title="Narrative Summary"><div className="prose prose-slate max-w-none prose-sm"><ReactMarkdown remarkPlugins={[remarkGfm]}>{narrative}</ReactMarkdown></div></Section>}
+        {commonNarrative && <Section no={nextNo()} title={portfolioReport ? 'Portfolio Narrative Summary' : 'Narrative Summary'}><div className="prose prose-slate max-w-none prose-sm"><ReactMarkdown remarkPlugins={[remarkGfm]}>{commonNarrative}</ReactMarkdown></div></Section>}
 
         <Section no={nextNo()} title="Final Summary">
           <table className="qa-business-table qa-business-stat"><thead><tr><th>Total Defects Verified</th><th>Closed / Done</th><th>Open in Period</th><th>Pass Rate</th></tr></thead><tbody><tr><td>{dashboard.storyBug.bug}</td><td className="qa-business-green">{dashboard.storyBug.bugDone}</td><td className="qa-business-red">{dashboard.storyBug.bugOpen}</td><td>{dashboard.overview.passRate}%</td></tr></tbody></table>

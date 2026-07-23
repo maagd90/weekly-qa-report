@@ -180,7 +180,7 @@ hasAll('src/pages/ImportStatusPage.tsx', [
 ]);
 
 hasAll('src/components/qa/AiReportCharts.tsx', ['Project Comparison', 'dashboard.byProject!.map']);
-hasAll('src/components/qa/ProjectBreakdownTabs.tsx', ['projectSliceAsDashboard', "['all', ...projects.map", 'projectDisplayName(project)']);
+hasAll('src/components/qa/ProjectBreakdownTabs.tsx', ['projectSliceAsDashboard', "['all', ...projects.map", 'projectDisplayName(project, dashboard.scope.projectNamesByKey)']);
 hasAll('src/pages/AiReportPage.tsx', ['QA Report project breakdown', 'visibleChartData', 'projectSliceAsDashboard']);
 hasAll('src/components/qa/AiReportWonderMilesSection.tsx', ['Wonder Miles Export Data', 'uploadedRows', 'Open Bugs', 'sourceFile']);
 hasAll('src/components/qa/ReportPrintContent.tsx', ['Wonder Miles Export Data', '<WonderMilesRows dashboard={dashboard} />']);
@@ -204,9 +204,9 @@ hasAll('src/components/layout/QaTabNav.tsx', [
 ]);
 
 hasAll('src/pages/UatPage.tsx', [
-  'searchQuery.trim().toLowerCase()',
-  'searchedRows',
-  'Search filters the bug rows instantly',
+  'searchQuery.trim().toLocaleLowerCase()',
+  'visibleVendorPortalRowValues',
+  'Use Basic Search for quick criteria',
 ]);
 
 hasAll('src/components/qa/VendorPortalPhaseChart.tsx', [
@@ -221,20 +221,21 @@ hasAll('src/components/qa/VendorPortalPhaseChart.tsx', [
 
 hasAll('src/pages/UatPage.tsx', [
   "uat?.byReportedPhase || []",
-  "row.reportedPhase || 'unclassified'",
-  "category === 'other-uat'",
+  'rowsForBugView',
   'VendorPortalPhaseChart',
   'Bug Distribution by Environment & Phase',
   'every other non-empty subject → Phase 1',
   'availableBugViews',
   "viewCounts.unclassified > 0",
-  "type BugView = 'uat' | 'production' | 'unclassified'",
+  'VendorPortalBugView',
   'max-w-full overflow-x-auto overscroll-x-contain',
   'Page {safePage + 1} of {totalPages}',
-  'Source file',
+  "label: 'Change Request'",
+  'Advanced Search',
+  'JQL-style query',
   'pageRows.map',
 ]);
-hasNone('src/pages/UatPage.tsx', ['ODL source file', "(['uat', 'production', 'unclassified'] as BugView[])"]);
+hasNone('src/pages/UatPage.tsx', ['ODL source file', 'Source file', 'Phase / Env']);
 
 hasAll('src/pages/TraceabilityPage.tsx', [
   'compareNewestFirst',

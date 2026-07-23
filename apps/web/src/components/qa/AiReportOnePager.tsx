@@ -8,8 +8,9 @@ import { QaKpiCard, QaKpiGrid } from './QaKpiCard';
 import { ResultDonut } from './ResultDonut';
 import { SegBar, testerSegSegments } from './SegBar';
 import { summaryBodyOnly, trimSummaryForPrint } from '../../lib/reportSummary';
-import { scopeHasReportCapability } from '../../lib/reportCapabilities';
+import { scopeHasReportCapability, vendorPortalEmptyMessage } from '../../lib/reportCapabilities';
 import { uploadedRows, wonderMilesEmptyMessage } from './AiReportWonderMilesSection';
+import { projectDisplayName } from '../../lib/projectDisplay';
 
 interface AiReportOnePagerProps {
   dashboard: DashboardPayload;
@@ -43,7 +44,9 @@ export function AiReportOnePager({
   const { overview, testers, uat } = dashboard;
   const topTesters = [...testers].sort((a, b) => b.executed - a.executed).slice(0, 3);
   const topCrs = uat ? topUatCrs(uat) : [];
-  const projectLabel = dashboard.scope.project && dashboard.scope.project !== 'all' ? dashboard.scope.project : 'All Projects';
+  const projectLabel = dashboard.scope.project && dashboard.scope.project !== 'all'
+    ? projectDisplayName(dashboard.scope.project, dashboard.scope.projectNamesByKey)
+    : 'All Projects';
   const displayNarrative = compactNarrative ? trimSummaryForPrint(narrative) : summaryBodyOnly(narrative);
   const showVendorPortal = scopeHasReportCapability(dashboard, 'vendorPortal');
   const showWonderMiles = scopeHasReportCapability(dashboard, 'wonderMilesExport');
@@ -127,7 +130,7 @@ export function AiReportOnePager({
               )}
             </>
           ) : showVendorPortal ? (
-            <p className="text-[11px] text-qa-muted m-0">No Vendor Portal bugs in this period.</p>
+            <p className="text-[11px] text-qa-muted m-0">{vendorPortalEmptyMessage(dashboard)}</p>
           ) : showWonderMiles && wonderMilesRows.length > 0 ? (
             <div className="grid grid-cols-2 gap-2">
               <div><div className="font-spectral text-xl font-bold">{wonderMilesRows.length}</div><div className="text-[10px] text-qa-muted">Export rows</div></div>

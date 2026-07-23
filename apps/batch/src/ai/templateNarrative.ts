@@ -24,7 +24,11 @@ export interface TemplateNarrativeMetrics {
   get_defect_backlog?: DashboardDefectBacklog;
   get_traceability?: DashboardTraceabilityItem[];
   get_uat_summary?: DashboardUatPayload | { total: number; open: number; closed: number; message?: string };
-  get_project_comparison?: Array<{ project: string; totalCases: number; executed: number; passRate: number; failed: number; blocked: number; openBugs: number; cycles: number; traceabilityAreas: number }>;
+  get_project_comparison?: Array<{ project: string; projectName?: string; totalCases: number; executed: number; passRate: number; failed: number; blocked: number; openBugs: number; cycles: number; traceabilityAreas: number }>;
+  project_context?: {
+    vendorPortal?: { state: 'populated' | 'out-of-range' | 'not-uploaded'; total: number };
+    wonderMiles?: { state: 'populated' | 'out-of-range' | 'not-uploaded'; total: number; stories: number; bugs: number; openBugs: number };
+  };
 }
 
 /** Converts a project key into the business-facing report name. */
@@ -183,9 +187,27 @@ function uatParagraph(uat: TemplateNarrativeMetrics['get_uat_summary']): string 
 
 function projectComparisonParagraph(items: TemplateNarrativeMetrics['get_project_comparison']): string | null {
   if (!items?.length) return null;
-  const rows = items.map((item) => `${projectDisplayName(item.project)}: ${item.executed}/${item.totalCases} executed, ${item.passRate}% pass rate, ${item.failed} failed, ${item.blocked} blocked, ${item.openBugs} open bugs`);
+  const rows = items.map((item) => `${item.projectName || projectDisplayName(item.project)}: ${item.executed}/${item.totalCases} executed, ${item.passRate}% pass rate, ${item.failed} failed, ${item.blocked} blocked, ${item.openBugs} open bugs`);
   const riskProjects = items.filter((item) => item.failed > 0 || item.blocked > 0 || item.openBugs > 0);
   return `Portfolio comparison across ${items.length} projects. ${rows.join('; ')}. ${riskProjects.length ? `${riskProjects.length} project${riskProjects.length === 1 ? '' : 's'} show${riskProjects.length === 1 ? 's' : ''} active execution or defect risk in the selected period.` : 'No failed, blocked, or open-bug risk is shown in the selected period.'}`;
+}
+
+function specialisedProjectParagraph(context: TemplateNarrativeMetrics['project_context']): string | null {
+  if (!context) return null;
+  const statements: string[] = [];
+  if (context.vendorPortal?.state === 'out-of-range') {
+    statements.push('A Vendor Portal export is available, but no Vendor Portal bugs fall within the selected reporting period.');
+  } else if (context.vendorPortal?.state === 'not-uploaded') {
+    statements.push('Vendor Portal data is not available because no eligible export has been uploaded for this project.');
+  }
+  if (context.wonderMiles?.state === 'populated') {
+    statements.push(`Wonder Miles export data contains ${context.wonderMiles.total} row${context.wonderMiles.total === 1 ? '' : 's'} in this period: ${context.wonderMiles.stories} stories and ${context.wonderMiles.bugs} bugs (${context.wonderMiles.openBugs} open).`);
+  } else if (context.wonderMiles?.state === 'out-of-range') {
+    statements.push('A Wonder Miles export is available, but no rows fall within the selected reporting period.');
+  } else if (context.wonderMiles?.state === 'not-uploaded') {
+    statements.push('Wonder Miles export data is not available because no eligible Story/Bug spreadsheet has been uploaded for this project.');
+  }
+  return statements.length ? statements.join(' ') : null;
 }
 
 /** Builds evidence-backed follow-up actions appropriate to the report type. */
@@ -224,12 +246,13 @@ function reportParagraphs(metrics: TemplateNarrativeMetrics, reportType: ReportT
   const defects = () => defectBacklogParagraph(metrics.get_defect_backlog);
   const traceability = () => traceabilityParagraph(metrics.get_traceability);
   const uat = () => uatParagraph(metrics.get_uat_summary);
+  const specialised = () => specialisedProjectParagraph(metrics.project_context);
 
   if (reportType === 'cycles') return [projects(), resultMix(), cycles()];
-  if (reportType === 'defects') return [projects(), storyBug(), defects(), uat()];
+  if (reportType === 'defects') return [projects(), storyBug(), defects(), uat(), specialised()];
   if (reportType === 'testers') return [projects(), resultMix(), qualityAssurance()];
-  if (reportType === 'executive') return [projects(), resultMix(), cycles(), storyBug(), defects(), uat()];
-  return [projects(), resultMix(), cycles(), qualityAssurance(), storyBug(), defects(), traceability(), uat()];
+  if (reportType === 'executive') return [projects(), resultMix(), cycles(), storyBug(), defects(), uat(), specialised()];
+  return [projects(), resultMix(), cycles(), qualityAssurance(), storyBug(), defects(), traceability(), uat(), specialised()];
 }
 
 /**
@@ -244,8 +267,9 @@ export function generateTemplateNarrative(
   metrics: TemplateNarrativeMetrics,
   filter: FilterParams,
   reportType: ReportType,
+  configuredProjectName?: string,
 ): string {
-  const project = projectDisplayName(filter.project);
+  const project = configuredProjectName?.trim() || projectDisplayName(filter.project);
   const scope = `${filter.startDate || 'all time'} to ${filter.endDate || 'present'}`;
   const intro = `${reportTypeLabel(reportType)} QA summary for ${project}, covering ${scope}.`;
   const paragraphs = reportParagraphs(metrics, reportType)

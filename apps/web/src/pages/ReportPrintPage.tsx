@@ -134,6 +134,7 @@ export function ReportPrintPage() {
       kpiStyle={kpiStyle}
       reportType={reportType}
       narrative={reportQuery.data?.markdown ?? ''}
+      structuredNarrative={reportQuery.data?.narrative}
       startDate={startDate}
       endDate={endDate}
       title={reportTitle}

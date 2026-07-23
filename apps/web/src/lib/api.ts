@@ -11,6 +11,7 @@ import type {
   QmetryConnectionInput,
   UserConnections,
   ProjectCapabilities as DashboardProjectCapabilities,
+  StructuredReportNarrative,
 } from 'qa-dashboard-batch';
 import {
   isBlankJiraConnection,
@@ -56,6 +57,7 @@ export interface DashboardSearchResult { ok: boolean; dashboard: DashboardPayloa
 export interface GeneratedReportData {
   dashboard: DashboardPayload;
   markdown: string;
+  narrative?: StructuredReportNarrative;
   meta: { generatedAt?: string; params?: { startDate?: string; endDate?: string; reportType?: ReportType; project?: string }; toolCalls?: { toolName: string; rowCount: number }[]; [key: string]: unknown };
 }
 
@@ -144,7 +146,7 @@ function apiErrorMessage(err: unknown, fallback: string): string { if (axios.isA
 async function blobErrorMessage(blob: Blob, fallback: string): Promise<string> { try { const text = await blob.text(); if (!text) return fallback; const payload = JSON.parse(text) as { error?: string; message?: string; warnings?: string[] }; return payload.error || payload.message || payload.warnings?.join('; ') || text.slice(0, 500); } catch { return fallback; } }
 
 export { apiErrorMessage };
-export type { DashboardPayload, FilterParams, ReportType, GenerateParams, GenerateResult, LlmSelectionInput, LlmProvider };
+export type { DashboardPayload, FilterParams, ReportType, GenerateParams, GenerateResult, LlmSelectionInput, LlmProvider, StructuredReportNarrative };
 
 export interface IntegrationsStatus { jira: { enabled: boolean; baseUrl: string; configured: boolean; profiles?: unknown[] }; qmetry: { enabled: boolean; baseUrl: string; configured: boolean; cycleIds?: number }; config: { jira: { enabled: boolean; projectKeys: string[]; jql: string }; qmetry: { enabled: boolean; projectKey: string; cycleIds?: string[]; projectId?: string | null } }; userConnections?: { jira: { id: string; name: string; baseUrl: string }[]; qmetry: { id: string; name: string; baseUrl: string }[] } }
 export interface CycleFolder { id: string; name: string; parentId?: string; path?: string }

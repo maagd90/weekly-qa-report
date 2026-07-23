@@ -1,7 +1,16 @@
-input/
-output/
-fixtures/input/
-config/mappings/
+# Local runtime data and generated reports
+/input/
+/output/
+/apps/batch/output/
+/fixtures/input/
+
+# Local configuration may contain credentials and machine-specific settings.
+# Ignore all config files by default, but keep safe templates/defaults in Git.
+/config/*
+!/config/*.example.json
+!/config/charts.default.json
+!/config/report.json
+
 *.db
 *.db-shm
 *.db-wal
@@ -16,7 +25,3 @@ data/
 # Local AI/editor and runtime settings
 .claude/settings.local.json
 *.local.json
-config/integrations.json
-config/runtime.json
-config/projects.json
-config/project-imports.json

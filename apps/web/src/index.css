@@ -421,6 +421,47 @@
   font-style: normal;
 }
 
+.qa-business-project-chapter {
+  break-before: page;
+  page-break-before: always;
+  margin: 0 0 24px;
+}
+
+.qa-business-project-chapter-first {
+  break-before: auto;
+  page-break-before: auto;
+}
+
+.qa-business-project-chapter > h3 {
+  break-after: avoid;
+  page-break-after: avoid;
+  margin: 0 0 14px;
+  padding-bottom: 7px;
+  border-bottom: 2px solid #b7092b;
+  color: #201c1a;
+  font-family: 'Spectral', Georgia, serif;
+  font-size: 18px;
+}
+
+.qa-business-project-specialised-section > h4,
+.qa-business-project-narrative > h4 {
+  break-after: avoid;
+  page-break-after: avoid;
+  margin: 16px 0 8px;
+  color: #201c1a;
+  font-family: 'Spectral', Georgia, serif;
+  font-size: 14px;
+}
+
+.qa-business-project-chapter .qa-business-table thead {
+  display: table-header-group;
+}
+
+.qa-business-project-chapter .qa-business-table tr {
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+
 .qa-business-report .prose h1,
 .qa-business-report .prose h2,
 .qa-business-report .prose h3 {

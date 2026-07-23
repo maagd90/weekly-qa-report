@@ -47,6 +47,7 @@ import type {
   QmetryConnectionInput,
   FilterParams,
   ReportType,
+  StructuredReportNarrative,
 } from 'qa-dashboard-batch';
 import { getEnvStatus } from '../loadRepoEnv';
 import { generateReportPdf, type ReportBrandingPayload } from '../services/reportPdf';
@@ -85,6 +86,7 @@ type ReportMetaFile = {
   generatedAt?: string;
   params?: { startDate?: string; endDate?: string; reportType?: ReportType; project?: string };
   toolCalls?: unknown[];
+  narrative?: StructuredReportNarrative;
   [key: string]: unknown;
 };
 
@@ -115,13 +117,13 @@ function loadJsonFile<T>(fileName: string): T | null {
   return readJsonFile<T>(outputPath(fileName));
 }
 
-function reportArtifacts(): { dashboard: DashboardPayload; meta: ReportMetaFile; markdown: string } | null {
+function reportArtifacts(): { dashboard: DashboardPayload; meta: ReportMetaFile; markdown: string; narrative?: StructuredReportNarrative } | null {
   const dashboard = loadJsonFile<DashboardPayload>('report-dashboard.json');
   if (!dashboard) return null;
   const meta = loadJsonFile<ReportMetaFile>('report-meta.json') || {};
   const markdownPath = outputPath('report.md');
   const markdown = fs.existsSync(markdownPath) ? fs.readFileSync(markdownPath, 'utf8') : '';
-  return { dashboard, meta, markdown };
+  return { dashboard, meta, markdown, narrative: meta.narrative };
 }
 
 function reportScopeMatches(
@@ -308,10 +310,14 @@ function withRegisteredPortfolioProjects(dataset: Dataset, project?: string): Da
 }
 
 function capabilitiesByProject(): NonNullable<import('qa-dashboard-batch').DashboardPayload['scope']['capabilitiesByProject']> {
-  return Object.fromEntries(projectImports.listProjects().map((project) => [
-    project.key,
-    project.capabilities || { vendorPortal: false, wonderMilesExport: false },
-  ]));
+  return Object.fromEntries(projectImports.listProjects().flatMap((project) => {
+    const capabilities = project.capabilities || { vendorPortal: false, wonderMilesExport: false };
+    return [project.key, ...project.sourceKeys].map((key) => [key, capabilities] as const);
+  }));
+}
+
+function projectNamesByKey(): NonNullable<import('qa-dashboard-batch').DashboardPayload['scope']['projectNamesByKey']> {
+  return Object.fromEntries(projectImports.listProjects().map((project) => [project.key, project.name]));
 }
 
 async function refreshGeneratedOutputs(req: Request, connections: UserConnections, apiScope?: ApiFetchScope, dashboardFilter: Partial<FilterParams> = {}, mode: BuildMode = 'live') {
@@ -532,7 +538,23 @@ router.post('/generate', async (req: Request, res: Response) => {
     const filter = filterFromBody({ startDate, endDate, search, result: (result as FilterParams['result']) || 'all', project: clean });
     if (hasLiveSources(connections)) await refreshGeneratedOutputs(req, connections, apiScopeFromFilter(filter), filter, 'live');
     const sourceDataset = withRegisteredPortfolioProjects(mergedSourceDataset(), clean);
-    const resultPayload = await runGenerate({ startDate, endDate, reportType: type, search, result: (result as 'all') || 'all', project: clean, inputDir: INPUT_DIR, outputDir: OUTPUT_DIR, configDir: CONFIG_DIR, apiKey: key.key || undefined, llm, connections, sourceDataset, capabilitiesByProject: capabilitiesByProject() });
+    const resultPayload = await runGenerate({
+      startDate,
+      endDate,
+      reportType: type,
+      search,
+      result: (result as 'all') || 'all',
+      project: clean,
+      inputDir: INPUT_DIR,
+      outputDir: OUTPUT_DIR,
+      configDir: CONFIG_DIR,
+      apiKey: key.key || undefined,
+      llm,
+      connections,
+      sourceDataset,
+      capabilitiesByProject: capabilitiesByProject(),
+      projectNamesByKey: projectNamesByKey(),
+    });
     log(req, 'POST /generate:done', { ok: resultPayload.ok, rowCounts: resultPayload.rowCounts, warnings: resultPayload.warnings, error: resultPayload.error, paths: resultPayload.paths });
     return res.status(200).json({ ...resultPayload, requestId: requestId(req) });
   } catch (err) {

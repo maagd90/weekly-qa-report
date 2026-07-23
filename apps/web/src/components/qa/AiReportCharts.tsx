@@ -14,7 +14,7 @@ import {
   AiReportWonderMilesSection,
   hasWonderMilesExportData,
 } from './AiReportWonderMilesSection';
-import { scopeHasReportCapability } from '../../lib/reportCapabilities';
+import { scopeHasReportCapability, vendorPortalEmptyMessage } from '../../lib/reportCapabilities';
 
 interface AiReportChartsProps {
   dashboard: DashboardPayload;
@@ -175,7 +175,7 @@ export function AiReportCharts({ dashboard, kpiStyle, reportType }: AiReportChar
 
       {showVendorPortal && !uat?.total && (
         <div className="pdf-section border border-qa-border p-5 bg-[#faf8f2] text-[13px] text-qa-muted">
-          No Vendor Portal bugs in the selected date range. Widen the date range or check that an ODL/production export is staged under Import Data.
+          {vendorPortalEmptyMessage(dashboard)}
         </div>
       )}
     </div>

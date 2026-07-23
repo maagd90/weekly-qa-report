@@ -2,26 +2,7 @@ import React from 'react';
 import type { DashboardByProject, DashboardPayload } from 'qa-dashboard-batch';
 import { fmt } from '../../theme/qaTheme';
 import { projectDisplayName } from '../../lib/projectDisplay';
-
-export function projectSliceAsDashboard(dashboard: DashboardPayload, project: string): DashboardPayload {
-  const slice = dashboard.byProject?.find((item) => item.project === project);
-  if (!slice) return dashboard;
-  return {
-    ...dashboard,
-    scope: { ...dashboard.scope, project: slice.project, projects: [slice.project] },
-    overview: slice.overview,
-    testers: slice.testers,
-    qualityAssuranceSearch: slice.qualityAssuranceSearch,
-    cycles: slice.cycles,
-    cyclesByPassPctAsc: [...slice.cycles].sort((a, b) => a.passPct - b.passPct),
-    storyBug: slice.storyBug,
-    traceability: slice.traceability,
-    workItems: slice.workItems,
-    defectBacklog: slice.defectBacklog,
-    uat: slice.uat,
-    byProject: undefined,
-  };
-}
+export { projectSliceAsDashboard } from '../../lib/projectDashboardSlice';
 
 function summary(slice?: DashboardByProject, dashboard?: DashboardPayload): string {
   const overview = slice?.overview || dashboard?.overview;
@@ -46,7 +27,7 @@ export function ProjectBreakdownTabs({ dashboard, value, onChange, label }: {
         {['all', ...projects.map((item) => item.project)].map((project) => {
           const slice = projects.find((item) => item.project === project);
           const active = project === value;
-          return <button key={project} type="button" role="tab" aria-selected={active} onClick={() => onChange(project)} className={`min-h-11 shrink-0 border bg-white px-3 py-2 text-left ${active ? 'border-qa-ink shadow-sm' : 'border-qa-border hover:border-qa-ink'}`}><div className="font-mono-qa text-[10px] uppercase tracking-wide text-qa-ink">{project === 'all' ? 'All' : projectDisplayName(project)}</div><div className="mt-0.5 font-mono-qa text-[9.5px] text-qa-muted-light">{summary(slice, project === 'all' ? dashboard : undefined)}</div></button>;
+          return <button key={project} type="button" role="tab" aria-selected={active} onClick={() => onChange(project)} className={`min-h-11 shrink-0 border bg-white px-3 py-2 text-left ${active ? 'border-qa-ink shadow-sm' : 'border-qa-border hover:border-qa-ink'}`}><div className="font-mono-qa text-[10px] uppercase tracking-wide text-qa-ink">{project === 'all' ? 'All' : projectDisplayName(project, dashboard.scope.projectNamesByKey)}</div><div className="mt-0.5 font-mono-qa text-[9.5px] text-qa-muted-light">{summary(slice, project === 'all' ? dashboard : undefined)}</div></button>;
         })}
       </div>
     </div>

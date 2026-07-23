@@ -1,14 +1,10 @@
 import React from 'react';
 import type { DashboardPayload, DashboardWorkItem } from 'qa-dashboard-batch';
 import { QA, fmt } from '../../theme/qaTheme';
-import { projectHasReportCapability, scopeHasReportCapability } from '../../lib/reportCapabilities';
+import { resolveWonderMilesSection } from '../../lib/reportCapabilities';
 
 export function uploadedRows(dashboard: DashboardPayload): DashboardWorkItem[] {
-  if (!scopeHasReportCapability(dashboard, 'wonderMilesExport')) return [];
-  return (dashboard.workItems || []).filter((row) => (
-    Boolean(row.sourceFile)
-    && projectHasReportCapability(dashboard, row.project, 'wonderMilesExport')
-  ));
+  return resolveWonderMilesSection(dashboard).rows;
 }
 
 export function hasWonderMilesExportData(dashboard: DashboardPayload): boolean {
@@ -16,16 +12,11 @@ export function hasWonderMilesExportData(dashboard: DashboardPayload): boolean {
 }
 
 export function hasWonderMilesExportFile(dashboard: DashboardPayload): boolean {
-  if (!scopeHasReportCapability(dashboard, 'wonderMilesExport')) return false;
-  return dashboard.files.some((file) => (
-    file.source === 'file'
-    && file.detectedType === 'jira'
-    && projectHasReportCapability(dashboard, file.project, 'wonderMilesExport')
-  ));
+  return resolveWonderMilesSection(dashboard).state === 'out-of-range';
 }
 
 export function wonderMilesEmptyMessage(dashboard: DashboardPayload): string {
-  return hasWonderMilesExportFile(dashboard)
+  return resolveWonderMilesSection(dashboard).state === 'out-of-range'
     ? 'No Wonder Miles Export Data falls within the selected date range. Widen the date range to include activity from the synchronized export.'
     : 'No Wonder Miles Story/Bug export is staged for this project. Upload the spreadsheet under Import Data and synchronize it.';
 }
