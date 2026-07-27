@@ -201,6 +201,10 @@ hasAll('src/pages/WonderMilesExportPage.tsx', [
   'StatusTabs',
   'Page {page + 1} of {totalPages}',
   'max-w-full overflow-x-auto overscroll-x-contain',
+  'selectedStory',
+  'WonderMilesDetailDrawer',
+  'onSelect(row)',
+  'cursor-pointer',
 ]);
 
 hasAll('src/components/layout/QaTabNav.tsx', [
@@ -212,6 +216,39 @@ hasAll('src/pages/UatPage.tsx', [
   'searchQuery.trim().toLocaleLowerCase()',
   'visibleVendorPortalRowValues',
   'Use Basic Search for quick criteria',
+  'selectedBug',
+  'UatBugDetailDrawer',
+  'setSelectedBug(row)',
+  'cursor-pointer',
+]);
+
+hasAll('src/components/qa/DetailDrawerBase.tsx', [
+  'fixed inset-0 z-50 flex justify-end',
+  'bg-black/30',
+  'overflow-y-auto',
+  "event.key === 'Escape'",
+  "event.key !== 'Tab'",
+  "document.addEventListener('keydown'",
+  'previouslyFocusedRef.current?.focus()',
+]);
+
+hasAll('src/components/qa/UatBugDetailDrawer.tsx', [
+  'DetailDrawerBase',
+  'Last Updated At',
+  'Last Updated By',
+  'updatedBy',
+  'Ticket ID',
+  'Latest Note',
+  'Source File',
+]);
+
+hasAll('src/components/qa/WonderMilesDetailDrawer.tsx', [
+  'DetailDrawerBase',
+  'Summary',
+  'Environment',
+  'Change Request',
+  'Last Updated By',
+  'Source File',
 ]);
 
 hasAll('src/components/qa/VendorPortalPhaseChart.tsx', [

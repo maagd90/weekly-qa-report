@@ -37,9 +37,14 @@ export interface IssueRow {
   status: IssueStatus;
   priority: string;
   assignee: string;
+  /** Person reported by the export as the most recent updater. */
+  updatedBy?: string;
   createdAt: string | null;
   resolvedAt: string | null;
   updatedAt: string;
+  /** Optional external-export metadata retained for detail traceability. */
+  environment?: string;
+  changeRequest?: string;
   /** Optional sprint metadata supplied by JIRA exports or integrations. */
   sprint?: string;
   sprintId?: unknown;
@@ -57,8 +62,12 @@ export interface UatRow {
   priority: string;
   clientPriority: string;
   submitter: string;
+  /** Person reported by the vendor export as the most recent updater. */
+  updatedBy?: string;
   submittedAt: string | null;
   updatedAt: string;
+  /** Latest vendor-provided note/comment from the winning TicketID row. */
+  note?: string;
   status: string;
   open: boolean;
   project: string;
@@ -167,7 +176,24 @@ export interface DashboardQualityAssuranceSearchItem { tester: string; searchTex
 export interface DashboardNotExecutedCase { project: string; cycleKey: string; cycleName: string; caseKey: string; updatedAt: string }
 export interface DashboardCycleItem { key: string; name: string; total: number; pass: number; fail: number; blocked: number; ne: number; na: number; passPct: number; coverage: number; status: string }
 export interface DashboardTraceabilityItem { area: string; stories: number; done: number; open: number; bugs: number; openBugs: number; completion: number; status: string }
-export interface DashboardWorkItem { key: string; summary: string; issueType: IssueType; status: IssueStatus; priority: string; assignee: string; sprint: string; sprintId?: unknown; area: string; project: string; updatedAt: string; sourceFile?: string }
+export interface DashboardWorkItem {
+  key: string;
+  summary: string;
+  issueType: IssueType;
+  status: IssueStatus;
+  priority: string;
+  assignee: string;
+  updatedBy?: string;
+  sprint: string;
+  sprintId?: unknown;
+  area: string;
+  environment?: string;
+  changeRequest?: string;
+  project: string;
+  createdAt?: string | null;
+  updatedAt: string;
+  sourceFile?: string;
+}
 export interface DashboardPriorityItem { priority: string; open: number; total: number }
 export interface DashboardOwnerItem { name: string; open: number }
 export interface DashboardStoryBug { story: number; bug: number; storyOpen: number; storyDone: number; bugOpen: number; bugDone: number }
@@ -197,10 +223,14 @@ export interface DashboardUatRow {
   subject: string;
   area: string;
   priority: string;
+  clientPriority?: string;
   status: string;
   submitter: string;
+  updatedBy?: string;
   submittedAt: string;
   updatedAt: string;
+  /** Latest vendor-provided note/comment. Optional for older cached dashboards. */
+  note?: string;
   cr: string;
   /** Optional for compatibility with dashboard JSON generated before phase classification existed. */
   reportedPhase?: VendorPortalPhaseCategory;

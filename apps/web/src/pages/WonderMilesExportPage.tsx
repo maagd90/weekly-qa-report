@@ -5,6 +5,7 @@ import { PRIORITY_COLORS, QA, fmt } from '../theme/qaTheme';
 import { QaPageShell, QaSection } from '../components/layout/QaPageShell';
 import { QaKpiCard, QaKpiGrid } from '../components/qa/QaKpiCard';
 import { QaTable, QaThead } from '../components/qa/QaBadge';
+import { WonderMilesDetailDrawer } from '../components/qa/WonderMilesDetailDrawer';
 
 interface WonderMilesExportPageProps {
   dashboard: DashboardPayload;
@@ -68,7 +69,15 @@ function StatusTabs({ rows, value, onChange, label }: {
   );
 }
 
-function WorkItemTable({ rows, emptyText }: { rows: DashboardWorkItem[]; emptyText: string }) {
+function WorkItemTable({
+  rows,
+  emptyText,
+  onSelect,
+}: {
+  rows: DashboardWorkItem[];
+  emptyText: string;
+  onSelect: (row: DashboardWorkItem) => void;
+}) {
   return (
     <>
       <QaTable>
@@ -84,7 +93,21 @@ function WorkItemTable({ rows, emptyText }: { rows: DashboardWorkItem[]; emptyTe
         ]} />
         <tbody>
           {rows.map((row) => (
-            <tr key={`${row.key}-${row.sourceFile || 'upload'}`} className="border-t border-[#f0ede5]">
+            <tr
+              key={`${row.key}-${row.sourceFile || 'upload'}`}
+              tabIndex={0}
+              aria-label={`View details for Wonder Miles ${row.issueType.toLowerCase()} ${row.key}`}
+              onClick={(event) => {
+                event.currentTarget.focus();
+                onSelect(row);
+              }}
+              onKeyDown={(event) => {
+                if (event.key !== 'Enter' && event.key !== ' ') return;
+                event.preventDefault();
+                onSelect(row);
+              }}
+              className="cursor-pointer border-t border-[#f0ede5] hover:bg-[#fafaf8] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-qa-accent"
+            >
               <td className="py-2.5 pl-[22px] font-mono-qa text-[11.5px]" style={{ color: row.issueType === 'Bug' ? QA.FAIL : QA.accent }}>{row.key}</td>
               <td className="px-3 py-2.5 font-mono-qa text-[11px] text-qa-muted whitespace-nowrap">{row.sprint || 'Not mapped'}</td>
               <td className="max-w-[420px] px-3 py-2.5"><div className="whitespace-normal break-words leading-relaxed">{row.summary || row.area}</div></td>
@@ -117,6 +140,7 @@ function Pager({ page, totalPages, totalRows, onPage }: { page: number; totalPag
 }
 
 export function WonderMilesExportPage({ dashboard, kpiStyle, searchQuery }: WonderMilesExportPageProps) {
+  const [selectedStory, setSelectedStory] = useState<DashboardWorkItem | null>(null);
   const [storyStatus, setStoryStatus] = useState<WorkItemStatusFilter>('all');
   const [bugStatus, setBugStatus] = useState<WorkItemStatusFilter>('all');
   const [storyPage, setStoryPage] = useState(0);
@@ -138,7 +162,11 @@ export function WonderMilesExportPage({ dashboard, kpiStyle, searchQuery }: Wond
   const bugRows = bugs.slice(safeBugPage * PAGE_SIZE, safeBugPage * PAGE_SIZE + PAGE_SIZE);
   const sourceFiles = useMemo(() => [...new Set(allRows.map((row) => row.sourceFile).filter((name): name is string => Boolean(name)))].sort(), [allRows]);
 
-  useEffect(() => { setStoryPage(0); setBugPage(0); }, [dashboard.scope.startDate, dashboard.scope.endDate, normalizedSearch]);
+  useEffect(() => {
+    setStoryPage(0);
+    setBugPage(0);
+    setSelectedStory(null);
+  }, [dashboard.scope.project, dashboard.scope.startDate, dashboard.scope.endDate, normalizedSearch]);
   useEffect(() => { if (storyPage >= storyPages) setStoryPage(storyPages - 1); }, [storyPage, storyPages]);
   useEffect(() => { if (bugPage >= bugPages) setBugPage(bugPages - 1); }, [bugPage, bugPages]);
 
@@ -170,7 +198,7 @@ export function WonderMilesExportPage({ dashboard, kpiStyle, searchQuery }: Wond
         className="mb-[22px]"
         headerRight={<div className="flex max-w-full flex-col items-start gap-2 sm:items-end"><StatusTabs rows={allStories} value={storyStatus} onChange={(status) => { setStoryStatus(status); setStoryPage(0); }} label="Filter Wonder Miles Stories by status" /><Pager page={safeStoryPage} totalPages={storyPages} totalRows={stories.length} onPage={setStoryPage} /></div>}
       >
-        <WorkItemTable rows={storyRows} emptyText="No Wonder Miles Story rows match the current filters." />
+        <WorkItemTable rows={storyRows} emptyText="No Wonder Miles Story rows match the current filters." onSelect={setSelectedStory} />
       </QaSection>
 
       <QaSection
@@ -179,8 +207,9 @@ export function WonderMilesExportPage({ dashboard, kpiStyle, searchQuery }: Wond
         noPadding
         headerRight={<div className="flex max-w-full flex-col items-start gap-2 sm:items-end"><StatusTabs rows={allBugs} value={bugStatus} onChange={(status) => { setBugStatus(status); setBugPage(0); }} label="Filter Wonder Miles Bugs by status" /><Pager page={safeBugPage} totalPages={bugPages} totalRows={bugs.length} onPage={setBugPage} /></div>}
       >
-        <WorkItemTable rows={bugRows} emptyText="No Wonder Miles Bug rows match the current filters." />
+        <WorkItemTable rows={bugRows} emptyText="No Wonder Miles Bug rows match the current filters." onSelect={setSelectedStory} />
       </QaSection>
+      <WonderMilesDetailDrawer story={selectedStory} onClose={() => setSelectedStory(null)} />
     </QaPageShell>
   );
 }

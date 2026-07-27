@@ -2,6 +2,7 @@ import type { DashboardUatRow } from 'qa-dashboard-batch';
 import {
   EMPTY_VENDOR_PORTAL_FILTERS,
   submittedDisplayValue,
+  updatedDisplayValue,
   visibleVendorPortalRowValues,
   type VendorPortalBasicFilters,
 } from './vendorPortalBugFilters';
@@ -10,7 +11,7 @@ const MAX_QUERY_LENGTH = 2_000;
 const MAX_TOKENS = 300;
 const MAX_NESTING = 12;
 
-type FieldName = 'ticket' | 'subject' | 'area' | 'changeRequest' | 'priority' | 'status' | 'by' | 'submitted' | 'text';
+type FieldName = 'ticket' | 'subject' | 'area' | 'changeRequest' | 'priority' | 'status' | 'by' | 'submitted' | 'updated' | 'note' | 'text';
 type ComparisonOperator = '=' | '!=' | 'IN' | 'NOT IN' | '~' | '!~' | '>' | '>=' | '<' | '<=';
 type TokenType = 'word' | 'string' | 'operator' | 'leftParen' | 'rightParen' | 'comma' | 'eof';
 
@@ -40,6 +41,8 @@ const FIELD_ALIASES: Record<string, FieldName> = {
   status: 'status',
   by: 'by',
   submitted: 'submitted',
+  updated: 'updated',
+  note: 'note',
   text: 'text',
 };
 
@@ -206,12 +209,12 @@ class Parser {
     const values = operator === 'IN' || operator === 'NOT IN'
       ? this.parseList()
       : [this.parseValue()];
-    if (field === 'submitted') {
+    if (field === 'submitted' || field === 'updated') {
       const validDateValues = values.every((value) =>
         /^\d{4}-\d{2}-\d{2}$/.test(value)
         || (['=', '!=', 'IN', 'NOT IN'].includes(operator) && value === '—'));
       if (!validDateValues) {
-        throw queryError('Submitted date comparisons require YYYY-MM-DD values.', fieldToken.position);
+        throw queryError(`${field === 'submitted' ? 'Submitted' : 'Updated'} date comparisons require YYYY-MM-DD values.`, fieldToken.position);
       }
     }
     return { kind: 'condition', field, operator, values, position: fieldToken.position };
@@ -241,7 +244,7 @@ class Parser {
   }
 
   private validateOperator(field: FieldName, operator: ComparisonOperator, position: number): void {
-    const allowed: ComparisonOperator[] = field === 'submitted'
+    const allowed: ComparisonOperator[] = field === 'submitted' || field === 'updated'
       ? ['=', '!=', 'IN', 'NOT IN', '>', '>=', '<', '<=']
       : field === 'text'
         ? ['=', '!=', '~', '!~']
@@ -259,6 +262,8 @@ function fieldValue(row: DashboardUatRow, field: FieldName): string {
   if (field === 'status') return row.status || '—';
   if (field === 'by') return row.submitter || '—';
   if (field === 'submitted') return submittedDisplayValue(row);
+  if (field === 'updated') return updatedDisplayValue(row);
+  if (field === 'note') return row.note?.trim() || '—';
   return visibleVendorPortalRowValues(row).join(' ');
 }
 
@@ -271,7 +276,7 @@ function evaluateCondition(row: DashboardUatRow, node: Extract<QueryNode, { kind
   if (node.operator === '!~') return !actual.includes(expected[0]);
   if (node.operator === 'IN') return expected.includes(actual);
   if (node.operator === 'NOT IN') return !expected.includes(actual);
-  if (node.field === 'submitted' && actual === '—') return false;
+  if ((node.field === 'submitted' || node.field === 'updated') && actual === '—') return false;
   if (node.operator === '>') return actual > expected[0];
   if (node.operator === '>=') return actual >= expected[0];
   if (node.operator === '<') return actual < expected[0];
@@ -345,6 +350,7 @@ export function vendorPortalQuerySuggestions(rows: DashboardUatRow[]): string[] 
     'status = "Pending"',
     'priority = "High"',
     'text ~ "payment"',
+    'note ~ "vendor update"',
     ...distinct(rows.map((row) => row.status)).map((value) => `status = "${value.replace(/"/g, '\\"')}"`),
     ...distinct(rows.map((row) => row.priority)).map((value) => `priority = "${value.replace(/"/g, '\\"')}"`),
     ...distinct(rows.map((row) => row.cr)).map((value) => `changeRequest = "${value.replace(/"/g, '\\"')}"`),

@@ -6,6 +6,8 @@ import { readWorkbookRows } from '../utils/readWorkbook';
 const ODL_HEADERS = ['TicketID', 'odlPriorityDescription', 'Status'];
 const SCAN = 8;
 const CLOSED = ['closed'];
+const NOTE_HEADERS = ['Note', 'Notes', 'Comment', 'Comments', 'Latest Note', 'Latest Comment', 'Latest Update'];
+const UPDATED_BY_HEADERS = ['Updated By', 'Last Updated By', 'Submittedby'];
 
 export function isOdlFile(rows: unknown[][]): boolean {
   return findHeaderRow(rows, ODL_HEADERS, SCAN) >= 0;
@@ -15,6 +17,17 @@ function mapOdlStatus(status: string): { status: string; open: boolean } {
   const s = sanitizeText(status);
   const open = !CLOSED.some((c) => c.toLowerCase() === s.toLowerCase());
   return { status: s, open };
+}
+
+function valueForAnyHeader(obj: Record<string, unknown>, candidates: string[]): string {
+  const entries = Object.entries(obj);
+  for (const candidate of candidates) {
+    const match = entries.find(([header]) =>
+      header.trim().toLocaleLowerCase() === candidate.toLocaleLowerCase());
+    const value = sanitizeText(match?.[1]);
+    if (value) return value;
+  }
+  return '';
 }
 
 export function parseOdlFromRows(
@@ -49,6 +62,7 @@ export function parseOdlFromRows(
     const { status, open } = mapOdlStatus(sanitizeText(obj['Status']));
     const cr = sanitizeText(obj['Change Request']) || 'N/A';
     const project = 'DLM';
+    const submitter = sanitizeText(obj['Submittedby']);
 
     uat.push({
       id,
@@ -57,9 +71,11 @@ export function parseOdlFromRows(
       cr,
       priority: sanitizeText(obj['odlPriorityDescription']) || 'Unassigned',
       clientPriority: sanitizeText(obj['Client_Priority']),
-      submitter: sanitizeText(obj['Submittedby']),
+      submitter,
+      updatedBy: valueForAnyHeader(obj, UPDATED_BY_HEADERS) || submitter || undefined,
       submittedAt,
       updatedAt: updatedDate || submittedAt,
+      note: valueForAnyHeader(obj, NOTE_HEADERS),
       status,
       open,
       project,

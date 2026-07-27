@@ -4,7 +4,7 @@ import os from 'os';
 import path from 'path';
 import * as XLSX from 'xlsx';
 import { parseExecutionExport } from '../parseExecutionExport';
-import { parseJira } from '../parseJira';
+import { parseJira, parseJiraFromRows } from '../parseJira';
 import { parseOdl, parseOdlFromRows } from '../parseOdl';
 import { inspectImportFile, parseAllFiles } from '../dispatcher';
 import { buildDashboardPayload } from '../../export/buildDashboardPayload';
@@ -49,6 +49,31 @@ function countResults(executions: { result: string }[]) {
   console.log('✓ JIRA parser');
 }
 
+// External JIRA exports retain update ownership and drawer traceability fields.
+{
+  const { issues } = parseJiraFromRows([
+    ['Key', 'Summary', 'Issue Type', 'Status', 'Priority', 'Assignee', 'Created', 'Updated', 'Updated By', 'Environment', 'Change Request'],
+    ['WM-101', 'Checkout story', 'Story', 'Open', 'High', 'QA Owner', '2026-07-01', '2026-07-12', 'Vendor User', 'UAT', 'CR-441'],
+  ], 'wonder-miles.xlsx');
+  assert.strictEqual(issues.length, 1);
+  assert.strictEqual(issues[0].updatedBy, 'Vendor User');
+  assert.strictEqual(issues[0].environment, 'UAT');
+  assert.strictEqual(issues[0].changeRequest, 'CR-441');
+  const payload = buildDashboardPayload({
+    projects: ['WM'],
+    executions: [],
+    issues,
+    uat: [],
+    files: [],
+    meta: { parsedAt: '', fetchedAt: null, sourceFiles: [], warnings: [], integrations: { jira: false, qmetry: false } },
+  }, {});
+  assert.strictEqual(payload.workItems?.[0].updatedBy, 'Vendor User');
+  assert.strictEqual(payload.workItems?.[0].createdAt, '2026-07-01');
+  assert.strictEqual(payload.workItems?.[0].environment, 'UAT');
+  assert.strictEqual(payload.workItems?.[0].changeRequest, 'CR-441');
+  console.log('✓ JIRA detail-drawer metadata');
+}
+
 // ODL regression
 {
   const odlPath = path.join(FIXTURES, 'odl-regression.xlsx');
@@ -75,6 +100,27 @@ function countResults(executions: { result: string }[]) {
   assert.strictEqual(uat[0].updatedAt, '2026-07-10');
   assert.deepStrictEqual(warnings, ['[technical] production.xlsx: 1 Vendor Portal row skipped because both Submittedon and LastUpdate were empty.']);
   console.log('✓ ODL LastUpdate date fallback');
+}
+
+// Vendor notes/comments are imported, and the newest TicketID revision wins.
+{
+  const older = parseOdlFromRows([
+    ['TicketID', 'Subject', 'ProductArea', 'odlPriorityDescription', 'Status', 'Submittedby', 'Submittedon', 'LastUpdate', 'Comments'],
+    ['VP-100', 'UAT payment issue', 'Payments', 'High', 'Pending', 'Original User', '2026-07-01', '2026-07-10', 'Waiting for vendor'],
+  ], 'older.xlsx').uat[0];
+  const newer = parseOdlFromRows([
+    ['TicketID', 'Subject', 'ProductArea', 'odlPriorityDescription', 'Status', 'Submittedby', 'Submittedon', 'LastUpdate', 'Comments'],
+    ['VP-100', 'UAT payment issue', 'Payments', 'High', 'In Testing', 'Vendor User', '2026-07-01', '2026-07-12', 'Fix deployed for retest'],
+  ], 'newer.xlsx').uat[0];
+  const merged = mergeDatasets([
+    { projects: ['DLM'], executions: [], issues: [], uat: [older], files: [], meta: { parsedAt: '', fetchedAt: null, sourceFiles: [], warnings: [], integrations: { jira: false, qmetry: false } } },
+    { projects: ['DLM'], executions: [], issues: [], uat: [newer], files: [], meta: { parsedAt: '', fetchedAt: null, sourceFiles: [], warnings: [], integrations: { jira: false, qmetry: false } } },
+  ]);
+  assert.strictEqual(merged.uat.length, 1);
+  assert.strictEqual(merged.uat[0].updatedAt, '2026-07-12');
+  assert.strictEqual(merged.uat[0].updatedBy, 'Vendor User');
+  assert.strictEqual(merged.uat[0].note, 'Fix deployed for retest');
+  console.log('✓ ODL latest note and TicketID revision');
 }
 
 // Full merge + dashboard payload

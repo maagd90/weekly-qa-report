@@ -7,6 +7,7 @@ import { QaKpiCard, QaKpiGrid } from '../components/qa/QaKpiCard';
 import { HorizBar } from '../components/qa/SegBar';
 import { PriorityDonut } from '../components/qa/ResultDonut';
 import { QaTable, QaThead } from '../components/qa/QaBadge';
+import { UatBugDetailDrawer } from '../components/qa/UatBugDetailDrawer';
 import { VendorPortalPhaseChart } from '../components/qa/VendorPortalPhaseChart';
 import {
   EMPTY_VENDOR_PORTAL_FILTERS,
@@ -17,6 +18,7 @@ import {
   hasBasicFilters,
   rowsForBugView,
   submittedDisplayValue,
+  updatedDisplayValue,
   visibleVendorPortalRowValues,
   type VendorPortalBasicField,
   type VendorPortalBasicFilters,
@@ -58,7 +60,7 @@ function barWidth(count: number, max: number): number {
 }
 
 function rowSort(left: DashboardUatRow, right: DashboardUatRow): number {
-  return (right.submittedAt || right.updatedAt || '').localeCompare(left.submittedAt || left.updatedAt || '')
+  return (right.updatedAt || right.submittedAt || '').localeCompare(left.updatedAt || left.submittedAt || '')
     || left.id.localeCompare(right.id);
 }
 
@@ -68,6 +70,7 @@ function sameFilters(left: VendorPortalBasicFilters, right: VendorPortalBasicFil
 
 export function UatPage({ dashboard, kpiStyle, searchQuery }: UatPageProps) {
   const [bugView, setBugView] = useState<VendorPortalBugView>('uat');
+  const [selectedBug, setSelectedBug] = useState<DashboardUatRow | null>(null);
   const [page, setPage] = useState(0);
   const [searchMode, setSearchMode] = useState<SearchMode>('basic');
   const [basicFilters, setBasicFilters] = useState<VendorPortalBasicFilters>({ ...EMPTY_VENDOR_PORTAL_FILTERS });
@@ -133,6 +136,7 @@ export function UatPage({ dashboard, kpiStyle, searchQuery }: UatPageProps) {
 
   useEffect(() => {
     setPage(0);
+    setSelectedBug(null);
   }, [bugView, dashboard.scope.project, dashboard.scope.startDate, dashboard.scope.endDate]);
 
   useEffect(() => {
@@ -311,7 +315,7 @@ export function UatPage({ dashboard, kpiStyle, searchQuery }: UatPageProps) {
       <div ref={detailRef} className="scroll-mt-4">
         <QaSection
           title={`Vendor Portal Bugs — ${BUG_VIEW_LABELS[bugView]}`}
-          subtitle={`${activeTabRows.length} classified rows · ${visibleRows.length} matching · newest submissions first`}
+          subtitle={`${activeTabRows.length} classified rows · ${visibleRows.length} matching · most recently updated first`}
           noPadding
         >
           <div className="border-b border-[#e9e5dc] px-4 py-3 sm:px-[22px]">
@@ -419,7 +423,7 @@ export function UatPage({ dashboard, kpiStyle, searchQuery }: UatPageProps) {
                       {suggestions.map((suggestion) => <option key={suggestion} value={suggestion} />)}
                     </datalist>
                   </label>
-                  <p id="vendor-portal-query-help" className="mb-0 mt-1 text-[11px] text-qa-muted-light">Fields: ticket, subject, area, changeRequest, priority, status, by, submitted, text. Apply with Ctrl/Cmd + Enter.</p>
+                  <p id="vendor-portal-query-help" className="mb-0 mt-1 text-[11px] text-qa-muted-light">Fields: ticket, subject, area, changeRequest, priority, status, by, submitted, updated, note, text. Apply with Ctrl/Cmd + Enter.</p>
                   {advancedError && <p id="vendor-portal-query-error" role="alert" className="mb-0 mt-2 text-[12px] text-[#a13d2c]">{advancedError.message}{advancedError.position !== undefined ? ` Near character ${advancedError.position + 1}.` : ''}</p>}
                   <div className="mt-3 flex flex-wrap gap-2">
                     <button type="button" onClick={applyAdvancedSearch} className="min-h-10 border border-qa-ink bg-qa-ink px-4 font-mono-qa text-[10.5px] font-semibold uppercase text-white">Apply</button>
@@ -439,11 +443,27 @@ export function UatPage({ dashboard, kpiStyle, searchQuery }: UatPageProps) {
               { label: 'Priority', className: 'w-[110px] px-3 whitespace-nowrap' },
               { label: 'Status', className: 'w-[170px] px-3 whitespace-nowrap' },
               { label: 'By', className: 'min-w-[150px] px-3' },
-              { label: 'Submitted', align: 'right', className: 'w-[120px] pr-[22px] whitespace-nowrap' },
+              { label: 'Submitted', align: 'right', className: 'w-[120px] px-3 whitespace-nowrap' },
+              { label: 'Updated', align: 'right', className: 'w-[120px] px-3 whitespace-nowrap' },
+              { label: 'Note', className: 'min-w-[280px] pr-[22px]' },
             ]} />
             <tbody>
               {pageRows.map((row) => (
-                <tr key={row.id} className="border-t border-[#f0ede5] align-top">
+                <tr
+                  key={row.id}
+                  tabIndex={0}
+                  aria-label={`View details for Vendor Portal bug ${row.id}`}
+                  onClick={(event) => {
+                    event.currentTarget.focus();
+                    setSelectedBug(row);
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key !== 'Enter' && event.key !== ' ') return;
+                    event.preventDefault();
+                    setSelectedBug(row);
+                  }}
+                  className="cursor-pointer border-t border-[#f0ede5] align-top hover:bg-[#fafaf8] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-qa-accent"
+                >
                   <td className="w-[120px] whitespace-nowrap py-2.5 pl-[22px] font-mono-qa text-[11.5px]" style={{ color: QA.accent }}>{row.id || '—'}</td>
                   <td className="min-w-[280px] max-w-[420px] px-3 py-2.5"><div className="break-words leading-relaxed">{row.subject || '—'}</div></td>
                   <td className="min-w-[150px] max-w-[220px] break-words px-3 py-2.5 text-qa-muted">{row.area || '—'}</td>
@@ -455,12 +475,14 @@ export function UatPage({ dashboard, kpiStyle, searchQuery }: UatPageProps) {
                     <span className="inline-block min-w-[90px] border border-qa-border bg-[#f5f3ed] px-2 py-1 text-center font-mono-qa text-[10px] font-semibold text-qa-ink">{row.status || '—'}</span>
                   </td>
                   <td className="min-w-[150px] max-w-[220px] break-words px-3 py-2.5 text-qa-muted">{row.submitter || '—'}</td>
-                  <td className="w-[120px] whitespace-nowrap py-2.5 pr-[22px] text-right font-mono-qa text-[11.5px] text-qa-muted">{submittedDisplayValue(row)}</td>
+                  <td className="w-[120px] whitespace-nowrap px-3 py-2.5 text-right font-mono-qa text-[11.5px] text-qa-muted">{submittedDisplayValue(row)}</td>
+                  <td className="w-[120px] whitespace-nowrap px-3 py-2.5 text-right font-mono-qa text-[11.5px] text-qa-muted">{updatedDisplayValue(row)}</td>
+                  <td className="min-w-[280px] max-w-[420px] py-2.5 pr-[22px] text-qa-muted"><div className="line-clamp-3 break-words leading-relaxed" title={row.note?.trim() || undefined}>{row.note?.trim() || '—'}</div></td>
                 </tr>
               ))}
               {visibleRows.length === 0 && (
                 <tr>
-                  <td colSpan={8} className="px-4 py-10 text-center text-[12.5px] text-qa-muted-light sm:px-[22px]">
+                  <td colSpan={10} className="px-4 py-10 text-center text-[12.5px] text-qa-muted-light sm:px-[22px]">
                     No Vendor Portal {BUG_VIEW_LABELS[bugView].toLowerCase()} match the current search{activeSearchDescription}.
                   </td>
                 </tr>
@@ -469,6 +491,7 @@ export function UatPage({ dashboard, kpiStyle, searchQuery }: UatPageProps) {
           </QaTable>
         </QaSection>
       </div>
+      <UatBugDetailDrawer bug={selectedBug} onClose={() => setSelectedBug(null)} />
     </QaPageShell>
   );
 }

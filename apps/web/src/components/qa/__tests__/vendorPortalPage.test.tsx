@@ -31,7 +31,7 @@ const dashboard: DashboardPayload = {
       { category: 'unclassified', label: 'Unclassified', environment: 'Unknown', count: 1, open: 1, closed: 0 },
     ],
     rows: [
-      { id: 'VP-1', subject: 'UAT payment', area: 'Payments', cr: 'CR-1', priority: 'High', status: 'Pending', submitter: 'QA One', submittedAt: '2026-07-10', updatedAt: '2026-07-10', reportedPhase: 'phase1-uat', sourceFile: 'private.xlsx' },
+      { id: 'VP-1', subject: 'UAT payment', area: 'Payments', cr: 'CR-1', priority: 'High', clientPriority: 'Urgent', status: 'Pending', submitter: 'QA One', updatedBy: 'Vendor User', submittedAt: '2026-07-10', updatedAt: '2026-07-13', note: 'Vendor supplied a retest build', reportedPhase: 'phase1-uat', sourceFile: 'private.xlsx' },
       { id: 'VP-2', subject: 'INC production', area: 'Payments', cr: 'CR-2', priority: 'Low', status: 'Closed', submitter: 'QA One', submittedAt: '2026-07-11', updatedAt: '2026-07-11', reportedPhase: 'production', sourceFile: 'private.xlsx' },
       { id: 'VP-3', subject: '', area: 'Payments', cr: '', priority: 'High', status: 'In Testing', submitter: 'QA One', submittedAt: '', updatedAt: '2026-07-12', reportedPhase: 'unclassified', sourceFile: 'private.xlsx' },
     ],
@@ -50,7 +50,7 @@ assert.match(html, /aria-label="Search anything"/);
 assert.match(html, />Advanced Search</);
 assert.doesNotMatch(html, /aria-label="JQL-style query"/);
 
-const headers = ['Ticket', 'Subject', 'Area', 'Change Request', 'Priority', 'Status', 'By', 'Submitted'];
+const headers = ['Ticket', 'Subject', 'Area', 'Change Request', 'Priority', 'Status', 'By', 'Submitted', 'Updated', 'Note'];
 let previous = -1;
 for (const header of headers) {
   const index = html.indexOf(`>${header}</th>`);
@@ -60,6 +60,10 @@ for (const header of headers) {
 assert.doesNotMatch(html, />Source file<\/th>/i);
 assert.doesNotMatch(html, />Phase \/ Env<\/th>/i);
 const emptyHtml = renderToStaticMarkup(<UatPage dashboard={dashboard} kpiStyle="editorial" searchQuery="no-visible-match" />);
-assert.match(emptyHtml, /colspan="8"/i);
+assert.match(html, /most recently updated first/);
+assert.match(html, /Vendor supplied a retest build/);
+assert.match(html, /aria-label="View details for Vendor Portal bug VP-1"/);
+assert.match(html, /tabindex="0"/);
+assert.match(emptyHtml, /colspan="10"/i);
 
 console.log('Vendor Portal page rendering tests passed');

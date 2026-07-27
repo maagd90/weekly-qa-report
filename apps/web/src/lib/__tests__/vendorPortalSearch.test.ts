@@ -23,6 +23,7 @@ function row(overrides: Partial<DashboardUatRow> & Pick<DashboardUatRow, 'id' | 
     submittedAt: overrides.submittedAt ?? '2026-07-10',
     updatedAt: overrides.updatedAt || '2026-07-10',
     cr: overrides.cr ?? 'CR-100',
+    note: overrides.note ?? '',
     reportedPhase: overrides.reportedPhase || 'phase1-uat',
     sourceFile: overrides.sourceFile || 'hidden-source.xlsx',
   };
@@ -50,7 +51,8 @@ assert.deepStrictEqual(lowCounts.map((option) => [option.value, option.count]), 
 assert.equal(filterVendorPortalRows(rows, { ...EMPTY_VENDOR_PORTAL_FILTERS, text: 'cr-200' }).length, 1);
 assert.equal(filterVendorPortalRows(rows, { ...EMPTY_VENDOR_PORTAL_FILTERS, text: '2026-07-11' }).length, 1);
 assert.equal(filterVendorPortalRows(rows, { ...EMPTY_VENDOR_PORTAL_FILTERS, text: 'hidden-source.xlsx' }).length, 0);
-assert.deepStrictEqual(visibleVendorPortalRowValues(rows[2]).slice(-2), ['QA One', '—']);
+assert.equal(filterVendorPortalRows([row({ id: 'VP-NOTE', status: 'Pending', note: 'Vendor deployed a fix' })], { ...EMPTY_VENDOR_PORTAL_FILTERS, text: 'deployed' }).length, 1);
+assert.deepStrictEqual(visibleVendorPortalRowValues(rows[2]).slice(-4), ['QA One', '—', '2026-07-10', '—']);
 
 function matching(query: string): string[] {
   const compiled = compileVendorPortalQuery(query);
@@ -63,6 +65,7 @@ assert.deepStrictEqual(matching('priority = "Low" AND status != "Closed"'), ['VP
 assert.deepStrictEqual(matching('(status = "Closed" OR status = "Awaiting Vendor") AND NOT priority = "High"'), ['VP-3', 'VP-4']);
 assert.deepStrictEqual(matching('text ~ "payment"'), ['VP-1', 'VP-2', 'VP-4']);
 assert.deepStrictEqual(matching('submitted >= "2026-07-11"'), ['VP-2']);
+assert.deepStrictEqual(matching('updated >= "2026-07-10"'), ['VP-1', 'VP-2', 'VP-3', 'VP-4']);
 assert.deepStrictEqual(matching('changeRequest !~ "200"'), ['VP-1', 'VP-3', 'VP-4']);
 
 const invalid = compileVendorPortalQuery('unknown = "x"');

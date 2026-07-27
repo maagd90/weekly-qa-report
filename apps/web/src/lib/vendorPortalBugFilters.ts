@@ -52,6 +52,10 @@ export function submittedDisplayValue(row: DashboardUatRow): string {
   return row.submittedAt ? row.submittedAt.slice(0, 10) : '—';
 }
 
+export function updatedDisplayValue(row: DashboardUatRow): string {
+  return row.updatedAt ? row.updatedAt.slice(0, 10) : '—';
+}
+
 export function visibleVendorPortalRowValues(row: DashboardUatRow): string[] {
   return [
     displayValue(row.id),
@@ -62,6 +66,8 @@ export function visibleVendorPortalRowValues(row: DashboardUatRow): string[] {
     displayValue(row.status),
     displayValue(row.submitter),
     submittedDisplayValue(row),
+    updatedDisplayValue(row),
+    displayValue(row.note),
   ];
 }
 
