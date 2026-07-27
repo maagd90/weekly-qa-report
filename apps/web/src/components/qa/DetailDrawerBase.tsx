@@ -4,6 +4,7 @@ export interface DetailDrawerBaseProps {
   isOpen: boolean;
   title: string;
   closeLabel?: string;
+  backLabel?: string;
   onClose: () => void;
   children: React.ReactNode;
 }
@@ -20,6 +21,7 @@ export function DetailDrawerBase({
   isOpen,
   title,
   closeLabel = 'Close details',
+  backLabel = '← Back to list',
   onClose,
   children,
 }: DetailDrawerBaseProps) {
@@ -101,7 +103,7 @@ export function DetailDrawerBase({
             aria-label={closeLabel}
             className="mb-3 min-h-11 cursor-pointer border-none bg-transparent font-mono-qa text-[11px] text-qa-muted-light sm:mb-4 sm:min-h-0"
           >
-            ← Back to list
+            {backLabel}
           </button>
           <h2 id={titleId} className="m-0 font-spectral text-xl font-bold">{title}</h2>
         </div>

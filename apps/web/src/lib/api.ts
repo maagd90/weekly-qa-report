@@ -27,6 +27,7 @@ import {
   canonicalProjectOrUndefined,
   uniqueCanonicalProjects,
 } from './projectKeys';
+import type { CanonicalProjectKey, SourceProjectKey } from './projectKeys';
 
 const api = axios.create({ baseURL: '/api' });
 
@@ -48,7 +49,7 @@ export type ProjectColumnType = 'text' | 'number' | 'date' | 'boolean';
 export interface ProjectColumnConfig { fieldKey: string; sourceHeader: string; label: string; type: ProjectColumnType; visible: boolean; filterable: boolean; searchable: boolean; required?: boolean }
 export interface ProjectImportMapping { version: number; headerSignature: string; columns: ProjectColumnConfig[]; uniqueKey: string; createdAt: string }
 export interface ProjectTabConfig { id: string; label: string; enabled: boolean; rendererType: 'generic-table'; mappings: ProjectImportMapping[]; activeMappingVersion?: number; createdAt: string; updatedAt: string }
-export interface ProjectRecord { id: string; key: string; sourceKeys: string[]; name: string; capabilities: ProjectCapabilities; tabs: ProjectTabConfig[]; createdAt: string; updatedAt: string; fileCount?: number }
+export interface ProjectRecord { id: string; key: CanonicalProjectKey; sourceKeys: SourceProjectKey[]; name: string; capabilities: ProjectCapabilities; tabs: ProjectTabConfig[]; createdAt: string; updatedAt: string; fileCount?: number }
 export interface ProjectDeletionResult { project: ProjectRecord; filesDeleted: number; syncReportsDeleted: number }
 export interface ConnectionMigrationResult { projects: ProjectRecord[]; assignments: Array<{ type: 'jira' | 'qmetry'; connectionId: string; projectId: string; projectKey: string }> }
 export interface ProjectFileRecord { id: string; projectId: string; originalName: string; storedName: string; size: number; uploadedAt: string; status: 'staged' | 'synced' | 'error'; detectedType?: 'test-execution' | 'jira' | 'odl' | 'mapped' | 'unknown'; headerSignature?: string; mappingStatus?: 'required' | 'mapped' | 'not-required'; tabId?: string; mappingVersion?: number; rows?: number; lastSyncId?: string; lastSyncedAt?: string }

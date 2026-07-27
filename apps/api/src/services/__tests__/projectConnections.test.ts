@@ -1,12 +1,15 @@
 import assert from 'node:assert/strict';
-import type { JiraConnectionInput, QmetryConnectionInput, UserConnections } from 'qa-dashboard-batch';
-import { emptyDataset } from 'qa-dashboard-batch';
+import type { CanonicalProjectKey, JiraConnectionInput, QmetryConnectionInput, SourceProjectKey, UserConnections } from 'qa-dashboard-batch';
+import { canonicalProjectKey, emptyDataset, normalizeSourceProjectKey } from 'qa-dashboard-batch';
 import type { ProjectRecord } from '../projectImports';
 import { normalizeDatasetProjectOwnership, planConnectionProjectMigration, scopeProjectConnections, validateProjectConnections } from '../projectConnections';
 
+const key = (value: string): CanonicalProjectKey => canonicalProjectKey(value);
+const sourceKey = (value: string): SourceProjectKey => normalizeSourceProjectKey(value);
+
 const projects: ProjectRecord[] = [
-  { id: 'project-a', key: 'AAA', sourceKeys: ['AAA'], name: 'Project A', tabs: [], createdAt: '2026-07-21T00:00:00.000Z', updatedAt: '2026-07-21T00:00:00.000Z' },
-  { id: 'project-b', key: 'BBB', sourceKeys: ['BBB', 'BBC'], name: 'Project B', tabs: [], createdAt: '2026-07-21T00:00:00.000Z', updatedAt: '2026-07-21T00:00:00.000Z' },
+  { id: 'project-a', key: key('AAA'), sourceKeys: [sourceKey('AAA')], name: 'Project A', tabs: [], createdAt: '2026-07-21T00:00:00.000Z', updatedAt: '2026-07-21T00:00:00.000Z' },
+  { id: 'project-b', key: key('BBB'), sourceKeys: [sourceKey('BBB'), sourceKey('BBC')], name: 'Project B', tabs: [], createdAt: '2026-07-21T00:00:00.000Z', updatedAt: '2026-07-21T00:00:00.000Z' },
 ];
 
 function jira(id: string, workspaceProjectId: string, projectKey: string): JiraConnectionInput {
@@ -45,8 +48,8 @@ expectValidationError(
 
 const dlmProject: ProjectRecord = {
   id: 'project-dlm',
-  key: 'DLM',
-  sourceKeys: ['DLM', 'DN4_FT'],
+  key: key('DLM'),
+  sourceKeys: [sourceKey('DLM'), sourceKey('DN4_FT')],
   name: 'DLM',
   tabs: [],
   createdAt: '2026-07-21T00:00:00.000Z',

@@ -98,7 +98,7 @@ export function SettingsPage({ selectedProject: selectedProjectKey, onProjectCha
     if (!projectsData) return;
     setProjectDrafts(Object.fromEntries(projectsData.map((project) => [project.id, {
       key: project.key,
-      sourceKeys: projectSourceKeys(project).filter((key) => key !== project.key).join(', '),
+      sourceKeys: projectSourceKeys(project).filter((key) => (key as string) !== (project.key as string)).join(', '),
       name: project.name,
       ...project.capabilities,
       dedicatedTab: Boolean(project.tabs[0]?.enabled),
@@ -155,7 +155,7 @@ export function SettingsPage({ selectedProject: selectedProjectKey, onProjectCha
     setConnectionError(null);
     setQmetryConnectionsState((current) => {
       const index = current.findIndex((connection) => qmetryProject(connection, projects)?.id === project.id);
-      const selectedSourceKey = projectSourceKeys(project).includes(next.projectKey) ? next.projectKey : project.key;
+      const selectedSourceKey = projectSourceKeys(project).includes(normalizeSourceProjectKey(next.projectKey)) ? next.projectKey : project.key;
       const scoped = { ...next, workspaceProjectId: project.id, workspaceProjectKey: project.key, projectKey: selectedSourceKey, cycleIds: [] };
       if (index < 0) return [...current, scoped];
       return current.map((connection, currentIndex) => currentIndex === index ? scoped : connection);
@@ -239,7 +239,7 @@ export function SettingsPage({ selectedProject: selectedProjectKey, onProjectCha
         ? { ...connection, workspaceProjectId: project.id, workspaceProjectKey: project.key, projectKeys: nextSourceKeys, jql: rewriteProjectJql(connection.jql, previousSourceKeys, nextSourceKeys) }
         : connection);
       const nextQmetry = qmetryConnections.map((connection) => qmetryProject(connection, projects)?.id === project.id
-        ? { ...connection, workspaceProjectId: project.id, workspaceProjectKey: project.key, projectKey: nextSourceKeys.includes(connection.projectKey) ? connection.projectKey : project.key, cycleIds: [] }
+        ? { ...connection, workspaceProjectId: project.id, workspaceProjectKey: project.key, projectKey: nextSourceKeys.includes(normalizeSourceProjectKey(connection.projectKey)) ? connection.projectKey : project.key, cycleIds: [] }
         : connection);
       const normalized = normalizedConnectionsForSave(nextJira, nextQmetry, nextProjects);
       setJiraConnections(normalized.jira);
@@ -356,7 +356,7 @@ export function SettingsPage({ selectedProject: selectedProjectKey, onProjectCha
             {projects.map((project) => {
               const draft = projectDrafts[project.id] || {
                 key: project.key,
-                sourceKeys: projectSourceKeys(project).filter((key) => key !== project.key).join(', '),
+                sourceKeys: projectSourceKeys(project).filter((key) => (key as string) !== (project.key as string)).join(', '),
                 name: project.name,
                 ...project.capabilities,
                 dedicatedTab: Boolean(project.tabs[0]?.enabled),

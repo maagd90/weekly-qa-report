@@ -56,6 +56,7 @@ export {
   jiraProjectJql,
   jqlProjectKeys,
 } from './projects/projectKey';
+export type { CanonicalProjectKey, SourceProjectKey } from './projects/projectKey';
 export { fetchJiraIssues } from './integrations/jiraClient';
 export { fetchQmetryExecutions, fetchQmetryExecutionSummaryByAssignee, fetchProjectCycles, fetchProjectFolders } from './integrations/qmetryClient';
 export { parseQmetryExecutionSummary, describeQmetryExecutionSummaryShape, executionSummaryQql, executionRowsFromSummary } from './integrations/qmetryExecutionSummary';
