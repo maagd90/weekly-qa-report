@@ -7,6 +7,8 @@ import { QaKpiCard, QaKpiGrid } from '../components/qa/QaKpiCard';
 import { HorizBar } from '../components/qa/SegBar';
 import { TraceBadge, QaTable, QaThead } from '../components/qa/QaBadge';
 import { PRIORITY_COLORS } from '../theme/qaTheme';
+import { projectDisplayName } from '../lib/projectDisplay';
+import { ProjectBreakdownTabs, projectSliceAsDashboard } from '../components/qa/ProjectBreakdownTabs';
 
 interface TraceabilityPageProps {
   dashboard: DashboardPayload;
@@ -44,10 +46,10 @@ type WorkItemPager = {
 
 function Pager({ page, totalPages, setPage }: WorkItemPager) {
   return totalPages > 1 ? (
-    <div className="flex items-center gap-2 font-mono-qa text-[10.5px] text-qa-muted-light">
-      <span>{page + 1}/{totalPages} · {PAGE_SIZE} rows/page</span>
-      <button type="button" onClick={() => setPage((p) => Math.max(0, p - 1))} disabled={page === 0} className="px-2 py-1 border border-qa-border bg-white text-qa-ink disabled:opacity-40">Prev</button>
-      <button type="button" onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))} disabled={page >= totalPages - 1} className="px-2 py-1 border border-qa-border bg-white text-qa-ink disabled:opacity-40">Next</button>
+    <div className="flex items-center gap-2 font-mono-qa text-[10.5px] text-qa-muted-light" aria-label="Table pagination">
+      <span aria-live="polite">Page {page + 1} of {totalPages} · {PAGE_SIZE} rows/page</span>
+      <button type="button" aria-label="Previous page" onClick={() => setPage((p) => Math.max(0, p - 1))} disabled={page === 0} className="min-h-10 px-3 py-1 border border-qa-border bg-white text-qa-ink disabled:opacity-40 sm:min-h-0 sm:px-2">Prev</button>
+      <button type="button" aria-label="Next page" onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))} disabled={page >= totalPages - 1} className="min-h-10 px-3 py-1 border border-qa-border bg-white text-qa-ink disabled:opacity-40 sm:min-h-0 sm:px-2">Next</button>
     </div>
   ) : <span className="font-mono-qa text-[10.5px] text-qa-muted-light">latest first</span>;
 }
@@ -86,7 +88,7 @@ function StatusTabs({ rows, value, onChange, label }: {
               role="tab"
               aria-selected={active}
               onClick={() => onChange(status.id)}
-              className={`shrink-0 border px-3 py-1.5 font-mono-qa text-[9.5px] font-semibold ${active ? 'border-qa-ink bg-qa-ink text-white' : 'border-qa-border bg-white text-qa-muted hover:border-qa-ink'}`}
+              className={`min-h-10 shrink-0 border px-3 py-1.5 font-mono-qa text-[9.5px] font-semibold sm:min-h-0 ${active ? 'border-qa-ink bg-qa-ink text-white' : 'border-qa-border bg-white text-qa-muted hover:border-qa-ink'}`}
             >
               {status.label} · {counts[status.id]}
             </button>
@@ -97,15 +99,16 @@ function StatusTabs({ rows, value, onChange, label }: {
   );
 }
 
-function WorkItemsTable({ rows, emptyText }: { rows: WorkItem[]; emptyText: string }) {
+function WorkItemsTable({ rows, emptyText, showProject = false }: { rows: WorkItem[]; emptyText: string; showProject?: boolean }) {
   return (
     <>
       <QaTable>
-        <QaThead cols={[{ label: 'Key', className: 'pl-[22px]' }, { label: 'Sprint No.' }, { label: 'Summary' }, { label: 'Priority' }, { label: 'Status' }, { label: 'Updated' }, { label: 'Assignee', className: 'pr-[22px]' }]} />
+        <QaThead cols={[...(showProject ? [{ label: 'Project', className: 'pl-[22px]' }] : []), { label: 'Key', className: showProject ? '' : 'pl-[22px]' }, { label: 'Sprint No.' }, { label: 'Summary' }, { label: 'Priority' }, { label: 'Status' }, { label: 'Updated' }, { label: 'Assignee', className: 'pr-[22px]' }]} />
         <tbody>
           {rows.map((w) => (
-            <tr key={w.key} className="border-t border-[#f0ede5]">
-              <td className="py-2.5 pl-[22px] font-mono-qa text-[11.5px]" style={{ color: w.issueType === 'Bug' ? QA.FAIL : QA.accent }}>{w.key}</td>
+            <tr key={`${w.project}:${w.key}`} className="border-t border-[#f0ede5]">
+              {showProject && <td className="py-2.5 pl-[22px] font-semibold whitespace-nowrap">{projectDisplayName(w.project)}</td>}
+              <td className={`py-2.5 font-mono-qa text-[11.5px] ${showProject ? 'px-3' : 'pl-[22px]'}`} style={{ color: w.issueType === 'Bug' ? QA.FAIL : QA.accent }}>{w.key}</td>
               <td className="py-2.5 px-3 font-mono-qa text-[11px] text-qa-muted whitespace-nowrap">{w.sprint || 'Not mapped'}</td>
               <td className="py-2.5 px-3 max-w-[420px]"><div className="whitespace-normal break-words leading-relaxed">{w.summary || w.area}</div></td>
               <td className="py-2.5 px-3 text-[12px]">{w.priority}</td>
@@ -122,19 +125,22 @@ function WorkItemsTable({ rows, emptyText }: { rows: WorkItem[]; emptyText: stri
 }
 
 export function TraceabilityPage({ dashboard, kpiStyle, searchQuery }: TraceabilityPageProps) {
-  const { traceability, storyBug, defectBacklog } = dashboard;
+  const [activeProjectTab, setActiveProjectTab] = useState('all');
+  const visibleDashboard = activeProjectTab === 'all' ? dashboard : projectSliceAsDashboard(dashboard, activeProjectTab);
+  const { traceability, storyBug, defectBacklog } = visibleDashboard;
   const [storyPage, setStoryPage] = useState(0);
   const [bugPage, setBugPage] = useState(0);
   const [storyStatus, setStoryStatus] = useState<WorkItemStatusFilter>('all');
   const [bugStatus, setBugStatus] = useState<WorkItemStatusFilter>('all');
   const normalizedSearch = searchQuery.trim().toLowerCase();
+  const portfolio = activeProjectTab === 'all' && dashboard.scope.project === 'all' ? (dashboard.byProject || []) : [];
 
   const allWorkItems = useMemo(() => {
-    const rows = (((dashboard as unknown as { workItems?: WorkItem[] }).workItems) || []);
+    const rows = (((visibleDashboard as unknown as { workItems?: WorkItem[] }).workItems) || []);
     return rows
       .filter((row) => !normalizedSearch || `${row.key} ${row.summary} ${row.sprint} ${row.area} ${row.assignee} ${row.status} ${row.priority} ${row.project}`.toLowerCase().includes(normalizedSearch))
       .sort(compareNewestFirst);
-  }, [dashboard, normalizedSearch]);
+  }, [visibleDashboard, normalizedSearch]);
 
   const allStoryRows = useMemo(() => allWorkItems.filter((w) => w.issueType === 'Story'), [allWorkItems]);
   const allBugRows = useMemo(() => allWorkItems.filter((w) => w.issueType === 'Bug'), [allWorkItems]);
@@ -182,6 +188,19 @@ export function TraceabilityPage({ dashboard, kpiStyle, searchQuery }: Traceabil
       subtitle="Story and Bug rows are shown separately with pagination"
       intro="Every Story and Bug work item from JIRA is shown with sprint information when available. Search filters these rows instantly; change the dates and apply them only when you need a different reporting period."
     >
+      <ProjectBreakdownTabs dashboard={dashboard} value={activeProjectTab} onChange={setActiveProjectTab} label="Traceability project breakdown" />
+      {portfolio.length > 0 && (
+        <QaSection title="Requirements Traceability by Project" subtitle="Portfolio comparison; expand the detailed Story and Bug tables below" noPadding className="mb-[22px]">
+          <QaTable>
+            <QaThead cols={[{ label: 'Project', className: 'pl-[22px]' }, { label: 'Requirements', align: 'right' }, { label: 'Done', align: 'right' }, { label: 'Open', align: 'right' }, { label: 'Bugs', align: 'right' }, { label: 'Open bugs', align: 'right' }, { label: 'Completion', align: 'right', className: 'pr-[22px]' }]} />
+            <tbody>{portfolio.map((slice) => {
+              const requirements = slice.storyBug.story;
+              const completion = requirements ? Math.round((slice.storyBug.storyDone / requirements) * 100) : 0;
+              return <tr key={slice.project} className="border-t border-[#f0ede5]"><td className="py-3 pl-[22px] font-semibold">{projectDisplayName(slice.project)}</td><td className="py-3 px-3 text-right font-mono-qa">{requirements}</td><td className="py-3 px-3 text-right font-mono-qa text-[#2f6a48]">{slice.storyBug.storyDone}</td><td className="py-3 px-3 text-right font-mono-qa">{slice.storyBug.storyOpen}</td><td className="py-3 px-3 text-right font-mono-qa">{slice.storyBug.bug}</td><td className="py-3 px-3 text-right font-mono-qa text-[#a13d2c]">{slice.storyBug.bugOpen}</td><td className="py-3 pr-[22px] text-right font-mono-qa" style={{ color: coverageColor(completion) }}>{completion}%</td></tr>;
+            })}</tbody>
+          </QaTable>
+        </QaSection>
+      )}
       <QaKpiGrid cols={4}>
         <QaKpiCard kpiStyle={kpiStyle} label="Story Requirements" value={fmt(storyBug.story)} sub={`${traceKpis.areas} feature areas`} color={QA.accent} />
         <QaKpiCard kpiStyle={kpiStyle} label="Verified" value={traceKpis.verified} sub="all stories done, no open bugs" color="#2F7D5A" />
@@ -222,7 +241,7 @@ export function TraceabilityPage({ dashboard, kpiStyle, searchQuery }: Traceabil
           </div>
         )}
       >
-        <WorkItemsTable rows={visibleStories} emptyText="No Story rows available for the current filters." />
+        <WorkItemsTable rows={visibleStories} emptyText="No Story rows available for the current filters." showProject={portfolio.length > 0} />
       </QaSection>
 
       <QaSection
@@ -237,7 +256,7 @@ export function TraceabilityPage({ dashboard, kpiStyle, searchQuery }: Traceabil
           </div>
         )}
       >
-        <WorkItemsTable rows={visibleBugs} emptyText="No Bug rows available for the current filters." />
+        <WorkItemsTable rows={visibleBugs} emptyText="No Bug rows available for the current filters." showProject={portfolio.length > 0} />
       </QaSection>
 
       <QaSection>

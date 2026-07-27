@@ -5,6 +5,7 @@ import path from 'path';
 import { toErrorMessage } from '../errors';
 import { safeApiError } from '../fetchWithTimeout';
 import { readJsonFile, writeJsonFile } from '../jsonFile';
+import { jiraConfigFromConnection, qmetryConfigFromConnection } from '../../config/loadIntegrations';
 
 function main(): void {
   const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'qa-foundation-utils-'));
@@ -25,6 +26,26 @@ function main(): void {
     assert.equal(toErrorMessage('plain failure'), 'plain failure');
     assert.equal(toErrorMessage(null), 'Unknown error');
     assert.equal(toErrorMessage(new Error(''), 'Fallback failure'), 'Fallback failure');
+
+    const jiraConfig = jiraConfigFromConnection({
+      id: 'jira-dlm',
+      name: 'DLM JIRA',
+      baseUrl: 'https://jira.example.test',
+      email: 'qa',
+      apiToken: 'secret',
+      projectKeys: ['DLM', 'dn4_ft'],
+    });
+    assert.deepEqual(jiraConfig.projectKeys, ['DLM', 'DN4_FT']);
+    assert.match(jiraConfig.jql, /DN4_FT/);
+    const qmetryConfig = qmetryConfigFromConnection({
+      id: 'qmetry-dlm',
+      name: 'DLM QMetry',
+      baseUrl: 'https://qmetry.example.test',
+      email: 'qa',
+      apiToken: 'secret',
+      projectKey: 'dn4_ft',
+    });
+    assert.equal(qmetryConfig.projectKey, 'DN4_FT');
 
     const originalConsoleError = console.error;
     console.error = () => undefined;

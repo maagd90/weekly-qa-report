@@ -98,21 +98,23 @@ export function OverviewPage({ dashboard, kpiStyle }: OverviewPageProps) {
   return (
     <QaPageShell title="Execution Overview" subtitle={`${periodNote} · ${tabLabel}`}>
       {projectTabs.length > 2 && (
-        <div className="flex flex-wrap gap-2 mb-[22px]">
-          {projectTabs.map((project) => {
-            const isActive = project === activeProjectTab;
-            const projectSlice = byProject.find((p) => p.project === project);
-            const label = project === 'all' ? 'All' : projectDisplayName(project);
-            const sub = project === 'all'
-              ? `${fmt(dashboard.overview.totalCases)} test cases · ${fmt(dashboard.storyBug.story + dashboard.storyBug.bug)} work items`
-              : projectSlice?.overview.totalCases ? `${fmt(projectSlice.overview.totalCases)} test cases` : projectSlice?.storyBug.bug ? `${fmt(projectSlice.storyBug.bug)} defects` : 'no metrics';
-            return (
-              <button key={project} type="button" onClick={() => setActiveProjectTab(project)} className={`px-3 py-2 border text-left bg-white ${isActive ? 'border-qa-ink' : 'border-qa-border'}`}>
-                <div className="font-mono-qa text-[10px] uppercase tracking-wide text-qa-ink">{label}</div>
-                <div className="font-mono-qa text-[9.5px] text-qa-muted-light mt-0.5">{sub}</div>
-              </button>
-            );
-          })}
+        <div className="qa-scroll mb-[22px] max-w-full overflow-x-auto overscroll-x-contain" role="tablist" aria-label="Overview project breakdown">
+          <div className="flex min-w-max gap-2 pb-1">
+            {projectTabs.map((project) => {
+              const isActive = project === activeProjectTab;
+              const projectSlice = byProject.find((p) => p.project === project);
+              const label = project === 'all' ? 'All' : projectDisplayName(project);
+              const sub = project === 'all'
+                ? `${fmt(dashboard.overview.totalCases)} test cases · ${fmt(dashboard.storyBug.story + dashboard.storyBug.bug)} work items`
+                : projectSlice?.overview.totalCases ? `${fmt(projectSlice.overview.totalCases)} test cases` : projectSlice?.storyBug.bug ? `${fmt(projectSlice.storyBug.bug)} defects` : 'no metrics';
+              return (
+                <button key={project} type="button" role="tab" aria-selected={isActive} onClick={() => setActiveProjectTab(project)} className={`min-h-11 shrink-0 px-3 py-2 border text-left bg-white ${isActive ? 'border-qa-ink shadow-sm' : 'border-qa-border hover:border-qa-ink'}`}>
+                  <div className="font-mono-qa text-[10px] uppercase tracking-wide text-qa-ink">{label}</div>
+                  <div className="font-mono-qa text-[9.5px] text-qa-muted-light mt-0.5">{sub}</div>
+                </button>
+              );
+            })}
+          </div>
         </div>
       )}
       <ProjectOverviewBlock slice={selectedSlice} kpiStyle={kpiStyle} />

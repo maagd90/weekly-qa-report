@@ -1,10 +1,10 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import clsx from 'clsx';
 import { Download } from 'lucide-react';
-import type { DashboardPayload } from 'qa-dashboard-batch';
+import type { DashboardPayload, StructuredReportNarrative } from 'qa-dashboard-batch';
 import { batchApi, apiErrorMessage, getReportBranding, type GeneratedReportData, type ReportType } from '../lib/api';
 import type { KpiStyle } from '../theme/qaTheme';
 import { QA } from '../theme/qaTheme';
@@ -12,6 +12,7 @@ import { AiReportCharts } from '../components/qa/AiReportCharts';
 import { projectDisplayName } from '../lib/projectDisplay';
 import { defaultReportingPeriod } from '../lib/reportingPeriod';
 import { userFacingWarnings } from '../lib/userFacingWarnings';
+import { ProjectBreakdownTabs, projectSliceAsDashboard } from '../components/qa/ProjectBreakdownTabs';
 
 const REPORT_TYPES: { value: ReportType; label: string; desc: string }[] = [
   { value: 'full', label: 'Full', desc: 'all sections' },
@@ -88,32 +89,20 @@ export function AiReportPage({ dashboard, kpiStyle, project }: AiReportPageProps
   const [startDate, setStartDate] = useState(seededRange.startDate);
   const [endDate, setEndDate] = useState(seededRange.endDate);
   const [reportType, setReportType] = useState<ReportType>('executive');
-  const [reportProject, setReportProject] = useState(project || 'all');
+  const [activeProjectTab, setActiveProjectTab] = useState('all');
   const [error, setError] = useState<string | null>(null);
   const [warning, setWarning] = useState<string | null>(null);
   const [reportMarkdown, setReportMarkdown] = useState('');
+  const [reportNarrative, setReportNarrative] = useState<StructuredReportNarrative | null>(null);
   const [reportDashboard, setReportDashboard] = useState<DashboardPayload | null>(null);
   const [reportMeta, setReportMeta] = useState<ReportMeta | null>(null);
   const [downloading, setDownloading] = useState(false);
 
   const { data: reportData } = useQuery({ queryKey: ['report'], queryFn: () => batchApi.getReport(), retry: false });
 
-  const projectOptions = useMemo(() => {
-    const values = new Set<string>(['all']);
-    for (const p of dashboard?.scope.projects || []) if (p) values.add(p);
-    for (const p of reportDashboard?.scope.projects || []) if (p) values.add(p);
-    if (project) values.add(project);
-    if (reportProject) values.add(reportProject);
-    return [...values];
-  }, [dashboard?.scope.projects, reportDashboard?.scope.projects, project, reportProject]);
-
-  const selectedProject = reportProject && reportProject !== 'all' ? reportProject : undefined;
+  const selectedProject = project && project !== 'all' ? project : undefined;
   const selectedProjectLabel = selectedProject ? projectDisplayName(selectedProject) : 'All projects';
   const notes = sourceNotes(warning);
-
-  useEffect(() => {
-    if (project && project !== reportProject) setReportProject(project);
-  }, [project]);
 
   useEffect(() => {
     if (!dashboard) return;
@@ -122,11 +111,13 @@ export function AiReportPage({ dashboard, kpiStyle, project }: AiReportPageProps
       setStartDate(next.startDate);
       setEndDate(next.endDate);
     }
-  }, [dashboard?.meta.dataMin, dashboard?.meta.dataMax, dashboard?.scope.startDate, dashboard?.scope.endDate, reportProject]);
+  }, [dashboard?.meta.dataMin, dashboard?.meta.dataMax, dashboard?.scope.startDate, dashboard?.scope.endDate, project]);
 
   useEffect(() => {
     if (!reportData) return;
     const meta = reportData.meta as ReportMeta | undefined;
+    const storedProject = meta?.params?.project;
+    if (storedProject !== selectedProject) return;
     if (reportData.dashboard) {
       setReportDashboard(reportData.dashboard);
       const visibleWarnings = userFacingWarnings(reportData.dashboard.meta.warnings);
@@ -134,11 +125,11 @@ export function AiReportPage({ dashboard, kpiStyle, project }: AiReportPageProps
     }
     setReportMeta(meta || null);
     setReportMarkdown(reportData.markdown || '');
+    setReportNarrative(reportData.narrative || null);
     const params = meta?.params;
     if (params?.startDate) setStartDate(params.startDate);
     if (params?.endDate) setEndDate(params.endDate);
     if (params?.reportType) setReportType(params.reportType);
-    if (params) setReportProject(params.project || 'all');
   }, [reportData]);
 
   const generateMutation = useMutation({
@@ -149,6 +140,7 @@ export function AiReportPage({ dashboard, kpiStyle, project }: AiReportPageProps
       setReportDashboard(null);
       setReportMeta(null);
       setReportMarkdown('');
+      setReportNarrative(null);
     },
     onSuccess: (result) => {
       if (result.payload) setReportDashboard(result.payload);
@@ -160,6 +152,7 @@ export function AiReportPage({ dashboard, kpiStyle, project }: AiReportPageProps
         setReportDashboard(null);
         setReportMeta(null);
         setReportMarkdown('');
+        setReportNarrative(null);
         setError(result.error || 'No metrics found for the selected report scope. Narrative was not generated.');
         setWarning(null);
         return;
@@ -171,19 +164,23 @@ export function AiReportPage({ dashboard, kpiStyle, project }: AiReportPageProps
         queryClient.setQueryData<GeneratedReportData>(['report'], {
           dashboard: result.payload,
           markdown: result.report?.markdown || '',
+          narrative: result.report?.narrative,
           meta: nextMeta,
         });
       }
       if (result.report?.markdown) {
         setReportMarkdown(result.report.markdown);
+        setReportNarrative(result.report.narrative || null);
       } else {
         setReportMarkdown('');
+        setReportNarrative(null);
       }
     },
     onError: (err: unknown) => {
       setReportDashboard(null);
       setReportMeta(null);
       setReportMarkdown('');
+      setReportNarrative(null);
       setError(apiErrorMessage(err, 'Report generation failed'));
     },
   });
@@ -191,9 +188,27 @@ export function AiReportPage({ dashboard, kpiStyle, project }: AiReportPageProps
   const chartData = reportMatchesSelection(reportDashboard, reportMeta, { startDate, endDate, reportType, project: selectedProject })
     ? reportDashboard
     : null;
+  const visibleChartData = chartData && activeProjectTab !== 'all' ? projectSliceAsDashboard(chartData, activeProjectTab) : chartData;
   const generating = generateMutation.isPending;
-  const hasNarrative = Boolean(chartData && reportMarkdown);
+  const visibleNarrative = reportNarrative
+    ? activeProjectTab === 'all'
+      ? reportNarrative.assembledMarkdown
+      : reportNarrative.projects[activeProjectTab]?.markdown || ''
+    : activeProjectTab === 'all' || chartData?.scope.project !== 'all'
+      ? reportMarkdown
+      : '';
+  const narrativeUnavailable = Boolean(
+    chartData
+    && activeProjectTab !== 'all'
+    && reportNarrative
+    && !reportNarrative.projects[activeProjectTab],
+  );
+  const hasNarrative = Boolean(chartData && visibleNarrative);
   const hasReport = !generating && (Boolean(chartData) || hasNarrative);
+
+  useEffect(() => {
+    setActiveProjectTab('all');
+  }, [reportDashboard?.meta.generatedAt, selectedProject]);
 
   const datePresets = [
     { label: '7d', days: 7 },
@@ -224,16 +239,15 @@ export function AiReportPage({ dashboard, kpiStyle, project }: AiReportPageProps
     <div className="h-full min-w-0 flex flex-col overflow-hidden">
       <div className="px-4 py-4 border-b border-qa-border sm:px-6 lg:px-8 print:hidden">
         <div className="flex flex-wrap items-end gap-3">
-          <div className="w-full min-w-0 sm:w-auto"><label className="font-mono-qa text-[10px] uppercase tracking-wider text-qa-muted-light block mb-1">Start</label><input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="w-full min-w-0 max-w-full border border-qa-ink px-2 py-1 text-sm bg-white sm:w-auto" /></div>
+          <div className="w-full min-w-0 sm:w-auto"><label className="font-mono-qa text-[10px] uppercase tracking-wider text-qa-muted-light block mb-1">Start</label><input aria-label="Report start date" type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="min-h-11 w-full min-w-0 max-w-full border border-qa-ink bg-white px-2 py-1 text-sm sm:min-h-0 sm:w-auto" /></div>
           <div className="w-full min-w-0 sm:w-auto"><label className="font-mono-qa text-[10px] uppercase tracking-wider text-qa-muted-light block mb-1">End</label><input type="date" value={endDate} max={today} onChange={(e) => setEndDate(e.target.value)} className="w-full min-w-0 max-w-full border border-qa-ink px-2 py-1 text-sm bg-white sm:w-auto" /></div>
           <div className="w-full min-w-0 sm:w-auto"><label className="font-mono-qa text-[10px] uppercase tracking-wider text-qa-muted-light block mb-1">Report type</label><select value={reportType} onChange={(e) => setReportType(e.target.value as ReportType)} className="w-full min-w-0 max-w-full border border-qa-ink px-2 py-1 text-sm bg-white sm:w-auto">{REPORT_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label} — {t.desc}</option>)}</select></div>
-          <div className="w-full min-w-0 sm:w-auto"><label className="font-mono-qa text-[10px] uppercase tracking-wider text-qa-muted-light block mb-1">Project</label><select value={reportProject} onChange={(e) => setReportProject(e.target.value)} className="w-full min-w-0 max-w-full border border-qa-ink px-2 py-1 text-sm bg-white sm:w-auto">{projectOptions.map((p) => <option key={p} value={p}>{p === 'all' ? 'All projects' : projectDisplayName(p)}</option>)}</select></div>
           <div className="flex gap-1">{datePresets.map((p) => <button type="button" key={p.label} onClick={() => setPreset(p.days)} className="px-2 py-1 text-xs border border-qa-border bg-white">{p.label}</button>)}</div>
           <button type="button" onClick={() => generateMutation.mutate()} disabled={generating} className={clsx('w-full px-4 py-2 text-xs font-mono-qa uppercase tracking-wider text-white border-0 sm:w-auto', generating ? 'opacity-60 cursor-wait' : 'cursor-pointer')} style={{ background: QA.accent }}>{generating ? 'Generating...' : 'Generate Report'}</button>
           <button type="button" onClick={downloadPdf} disabled={downloading || !chartData} className="w-full justify-center px-4 py-2 text-xs font-mono-qa uppercase tracking-wider border border-qa-ink bg-white disabled:opacity-50 inline-flex items-center gap-2 sm:w-auto"><Download size={14} />{downloading ? 'Exporting...' : 'Download PDF'}</button>
         </div>
         <div className="mt-2 text-[12px] text-qa-muted-light">Selected scope: {selectedProjectLabel} · {startDate || 'any'} → {endDate || 'any'}</div>
-        {error && <div className="mt-3 p-3 border border-[#ecccc2] bg-[#f8ece8] text-[#a13d2c] text-sm">{error}</div>}
+        {error && <div role="alert" className="mt-3 p-3 border border-[#ecccc2] bg-[#f8ece8] text-[#a13d2c] text-sm">{error}</div>}
         {notes.length > 0 && <div className="mt-3 p-3 border border-[#d8e3f1] bg-[#edf4fb] text-[#28527a] text-sm"><strong>Data source notes:</strong><ul className="mt-1 mb-0 pl-4">{notes.map((note) => <li key={note}>{note}</li>)}</ul></div>}
       </div>
 
@@ -246,8 +260,9 @@ export function AiReportPage({ dashboard, kpiStyle, project }: AiReportPageProps
           </div>
           {hasReport ? (
             <div className="p-4 space-y-6 sm:p-6 sm:space-y-8 lg:p-8">
-              {chartData && <AiReportCharts dashboard={chartData} kpiStyle={kpiStyle} reportType={reportType} />}
-              {hasNarrative ? <article className="prose prose-sm max-w-none prose-headings:font-spectral prose-table:text-sm"><ReactMarkdown remarkPlugins={[remarkGfm]}>{reportMarkdown}</ReactMarkdown></article> : <div className="border border-qa-border bg-[#faf8f2] p-6 text-qa-muted">Charts are ready. Configure an LLM key and generate to add narrative.</div>}
+              {chartData && <ProjectBreakdownTabs dashboard={chartData} value={activeProjectTab} onChange={setActiveProjectTab} label="QA Report project breakdown" />}
+              {visibleChartData && <AiReportCharts dashboard={visibleChartData} kpiStyle={kpiStyle} reportType={reportType} />}
+              {hasNarrative ? <article className="prose prose-sm max-w-none prose-headings:font-spectral prose-table:text-sm"><ReactMarkdown remarkPlugins={[remarkGfm]}>{visibleNarrative}</ReactMarkdown></article> : <div role={narrativeUnavailable ? 'status' : undefined} className="border border-qa-border bg-[#faf8f2] p-6 text-qa-muted">{narrativeUnavailable ? 'Narration is not available for this project in the saved report. Generate the report again.' : 'Charts are ready. Configure an LLM key and generate to add narrative.'}</div>}
             </div>
           ) : (
             <div className="p-6 text-center text-qa-muted sm:p-12">

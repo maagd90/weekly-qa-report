@@ -13,8 +13,11 @@ const JIRA_HEADERS = ['Summary'];
 const DONE = ['Done', 'CLOSED', 'Cancel', 'Rejected'];
 
 function firstText(obj: Record<string, unknown>, names: string[]): string {
+  const entries = Object.entries(obj);
   for (const name of names) {
-    const value = sanitizeText(obj[name]);
+    const match = entries.find(([header]) =>
+      header.trim().toLocaleLowerCase() === name.toLocaleLowerCase());
+    const value = sanitizeText(match?.[1]);
     if (value) return value;
   }
   return '';
@@ -67,6 +70,9 @@ export function parseJiraFromRows(
     const summary = sanitizeText(obj['Summary']);
     const updatedAt = excelSerialToIso(obj['Updated']) || createdAt;
     const sprint = firstText(obj, ['Sprint', 'Sprint Name', 'Sprint No', 'Sprint Number', 'Sprint ID', 'Sprint Id']);
+    const assignee = sanitizeText(obj['Assignee']) || 'Unassigned';
+    const updatedBy = firstText(obj, ['Updated By', 'Last Updated By'])
+      || (assignee === 'Unassigned' ? '' : assignee);
 
     issues.push({
       project: projectFromKey(key),
@@ -75,13 +81,17 @@ export function parseJiraFromRows(
       issueType,
       status: mapJiraStatus(sanitizeText(obj['Status']), DONE),
       priority: sanitizeText(obj['Priority']) || 'Medium',
-      assignee: sanitizeText(obj['Assignee']) || 'Unassigned',
+      assignee,
+      updatedBy: updatedBy || undefined,
       createdAt,
       resolvedAt: excelSerialToIso(obj['Resolved']),
       updatedAt,
+      environment: firstText(obj, ['Environment', 'Target Environment', 'Environments']) || undefined,
+      changeRequest: firstText(obj, ['Change Request', 'ChangeRequest', 'CR', 'CR Number']) || undefined,
       summary,
       sprint: sprint || 'Not mapped',
       source: 'jira-file',
+      sourceFile: fileName,
     });
   }
 

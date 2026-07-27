@@ -128,6 +128,23 @@ function vendorPortalFilesDataset(): Dataset {
   console.log('✓ Traceability sprint and status search');
 }
 
+// All Projects retains complete project-owned slices for portfolio pages and
+// reports. Keys remain isolated inside each owning project.
+{
+  const p = buildDashboardPayload(focusedDataset(), { startDate: '2026-01-01', endDate: '2026-12-31' });
+  assert.strictEqual(p.scope.project, 'all');
+  assert.strictEqual(p.byProject?.length, 2);
+  const dlm = p.byProject?.find((slice) => slice.project === 'DLM');
+  const dp = p.byProject?.find((slice) => slice.project === 'DP');
+  assert.deepStrictEqual(dlm?.workItems.map((item) => item.key).sort(), ['DLM-101', 'DLM-102']);
+  assert.strictEqual(dlm?.traceability[0]?.area, 'Login');
+  assert.deepStrictEqual(dlm?.testers.map((tester) => tester.name).sort(), ['Tester One', 'Tester Two']);
+  assert.deepStrictEqual(dlm?.cycles.map((cycle) => cycle.key), ['DLM-TR-1']);
+  assert.deepStrictEqual(dp?.workItems, []);
+  assert.deepStrictEqual(dp?.cycles.map((cycle) => cycle.key), ['DP-TR-1']);
+  console.log('✓ portfolio payload retains project-owned page details');
+}
+
 // April 2026 window (BACKEND_PROMPT acceptance)
 {
   const p = buildDashboardPayload(ds, { startDate: '2026-04-01', endDate: '2026-04-30' });

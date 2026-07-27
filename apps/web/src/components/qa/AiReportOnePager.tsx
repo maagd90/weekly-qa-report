@@ -8,6 +8,9 @@ import { QaKpiCard, QaKpiGrid } from './QaKpiCard';
 import { ResultDonut } from './ResultDonut';
 import { SegBar, testerSegSegments } from './SegBar';
 import { summaryBodyOnly, trimSummaryForPrint } from '../../lib/reportSummary';
+import { scopeHasReportCapability, vendorPortalEmptyMessage } from '../../lib/reportCapabilities';
+import { uploadedRows, wonderMilesEmptyMessage } from './AiReportWonderMilesSection';
+import { projectDisplayName } from '../../lib/projectDisplay';
 
 interface AiReportOnePagerProps {
   dashboard: DashboardPayload;
@@ -41,8 +44,14 @@ export function AiReportOnePager({
   const { overview, testers, uat } = dashboard;
   const topTesters = [...testers].sort((a, b) => b.executed - a.executed).slice(0, 3);
   const topCrs = uat ? topUatCrs(uat) : [];
-  const projectLabel = dashboard.scope.project && dashboard.scope.project !== 'all' ? dashboard.scope.project : 'All Projects';
+  const projectLabel = dashboard.scope.project && dashboard.scope.project !== 'all'
+    ? projectDisplayName(dashboard.scope.project, dashboard.scope.projectNamesByKey)
+    : 'All Projects';
   const displayNarrative = compactNarrative ? trimSummaryForPrint(narrative) : summaryBodyOnly(narrative);
+  const showVendorPortal = scopeHasReportCapability(dashboard, 'vendorPortal');
+  const showWonderMiles = scopeHasReportCapability(dashboard, 'wonderMilesExport');
+  const wonderMilesRows = uploadedRows(dashboard);
+  const wonderMilesBugs = wonderMilesRows.filter((row) => row.issueType === 'Bug');
 
   return (
     <div className="qa-one-page-report pdf-section bg-white">
@@ -78,8 +87,8 @@ export function AiReportOnePager({
         </div>
 
         <div className="border border-qa-border p-3 bg-white min-w-0">
-          <div className="font-mono-qa text-[9px] tracking-wider uppercase text-qa-muted-light mb-2">Vendor Portal Bugs</div>
-          {uat && uat.total > 0 ? (
+          <div className="font-mono-qa text-[9px] tracking-wider uppercase text-qa-muted-light mb-2">{showVendorPortal ? 'Vendor Portal Bugs' : showWonderMiles ? 'Wonder Miles Export Data' : 'Defect Activity'}</div>
+          {showVendorPortal && uat && uat.total > 0 ? (
             <>
               <div className="grid grid-cols-2 gap-2 mb-2">
                 <div>
@@ -120,8 +129,20 @@ export function AiReportOnePager({
                 </table>
               )}
             </>
+          ) : showVendorPortal ? (
+            <p className="text-[11px] text-qa-muted m-0">{vendorPortalEmptyMessage(dashboard)}</p>
+          ) : showWonderMiles && wonderMilesRows.length > 0 ? (
+            <div className="grid grid-cols-2 gap-2">
+              <div><div className="font-spectral text-xl font-bold">{wonderMilesRows.length}</div><div className="text-[10px] text-qa-muted">Export rows</div></div>
+              <div><div className="font-spectral text-xl font-bold" style={{ color: QA.FAIL }}>{wonderMilesBugs.filter((row) => row.status === 'open').length}</div><div className="text-[10px] text-qa-muted">Open bugs</div></div>
+            </div>
+          ) : showWonderMiles ? (
+            <p className="m-0 text-[11px] text-qa-muted">{wonderMilesEmptyMessage(dashboard)}</p>
           ) : (
-            <p className="text-[11px] text-qa-muted m-0">No Vendor Portal bugs in this period.</p>
+            <div className="grid grid-cols-2 gap-2">
+              <div><div className="font-spectral text-xl font-bold">{dashboard.storyBug.bug}</div><div className="text-[10px] text-qa-muted">Bugs in period</div></div>
+              <div><div className="font-spectral text-xl font-bold" style={{ color: QA.FAIL }}>{dashboard.storyBug.bugOpen}</div><div className="text-[10px] text-qa-muted">Open bugs</div></div>
+            </div>
           )}
         </div>
       </div>

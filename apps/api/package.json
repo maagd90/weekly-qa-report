@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
     "build": "tsc",
+    "test": "npm run build && node dist/services/__tests__/projectImports.test.js && node dist/services/__tests__/projectConnections.test.js",
     "start": "node dist/index.js"
   },
   "dependencies": {

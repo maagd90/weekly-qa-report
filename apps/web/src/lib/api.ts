@@ -10,8 +10,24 @@ import type {
   JiraConnectionInput,
   QmetryConnectionInput,
   UserConnections,
+  ProjectCapabilities as DashboardProjectCapabilities,
+  StructuredReportNarrative,
 } from 'qa-dashboard-batch';
-import { canonicalProjectOrAll, canonicalProjectOrUndefined, uniqueCanonicalProjects } from './projectKey';
+import {
+  isBlankJiraConnection,
+  isBlankQmetryConnection,
+  isUsableJiraConnection,
+  isUsableQmetryConnection,
+} from './connectionValidation';
+import {
+  jiraProjectJql,
+  normalizeSourceProjectKey,
+  uniqueSourceProjectKeys,
+  canonicalProjectOrAll,
+  canonicalProjectOrUndefined,
+  uniqueCanonicalProjects,
+} from './projectKeys';
+import type { CanonicalProjectKey, SourceProjectKey } from './projectKeys';
 
 const api = axios.create({ baseURL: '/api' });
 
@@ -28,11 +44,29 @@ const REPORT_BRANDING_STORAGE = 'qa_dashboard_report_branding';
 type RequestMeta = { requestId: string; startedAt: number };
 
 export interface ReportBranding { logoUrl?: string; logoAlt?: string; title?: string; subtitle?: string }
-export interface SyncInputResult { ok: boolean; rebuilt: boolean; rowCounts: { executions: number; issues: number; uat: number }; removed?: string[]; warnings?: string[]; projects?: string[]; error?: string }
+export type ProjectCapabilities = DashboardProjectCapabilities;
+export type ProjectColumnType = 'text' | 'number' | 'date' | 'boolean';
+export interface ProjectColumnConfig { fieldKey: string; sourceHeader: string; label: string; type: ProjectColumnType; visible: boolean; filterable: boolean; searchable: boolean; required?: boolean }
+export interface ProjectImportMapping { version: number; headerSignature: string; columns: ProjectColumnConfig[]; uniqueKey: string; createdAt: string }
+export interface ProjectTabConfig { id: string; label: string; enabled: boolean; rendererType: 'generic-table'; mappings: ProjectImportMapping[]; activeMappingVersion?: number; createdAt: string; updatedAt: string }
+export interface ProjectRecord { id: string; key: CanonicalProjectKey; sourceKeys: SourceProjectKey[]; name: string; capabilities: ProjectCapabilities; tabs: ProjectTabConfig[]; createdAt: string; updatedAt: string; fileCount?: number }
+export interface ProjectDeletionResult { project: ProjectRecord; filesDeleted: number; syncReportsDeleted: number }
+export interface ConnectionMigrationResult { projects: ProjectRecord[]; assignments: Array<{ type: 'jira' | 'qmetry'; connectionId: string; projectId: string; projectKey: string }> }
+export interface ProjectFileRecord { id: string; projectId: string; originalName: string; storedName: string; size: number; uploadedAt: string; status: 'staged' | 'synced' | 'error'; detectedType?: 'test-execution' | 'jira' | 'odl' | 'mapped' | 'unknown'; headerSignature?: string; mappingStatus?: 'required' | 'mapped' | 'not-required'; tabId?: string; mappingVersion?: number; rows?: number; lastSyncId?: string; lastSyncedAt?: string }
+export interface ImportRecordCounts { executions: number; stories: number; bugs: number; vendorBugs: number; customRows: number }
+export interface ImportFileReport { fileId: string; filename: string; detectedType: 'test-execution' | 'jira' | 'odl' | 'mapped' | 'unknown'; sheet: string; totalRowsFound: number; successfullyImportedRows: number; createdRecords: number; updatedRecords: number; unchangedRecords: number; duplicateOrSkippedRows: number; rejectedRows: number; rejections: Array<{ rowNumber: number; reference: string; reason: string }>; warnings: string[]; errors: string[] }
+export interface ProjectSyncReport { id: string; project: Pick<ProjectRecord, 'id' | 'key' | 'name'>; initiatedBy: string; startedAt: string; completedAt: string; durationMs: number; status: 'Successful' | 'Partially Successful' | 'Failed'; filesProcessed: number; previousTotals: ImportRecordCounts; newTotals: ImportRecordCounts; rowCounts: { executions: number; issues: number; uat: number; generic: number }; files: ImportFileReport[]; warnings: string[] }
+export interface SyncInputResult { ok: boolean; rebuilt: boolean; dashboard?: DashboardPayload; rowCounts: { executions: number; issues: number; uat: number; generic: number }; removed?: string[]; warnings?: string[]; projects?: string[]; reconciliation: ProjectSyncReport; error?: string }
+export interface SaveInputMappingResult { ok: boolean; project: ProjectRecord; file: ProjectFileRecord; mapping: ProjectImportMapping; message?: string; requestId?: string }
+export interface WorkbookColumnInspection { fileName: string; sheetName: string; headerRow: number; headers: string[]; headerSignature: string; detectedType: 'test-execution' | 'jira' | 'odl' | 'unknown'; rowCount: number; sampleRows: Array<Record<string, string>> }
+export interface ProjectTabRow { id: string; projectId: string; tabId: string; importProfileVersion: number; sourceFileId: string; sourceFile: string; sourceRow: number; importedAt: string; values: Record<string, string | number | boolean | null> }
+export interface ProjectTabData { project: ProjectRecord; tab: ProjectTabConfig; dataset: { projectId: string; tabId: string; mappingVersion?: number; rows: ProjectTabRow[]; sourceFiles: Array<{ fileId: string; filename: string; rows: number }>; updatedAt: string } }
+export interface LiveSyncResult { ok: boolean; rebuilt: boolean; dashboard?: DashboardPayload; rowCounts: { executions: number; issues: number; uat: number }; removed?: string[]; warnings?: string[]; projects?: string[]; error?: string }
 export interface DashboardSearchResult { ok: boolean; dashboard: DashboardPayload; rowCounts: { executions: number; issues: number; uat: number }; warnings?: string[]; projects?: string[]; error?: string }
 export interface GeneratedReportData {
   dashboard: DashboardPayload;
   markdown: string;
+  narrative?: StructuredReportNarrative;
   meta: { generatedAt?: string; params?: { startDate?: string; endDate?: string; reportType?: ReportType; project?: string }; toolCalls?: { toolName: string; rowCount: number }[]; [key: string]: unknown };
 }
 
@@ -65,10 +99,8 @@ function logApi(event: string, data: Record<string, unknown>): void { console.lo
 function normalizeProvider(value: unknown): LlmProvider { return value === 'openai' || value === 'gemini' || value === 'openai-compatible' || value === 'anthropic' || value === 'template' ? value : 'template'; }
 function readStoredObject<T>(key: string, fallback: T): T { try { const raw = window.localStorage.getItem(key); return raw ? (JSON.parse(raw) as T) : fallback; } catch { return fallback; } }
 function writeStoredObject<T>(key: string, value: T): void { try { window.localStorage.setItem(key, JSON.stringify(value)); } catch { /* storage unavailable */ } }
-function projectJql(keys: string[]): string { return keys.length ? `project in (${keys.join(',')}) AND issuetype in (Story, Bug) ORDER BY updated DESC` : ''; }
-function canonicalizeJql(jql?: string): string { return (jql || '').replace(/DN4_FT\s*-\s*Supply\s*&\s*DMC/gi, 'DLM').replace(/Supply\s*&\s*DMC/gi, 'DLM').trim(); }
-function normalizeJiraConnection(c: JiraConnectionInput): JiraConnectionInput { const projectKeys = uniqueCanonicalProjects(c.projectKeys || []); const jql = canonicalizeJql(c.jql) || projectJql(projectKeys); return { ...c, deploymentType: c.deploymentType || 'on-prem', enabled: c.enabled !== false, syncIssues: c.syncIssues !== false, projectKeys, jql }; }
-function normalizeQmetryConnection(c: QmetryConnectionInput): QmetryConnectionInput { return { ...c, enabled: c.enabled !== false, syncExecutions: c.syncExecutions !== false, projectKey: canonicalProjectOrUndefined(c.projectKey) || '', cycleIds: [] }; }
+function normalizeJiraConnection(c: JiraConnectionInput): JiraConnectionInput { const projectKeys = uniqueSourceProjectKeys(c.projectKeys || []); const jql = (c.jql || '').trim() || jiraProjectJql(projectKeys); return { ...c, workspaceProjectId: c.workspaceProjectId?.trim() || undefined, workspaceProjectKey: canonicalProjectOrUndefined(c.workspaceProjectKey), deploymentType: c.deploymentType || 'on-prem', enabled: c.enabled !== false, syncIssues: c.syncIssues !== false, projectKeys, jql }; }
+function normalizeQmetryConnection(c: QmetryConnectionInput): QmetryConnectionInput { return { ...c, workspaceProjectId: c.workspaceProjectId?.trim() || undefined, workspaceProjectKey: canonicalProjectOrUndefined(c.workspaceProjectKey), enabled: c.enabled !== false, syncExecutions: c.syncExecutions !== false, projectKey: normalizeSourceProjectKey(c.projectKey), cycleIds: [] }; }
 function normalizeFilter(filter?: Partial<FilterParams>): Partial<FilterParams> | undefined { if (!filter) return undefined; return { ...filter, project: canonicalProjectOrUndefined(filter.project) }; }
 function normalizeGenerate(params: GenerateParams): GenerateParams { return { ...params, project: canonicalProjectOrUndefined(params.project) }; }
 function validDate(value?: string): string { return /^\d{4}-\d{2}-\d{2}$/.test(value || '') ? value! : ''; }
@@ -91,10 +123,29 @@ export function setUserAnthropicKey(key: string): void { setUserLlmKey('anthropi
 
 function readConnections<T>(key: string): T[] { return readStoredObject<T[]>(key, []); }
 function writeConnections<T>(key: string, value: T[]): void { writeStoredObject(key, value); }
+function assertUniqueProjectAssignments(connections: Array<{ workspaceProjectId?: string }>, label: 'JIRA' | 'QMetry'): void { const assigned = new Set<string>(); for (const connection of connections) { const projectId = connection.workspaceProjectId?.trim(); if (!projectId) throw new Error(`Every ${label} connection must be assigned to an existing project.`); if (assigned.has(projectId)) throw new Error(`Only one ${label} connection is allowed per project.`); assigned.add(projectId); } }
 export const getJiraConnections = (): JiraConnectionInput[] => readConnections<JiraConnectionInput>(JIRA_CONNECTIONS_STORAGE).map(normalizeJiraConnection);
-export const setJiraConnections = (conns: JiraConnectionInput[]): void => writeConnections(JIRA_CONNECTIONS_STORAGE, conns.map(normalizeJiraConnection));
+export const setJiraConnections = (conns: JiraConnectionInput[]): void => { const normalized = conns.filter((connection) => !isBlankJiraConnection(connection)).map(normalizeJiraConnection); if (normalized.some((connection) => connection.enabled !== false && connection.syncIssues !== false && !isUsableJiraConnection(connection))) throw new Error('Enabled JIRA sync connections require a base URL and authentication or session material.'); assertUniqueProjectAssignments(normalized, 'JIRA'); writeConnections(JIRA_CONNECTIONS_STORAGE, normalized); };
 export const getQmetryConnections = (): QmetryConnectionInput[] => readConnections<QmetryConnectionInput>(QMETRY_CONNECTIONS_STORAGE).map(normalizeQmetryConnection);
-export const setQmetryConnections = (conns: QmetryConnectionInput[]): void => writeConnections(QMETRY_CONNECTIONS_STORAGE, conns.map(normalizeQmetryConnection));
+export const setQmetryConnections = (conns: QmetryConnectionInput[]): void => { const normalized = conns.filter((connection) => !isBlankQmetryConnection(connection)).map(normalizeQmetryConnection); if (normalized.some((connection) => connection.enabled !== false && connection.syncExecutions !== false && !isUsableQmetryConnection(connection))) throw new Error('Enabled QMetry sync connections require a base URL and authentication or session material.'); assertUniqueProjectAssignments(normalized, 'QMetry'); writeConnections(QMETRY_CONNECTIONS_STORAGE, normalized); };
+export function storeMigratedConnections(
+  jira: JiraConnectionInput[],
+  qmetry: QmetryConnectionInput[],
+  assignments: ConnectionMigrationResult['assignments'],
+): { jira: JiraConnectionInput[]; qmetry: QmetryConnectionInput[] } {
+  const assignmentMap = new Map(assignments.map((assignment) => [`${assignment.type}:${assignment.connectionId}`, assignment]));
+  const migratedJira = jira.map((connection) => {
+    const assignment = assignmentMap.get(`jira:${connection.id}`);
+    return normalizeJiraConnection(assignment ? { ...connection, workspaceProjectId: assignment.projectId, workspaceProjectKey: assignment.projectKey } : connection);
+  });
+  const migratedQmetry = qmetry.map((connection) => {
+    const assignment = assignmentMap.get(`qmetry:${connection.id}`);
+    return normalizeQmetryConnection(assignment ? { ...connection, workspaceProjectId: assignment.projectId, workspaceProjectKey: assignment.projectKey } : connection);
+  });
+  writeConnections(JIRA_CONNECTIONS_STORAGE, migratedJira);
+  writeConnections(QMETRY_CONNECTIONS_STORAGE, migratedQmetry);
+  return { jira: migratedJira, qmetry: migratedQmetry };
+}
 export function newConnectionId(): string { return `c${Date.now()}${Math.random().toString(36).slice(2, 8)}`; }
 
 api.interceptors.request.use((config) => { const meta: RequestMeta = { requestId: nextRequestId(), startedAt: Date.now() }; (config as typeof config & { metadata?: RequestMeta }).metadata = meta; config.headers = config.headers || {}; config.headers['x-request-id'] = meta.requestId; const selectedLlm = getUserLlmSelection(); const anthropicKey = getUserAnthropicKey(); if (anthropicKey) config.headers['x-anthropic-key'] = anthropicKey; const jira = getJiraConnections(); const qmetry = getQmetryConnections(); if (shouldAttachConnectionsHeader(config.url || '', config.method || 'get') && (jira.length || qmetry.length)) config.headers['x-user-connections'] = JSON.stringify(browserConnectionsForHeader()); logApi('request', { requestId: meta.requestId, method: (config.method || 'GET').toUpperCase(), url: `${config.baseURL || ''}${config.url || ''}`, activeProject: getActiveProject(), activeDateRange: getActiveDateRange(), llmProvider: selectedLlm.provider, llmEndpoint: selectedLlm.baseUrl || 'official', hasSelectedLlmKey: Boolean(selectedLlm.apiKey), hasReportLogo: Boolean(getReportBranding().logoUrl), jiraConnections: jira.length, qmetryConnections: qmetry.length, params: safeJson(config.params), body: safeJson(config.data) }); return config; });
@@ -104,7 +155,7 @@ function apiErrorMessage(err: unknown, fallback: string): string { if (axios.isA
 async function blobErrorMessage(blob: Blob, fallback: string): Promise<string> { try { const text = await blob.text(); if (!text) return fallback; const payload = JSON.parse(text) as { error?: string; message?: string; warnings?: string[] }; return payload.error || payload.message || payload.warnings?.join('; ') || text.slice(0, 500); } catch { return fallback; } }
 
 export { apiErrorMessage };
-export type { DashboardPayload, FilterParams, ReportType, GenerateParams, GenerateResult, LlmSelectionInput, LlmProvider };
+export type { DashboardPayload, FilterParams, ReportType, GenerateParams, GenerateResult, LlmSelectionInput, LlmProvider, StructuredReportNarrative };
 
 export interface IntegrationsStatus { jira: { enabled: boolean; baseUrl: string; configured: boolean; profiles?: unknown[] }; qmetry: { enabled: boolean; baseUrl: string; configured: boolean; cycleIds?: number }; config: { jira: { enabled: boolean; projectKeys: string[]; jql: string }; qmetry: { enabled: boolean; projectKey: string; cycleIds?: string[]; projectId?: string | null } }; userConnections?: { jira: { id: string; name: string; baseUrl: string }[]; qmetry: { id: string; name: string; baseUrl: string }[] } }
 export interface CycleFolder { id: string; name: string; parentId?: string; path?: string }
@@ -120,13 +171,27 @@ export const batchApi = {
   getDashboard: (filter?: Partial<FilterParams>) => { const clean = normalizeFilter(filter); const params = clean ? { startDate: clean.startDate, endDate: clean.endDate, search: clean.search, result: clean.result, project: clean.project } : undefined; return api.get('/dashboard', { params }).then((r) => r.data as DashboardPayload).catch((err) => { if (axios.isAxiosError(err) && err.response?.status === 404) return null; throw err; }); },
   searchDashboardByDates: (filter: Partial<FilterParams>) => api.post('/dashboard/search', normalizeFilter(filter), { timeout: 240_000 }).then((r) => (r.data as DashboardSearchResult).dashboard).catch((err) => { throw new Error(apiErrorMessage(err, 'Dashboard API search failed')); }),
   getReport: () => api.get('/report').then((r) => r.data as GeneratedReportData).catch((err) => { if (axios.isAxiosError(err) && err.response?.status === 404) return null; throw err; }),
-  upload: (file: File) => { const form = new FormData(); form.append('file', file); return api.post('/upload', form, { headers: { 'Content-Type': 'multipart/form-data' } }).then((r) => r.data); },
-  syncInputFiles: (filter?: Partial<FilterParams>) => api.post('/input/sync', normalizeFilter(filter) || {}, { timeout: 180_000 }).then((r) => r.data as SyncInputResult).catch((err) => { throw new Error(apiErrorMessage(err, 'Import sync failed')); }),
-  syncLiveData: (filter?: Partial<FilterParams>) => api.post('/integrations/sync', normalizeFilter(filter) || {}, { timeout: 240_000 }).then((r) => r.data as SyncInputResult).catch((err) => { throw new Error(apiErrorMessage(err, 'JIRA/QMetry sync failed')); }),
-  listInputFiles: () => api.get('/input/files').then((r) => r.data as { name: string; size: number; modifiedAt: string }[]),
-  deleteInputFile: (filename: string) => api.delete(`/input/${encodeURIComponent(filename)}`).then((r) => r.data),
+  listProjects: () => api.get('/projects').then((r) => r.data as ProjectRecord[]),
+  createProject: (input: { key: string; sourceKeys: string[]; name: string; capabilities?: Partial<ProjectCapabilities>; dedicatedTab?: { enabled: boolean; label?: string } }) => api.post('/projects', input).then((r) => (r.data as { project: ProjectRecord }).project).catch((err) => { throw new Error(apiErrorMessage(err, 'Project creation failed')); }),
+  migrateConnectionProjects: (connections: UserConnections) => api.post('/projects/migrate-connections', connections).then((r) => r.data as ConnectionMigrationResult).catch((err) => { throw new Error(apiErrorMessage(err, 'Saved connection migration failed')); }),
+  updateProject: (projectId: string, input: { key: string; sourceKeys: string[]; name: string; capabilities?: Partial<ProjectCapabilities>; dedicatedTab?: { enabled: boolean; label?: string } }) => api.patch(`/projects/${encodeURIComponent(projectId)}`, input).then((r) => (r.data as { project: ProjectRecord }).project).catch((err) => { throw new Error(apiErrorMessage(err, 'Project update failed')); }),
+  deleteProject: (projectId: string, confirmationKey: string) => api.delete(`/projects/${encodeURIComponent(projectId)}`, { data: { confirmationKey } }).then((r) => (r.data as { deletion: ProjectDeletionResult }).deletion).catch((err) => { throw new Error(apiErrorMessage(err, 'Project deletion failed')); }),
+  upload: (projectId: string, file: File) => { const form = new FormData(); form.append('file', file); return api.post(`/projects/${encodeURIComponent(projectId)}/files`, form, { headers: { 'Content-Type': 'multipart/form-data' } }).then((r) => r.data).catch((err) => { throw new Error(apiErrorMessage(err, 'Upload failed')); }); },
+  inspectInputFile: (projectId: string, fileId: string) => api.get(`/projects/${encodeURIComponent(projectId)}/files/${encodeURIComponent(fileId)}/inspect`).then((r) => r.data as WorkbookColumnInspection).catch((err) => { throw new Error(apiErrorMessage(err, 'File inspection failed')); }),
+  saveInputMapping: (projectId: string, fileId: string, input: { tabId: string; columns: ProjectColumnConfig[]; uniqueKey: string }) => api.put(`/projects/${encodeURIComponent(projectId)}/files/${encodeURIComponent(fileId)}/mapping`, input).then((r) => r.data as SaveInputMappingResult).catch((err) => { throw new Error(apiErrorMessage(err, 'Column mapping save failed')); }),
+  getProjectTabData: (projectId: string, tabId: string) => api.get(`/projects/${encodeURIComponent(projectId)}/tabs/${encodeURIComponent(tabId)}/data`).then((r) => r.data as ProjectTabData).catch((err) => { throw new Error(apiErrorMessage(err, 'Project tab data failed')); }),
+  syncInputFiles: (projectId: string, filter?: Partial<FilterParams>) => api.post(`/projects/${encodeURIComponent(projectId)}/imports/sync`, normalizeFilter(filter) || {}, { timeout: 180_000 }).then((r) => r.data as SyncInputResult).catch((err) => { throw new Error(apiErrorMessage(err, 'Import sync failed')); }),
+  getUploadedIssueDashboard: (projectId: string, filter?: Partial<FilterParams>) => { const clean = normalizeFilter(filter); const params = clean ? { startDate: clean.startDate, endDate: clean.endDate, search: clean.search, project: clean.project } : undefined; return api.get(`/projects/${encodeURIComponent(projectId)}/imports/issues/dashboard`, { params }).then((r) => r.data as DashboardPayload).catch((err) => { throw new Error(apiErrorMessage(err, 'Uploaded issue dashboard failed')); }); },
+  syncLiveData: (filter?: Partial<FilterParams>) => api.post('/integrations/sync', normalizeFilter(filter) || {}, { timeout: 240_000 }).then((r) => r.data as LiveSyncResult).catch((err) => { throw new Error(apiErrorMessage(err, 'JIRA/QMetry sync failed')); }),
+  listInputFiles: (projectId: string) => api.get(`/projects/${encodeURIComponent(projectId)}/files`).then((r) => r.data as ProjectFileRecord[]),
+  deleteInputFile: (projectId: string, fileId: string) => api.delete(`/projects/${encodeURIComponent(projectId)}/files/${encodeURIComponent(fileId)}`).then((r) => r.data as SyncInputResult),
+  downloadImportReconciliation: async (projectId: string, syncId: string) => {
+    const response = await api.get(`/projects/${encodeURIComponent(projectId)}/imports/${encodeURIComponent(syncId)}/report.csv`, { responseType: 'blob' });
+    const url = URL.createObjectURL(response.data as Blob);
+    const link = document.createElement('a'); link.href = url; link.download = `import-reconciliation-${syncId}.csv`; document.body.appendChild(link); link.click(); link.remove(); URL.revokeObjectURL(url);
+  },
   getIntegrations: () => api.get('/integrations').then((r) => r.data as IntegrationsStatus),
-  testIntegrations: () => api.post('/integrations/test').then((r) => r.data),
+  testIntegrations: (filter?: Partial<FilterParams>) => api.post('/integrations/test', normalizeFilter(filter) || {}).then((r) => r.data),
   testConnection: (type: 'jira' | 'qmetry', connection: JiraConnectionInput | QmetryConnectionInput) => api.post('/integrations/test-connection', { type, connection: type === 'jira' ? normalizeJiraConnection(connection as JiraConnectionInput) : normalizeQmetryConnection(connection as QmetryConnectionInput) }, { timeout: 35_000 }).then((r) => r.data as { ok: boolean; count?: number; error?: string }).catch((err) => ({ ok: false, error: apiErrorMessage(err, 'Connection test failed') })),
   getCycleFolders: (connectionId?: unknown) => { const id = typeof connectionId === 'string' ? connectionId : undefined; return api.get('/cycles/folders', { params: { connectionId: id }, timeout: 45_000 }).then((r) => r.data as CycleFoldersResult); },
   getCyclesByFolder: (folderId: string, connectionId?: string, filter?: Partial<FilterParams>) => { const clean = normalizeFilter(filter); return api.get('/cycles/by-folder', { params: { folderId, connectionId, startDate: clean?.startDate, endDate: clean?.endDate, project: clean?.project }, timeout: 180_000 }).then((r) => r.data as FolderCycleHealthResult); },

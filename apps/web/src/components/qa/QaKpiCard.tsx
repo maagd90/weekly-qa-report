@@ -28,7 +28,7 @@ export function QaKpiCard({ label, value, sub, color = '#15605E', kpiStyle }: Qa
       >
         <div className="flex flex-col gap-1.5 min-w-0 flex-1">
           <span className="font-mono-qa text-[9.5px] tracking-wider uppercase text-qa-muted-light">{label}</span>
-          <span className="font-spectral font-bold text-[34px] leading-none tracking-tight" style={{ color: soft.fg }}>{value}</span>
+          <span className="break-words font-spectral font-bold text-[30px] leading-none tracking-tight sm:text-[34px]" style={{ color: soft.fg }}>{value}</span>
           {sub && <span className="text-[11px] text-qa-muted leading-snug">{sub}</span>}
         </div>
       </div>
@@ -42,7 +42,7 @@ export function QaKpiCard({ label, value, sub, color = '#15605E', kpiStyle }: Qa
       <div className={clsx(cardClass, 'bg-transparent border-t-2 border-qa-ink pt-3.5 px-1')}>
         <div className="flex flex-col gap-1.5 min-w-0 flex-1">
           <span className="font-mono-qa text-[9.5px] tracking-wider uppercase text-qa-muted-light">{label}</span>
-          <span className="font-spectral font-bold text-[34px] leading-none tracking-tight text-qa-ink">{value}</span>
+          <span className="break-words font-spectral font-bold text-[30px] leading-none tracking-tight text-qa-ink sm:text-[34px]">{value}</span>
           {sub && <span className="text-[11px] text-qa-muted leading-snug">{sub}</span>}
         </div>
       </div>
@@ -54,7 +54,7 @@ export function QaKpiCard({ label, value, sub, color = '#15605E', kpiStyle }: Qa
       {accent}
       <div className="flex flex-col gap-1.5 min-w-0 flex-1">
         <span className="font-mono-qa text-[9.5px] tracking-wider uppercase text-qa-muted-light">{label}</span>
-        <span className="font-spectral font-bold text-[34px] leading-none tracking-tight" style={{ color: valueColor }}>{value}</span>
+        <span className="break-words font-spectral font-bold text-[30px] leading-none tracking-tight sm:text-[34px]" style={{ color: valueColor }}>{value}</span>
         {sub && <span className="text-[11px] text-qa-muted leading-snug">{sub}</span>}
       </div>
     </div>

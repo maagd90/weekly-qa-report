@@ -15,6 +15,8 @@ export interface BuildDatasetOptions {
   apiScope?: ApiFetchScope;
   liveSync?: boolean;
   includeFiles?: boolean;
+  /** When false, an explicitly supplied empty connection list must not fall back to server config. */
+  useConfiguredFallback?: boolean;
 }
 
 export interface QmetryDateScopeResult {
@@ -37,16 +39,17 @@ function liveSyncEnabled(options?: BuildDatasetOptions): boolean {
   return options?.liveSync !== false;
 }
 
-function jiraProjectMatches(keys: string[] | undefined, scope?: ApiFetchScope): boolean {
+function jiraProjectMatches(keys: string[] | undefined, scope?: ApiFetchScope, workspaceProjectKey?: string): boolean {
   const selected = canonicalProjectOrUndefined(scope?.project);
   if (!selected) return true;
-  return (keys || []).some((key) => canonicalProjectKey(key) === selected);
+  return canonicalProjectKey(workspaceProjectKey) === selected
+    || (keys || []).some((key) => canonicalProjectKey(key) === selected);
 }
 
-function qmetryProjectMatches(key: string | undefined, scope?: ApiFetchScope): boolean {
+function qmetryProjectMatches(key: string | undefined, scope?: ApiFetchScope, workspaceProjectKey?: string): boolean {
   const selected = canonicalProjectOrUndefined(scope?.project);
   if (!selected) return true;
-  return canonicalProjectKey(key) === selected;
+  return canonicalProjectKey(workspaceProjectKey) === selected || canonicalProjectKey(key) === selected;
 }
 
 function hasDateScope(scope?: ApiFetchScope): boolean {
@@ -86,29 +89,14 @@ function aggregateExclusionWarning(result: QmetryDateScopeResult): string {
   return `Excluded ${result.excludedCount} aggregate QMetry progress row(s) from this date-scoped report${named ? ` for: ${named}` : ''}. Detailed execution dates were unavailable, so activity in the selected period is unknown rather than an approximate all-time count.`;
 }
 
-function projectListLabel(keys?: string[]): string {
-  const values = (keys || []).map((key) => canonicalProjectKey(key) || key).filter(Boolean);
-  return values.length ? values.join(', ') : 'none';
-}
-
-function skippedLiveDataset(kind: 'jira' | 'qmetry', name: string, message: string): Dataset {
-  const ds = emptyDataset();
-  ds.meta.integrations[kind] = true;
-  ds.meta.fetchedAt = new Date().toISOString();
-  ds.meta.warnings.push(`[${name}] ${message}`);
-  return ds;
-}
-
 async function buildJiraConnectionDataset(configDir: string, connections?: UserConnections, options?: BuildDatasetOptions): Promise<Dataset[]> {
   const parts: Dataset[] = [];
   const apiScope = cleanApiScope(options?.apiScope);
-  const selected = canonicalProjectOrUndefined(apiScope?.project);
   if (!liveSyncEnabled(options)) return parts;
-  if (connections?.jira?.length) {
-    for (const conn of connections.jira) {
+  if (connections?.jira?.length || options?.useConfiguredFallback === false) {
+    for (const conn of connections?.jira || []) {
       if (conn.enabled === false || conn.syncIssues === false) continue;
-      if (!jiraProjectMatches(conn.projectKeys, apiScope)) {
-        parts.push(skippedLiveDataset('jira', conn.name || 'JIRA', `JIRA connection skipped because selected project ${selected} does not match configured projects ${projectListLabel(conn.projectKeys)}.`));
+      if (!jiraProjectMatches(conn.projectKeys, apiScope, conn.workspaceProjectKey)) {
         continue;
       }
       const jiraCfg = jiraConfigFromConnection(conn);
@@ -131,7 +119,6 @@ async function buildJiraConnectionDataset(configDir: string, connections?: UserC
     const profiles = configuredJiraProfiles(cfg);
     for (const profile of profiles) {
       if (!jiraProjectMatches(profile.projectKeys, apiScope)) {
-        parts.push(skippedLiveDataset('jira', profile.name || 'JIRA', `JIRA connection skipped because selected project ${selected} does not match configured projects ${projectListLabel(profile.projectKeys)}.`));
         continue;
       }
       parts.push(await fetchJiraDataset({ ...cfg, jira: profile }, apiScope));
@@ -143,17 +130,19 @@ async function buildJiraConnectionDataset(configDir: string, connections?: UserC
 async function buildQmetryConnectionDataset(configDir: string, connections?: UserConnections, options?: BuildDatasetOptions): Promise<Dataset[]> {
   const parts: Dataset[] = [];
   const apiScope = cleanApiScope(options?.apiScope);
-  const selected = canonicalProjectOrUndefined(apiScope?.project);
   if (!liveSyncEnabled(options)) return parts;
-  if (connections?.qmetry?.length) {
-    for (const conn of connections.qmetry) {
+  if (connections?.qmetry?.length || options?.useConfiguredFallback === false) {
+    for (const conn of connections?.qmetry || []) {
       if (conn.enabled === false || conn.syncExecutions === false) continue;
-      if (!qmetryProjectMatches(conn.projectKey, apiScope)) {
-        parts.push(skippedLiveDataset('qmetry', conn.name || 'QMetry', `QMetry connection skipped because selected project ${selected} does not match configured project ${canonicalProjectKey(conn.projectKey) || conn.projectKey || 'none'}.`));
+      if (!qmetryProjectMatches(conn.projectKey, apiScope, conn.workspaceProjectKey)) {
         continue;
       }
       const qmetryCfg = qmetryConfigFromConnection(conn);
-      const { executions, error } = await fetchQmetryExecutions(qmetryCfg, apiScope);
+      // The dashboard scope uses the logical workspace key, while QMetry rows
+      // use the selected external source key. Fetch against the source key and
+      // let the API ownership layer consolidate rows back to the workspace key.
+      const sourceScope = apiScope ? { ...apiScope, project: conn.projectKey } : undefined;
+      const { executions, error } = await fetchQmetryExecutions(qmetryCfg, sourceScope);
       const scoped = excludeApproximateQmetryProgressFromDateScope(executions, apiScope);
       const ds = emptyDataset();
       ds.executions = scoped.executions;
@@ -174,7 +163,7 @@ async function buildQmetryConnectionDataset(configDir: string, connections?: Use
     const cfg = loadIntegrations(configDir);
     if (cfg.qmetry.enabled) {
       if (!qmetryProjectMatches(cfg.qmetry.projectKey, apiScope)) {
-        parts.push(skippedLiveDataset('qmetry', `QMetry ${cfg.qmetry.projectKey}`, `QMetry connection skipped because selected project ${selected} does not match configured project ${canonicalProjectKey(cfg.qmetry.projectKey) || cfg.qmetry.projectKey || 'none'}.`));
+        return parts;
       } else {
         const ds = await fetchQmetryDataset(cfg, apiScope);
         const scoped = excludeApproximateQmetryProgressFromDateScope(ds.executions, apiScope);

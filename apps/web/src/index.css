@@ -28,11 +28,42 @@
   textarea {
     font: inherit;
   }
+
+  button,
+  select,
+  input[type='date'],
+  input[type='search'] {
+    touch-action: manipulation;
+  }
+
+  button,
+  [role='button'],
+  a,
+  input,
+  select,
+  textarea {
+    transition: border-color 160ms ease, background-color 160ms ease, color 160ms ease, box-shadow 160ms ease, opacity 160ms ease;
+  }
+
+  :focus-visible {
+    outline: 3px solid rgba(185, 92, 0, 0.42);
+    outline-offset: 2px;
+  }
+
+  button:disabled,
+  [aria-disabled='true'] {
+    cursor: not-allowed;
+  }
+
+  img,
+  svg {
+    max-width: 100%;
+  }
 }
 
 @layer utilities {
   .max-w-qa {
-    max-width: 1180px;
+    max-width: 1280px;
   }
 
   .font-spectral {
@@ -60,11 +91,55 @@
   .qa-pulse {
     animation: qaPulse 1.3s infinite ease-in-out;
   }
+
+  .qa-progress-track {
+    position: relative;
+    width: 100%;
+    height: 2px;
+    overflow: hidden;
+    background: #e7e3d9;
+  }
+
+  .qa-progress-bar {
+    position: absolute;
+    inset-block: 0;
+    width: 36%;
+    background: #b95c00;
+    animation: qaProgress 1.15s infinite ease-in-out;
+  }
 }
 
 @keyframes qaPulse {
   0%, 100% { opacity: 0.35; transform: scale(0.9); }
   50% { opacity: 1; transform: scale(1.05); }
+}
+
+@keyframes qaProgress {
+  from { transform: translateX(-110%); }
+  to { transform: translateX(310%); }
+}
+
+@media (hover: none) and (pointer: coarse) {
+  button:not(.qa-compact-control),
+  [role='button'],
+  select {
+    min-height: 44px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
 }
 
 @media print {
@@ -344,6 +419,47 @@
   color: #6b665f;
   letter-spacing: 0.03em;
   font-style: normal;
+}
+
+.qa-business-project-chapter {
+  break-before: page;
+  page-break-before: always;
+  margin: 0 0 24px;
+}
+
+.qa-business-project-chapter-first {
+  break-before: auto;
+  page-break-before: auto;
+}
+
+.qa-business-project-chapter > h3 {
+  break-after: avoid;
+  page-break-after: avoid;
+  margin: 0 0 14px;
+  padding-bottom: 7px;
+  border-bottom: 2px solid #b7092b;
+  color: #201c1a;
+  font-family: 'Spectral', Georgia, serif;
+  font-size: 18px;
+}
+
+.qa-business-project-specialised-section > h4,
+.qa-business-project-narrative > h4 {
+  break-after: avoid;
+  page-break-after: avoid;
+  margin: 16px 0 8px;
+  color: #201c1a;
+  font-family: 'Spectral', Georgia, serif;
+  font-size: 14px;
+}
+
+.qa-business-project-chapter .qa-business-table thead {
+  display: table-header-group;
+}
+
+.qa-business-project-chapter .qa-business-table tr {
+  break-inside: avoid;
+  page-break-inside: avoid;
 }
 
 .qa-business-report .prose h1,

@@ -4,6 +4,7 @@ import { displayResultColor, fmt } from '../../theme/qaTheme';
 import { SegBar, cycleSegSegments } from './SegBar';
 import { CycleBadge } from './QaBadge';
 import { QaSection } from '../layout/QaPageShell';
+import { DetailDrawerBase } from './DetailDrawerBase';
 
 interface CycleDetailDrawerProps {
   cycle: DashboardPayload['cycles'][0] | null;
@@ -34,39 +35,34 @@ export function CycleDetailDrawer({ cycle, onClose }: CycleDetailDrawerProps) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-end print:hidden">
-      <button type="button" className="flex-1 bg-black/30" onClick={onClose} aria-label="Close drawer" />
-      <aside className="w-full max-w-md bg-[#F5F3ED] border-l border-qa-border shadow-xl overflow-y-auto qa-scroll">
-        <div className="p-6 border-b-2 border-qa-ink">
-          <button type="button" onClick={onClose} className="font-mono-qa text-[11px] text-qa-muted-light mb-4 cursor-pointer bg-transparent border-none">
-            ← Back to cycles
-          </button>
-          <h3 className="font-spectral font-bold text-xl m-0 mb-1">{cycle.name}</h3>
-          <div className="font-mono-qa text-[10px] text-qa-muted-light">{cycle.key}</div>
-          <div className="mt-3"><CycleBadge status={cycle.status} /></div>
-        </div>
-        <div className="p-6 space-y-5">
-          <div className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
-            <div><div className="font-mono-qa text-[10px] uppercase text-qa-muted-light">Pass rate</div><div className="font-spectral font-bold text-2xl">{exec ? `${cycle.passPct}%` : '—'}</div></div>
-            <div><div className="font-mono-qa text-[10px] uppercase text-qa-muted-light">Coverage</div><div className="font-spectral font-bold text-2xl">{cycle.coverage}%</div></div>
-          </div>
-          <SegBar segments={cycleSegSegments(cycle.pass, cycle.fail, cycle.blocked, cycle.ne, cycle.na, cycle.total)} height={14} />
-          <QaSection title="Result breakdown" noPadding className="border-qa-border">
-            <div className="p-4 space-y-2">
-              {breakdown.map((b) => (
-                <div key={b.key} className="flex justify-between text-[13px]">
-                  <span className="flex items-center gap-2">
-                    <span className="w-2.5 h-2.5" style={{ background: displayResultColor(b.key) }} />
-                    {b.label}
-                  </span>
-                  <span className="font-mono-qa">{fmt(b.n)}</span>
-                </div>
-              ))}
+    <DetailDrawerBase
+      isOpen={Boolean(cycle)}
+      title={cycle.name}
+      closeLabel="Close cycle details"
+      backLabel="← Back to cycles"
+      onClose={onClose}
+    >
+      <div className="mb-1 -mt-2 font-mono-qa text-[10px] text-qa-muted-light">{cycle.key}</div>
+      <div className="mb-4"><CycleBadge status={cycle.status} /></div>
+      <div className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
+        <div><div className="font-mono-qa text-[10px] uppercase text-qa-muted-light">Pass rate</div><div className="font-spectral font-bold text-2xl">{exec ? `${cycle.passPct}%` : '—'}</div></div>
+        <div><div className="font-mono-qa text-[10px] uppercase text-qa-muted-light">Coverage</div><div className="font-spectral font-bold text-2xl">{cycle.coverage}%</div></div>
+      </div>
+      <SegBar segments={cycleSegSegments(cycle.pass, cycle.fail, cycle.blocked, cycle.ne, cycle.na, cycle.total)} height={14} />
+      <QaSection title="Result breakdown" noPadding className="border-qa-border">
+        <div className="p-4 space-y-2">
+          {breakdown.map((b) => (
+            <div key={b.key} className="flex justify-between text-[13px]">
+              <span className="flex items-center gap-2">
+                <span className="w-2.5 h-2.5" style={{ background: displayResultColor(b.key) }} />
+                {b.label}
+              </span>
+              <span className="font-mono-qa">{fmt(b.n)}</span>
             </div>
-          </QaSection>
-          <p className="text-[13px] text-qa-muted leading-relaxed m-0">{note}</p>
+          ))}
         </div>
-      </aside>
-    </div>
+      </QaSection>
+      <p className="text-[13px] text-qa-muted leading-relaxed m-0">{note}</p>
+    </DetailDrawerBase>
   );
 }

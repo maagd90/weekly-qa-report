@@ -1,14 +1,34 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import type { DashboardPayload, VendorPortalPhaseCategory } from 'qa-dashboard-batch';
+import type { DashboardPayload, DashboardUatRow } from 'qa-dashboard-batch';
 import type { KpiStyle } from '../theme/qaTheme';
-import { QA, fmt } from '../theme/qaTheme';
+import { QA, fmt, PRIORITY_COLORS } from '../theme/qaTheme';
 import { QaPageShell, QaSection } from '../components/layout/QaPageShell';
 import { QaKpiCard, QaKpiGrid } from '../components/qa/QaKpiCard';
 import { HorizBar } from '../components/qa/SegBar';
 import { PriorityDonut } from '../components/qa/ResultDonut';
 import { QaTable, QaThead } from '../components/qa/QaBadge';
-import { PRIORITY_COLORS } from '../theme/qaTheme';
+import { UatBugDetailDrawer } from '../components/qa/UatBugDetailDrawer';
 import { VendorPortalPhaseChart } from '../components/qa/VendorPortalPhaseChart';
+import {
+  EMPTY_VENDOR_PORTAL_FILTERS,
+  basicFilterOptions,
+  basicFiltersToQuery,
+  clearUnavailableBasicFilters,
+  filterVendorPortalRows,
+  hasBasicFilters,
+  rowsForBugView,
+  submittedDisplayValue,
+  updatedDisplayValue,
+  visibleVendorPortalRowValues,
+  type VendorPortalBasicField,
+  type VendorPortalBasicFilters,
+  type VendorPortalBugView,
+} from '../lib/vendorPortalBugFilters';
+import {
+  advancedQueryToBasicFilters,
+  compileVendorPortalQuery,
+  vendorPortalQuerySuggestions,
+} from '../lib/vendorPortalQuery';
 
 interface UatPageProps {
   dashboard: DashboardPayload;
@@ -16,82 +36,99 @@ interface UatPageProps {
   searchQuery: string;
 }
 
+type SearchMode = 'basic' | 'advanced';
+
+const BUG_VIEW_LABELS: Record<VendorPortalBugView, string> = {
+  uat: 'UAT Bugs',
+  production: 'Production Bugs',
+  unclassified: 'Unclassified',
+};
+
+const BASIC_FIELDS: Array<{ key: VendorPortalBasicField; stateKey: keyof VendorPortalBasicFilters; label: string }> = [
+  { key: 'status', stateKey: 'status', label: 'Status' },
+  { key: 'priority', stateKey: 'priority', label: 'Priority' },
+  { key: 'area', stateKey: 'area', label: 'Area' },
+  { key: 'changeRequest', stateKey: 'changeRequest', label: 'Change Request' },
+  { key: 'reportedBy', stateKey: 'reportedBy', label: 'Reported By' },
+];
+
+const PAGE_SIZE = 10;
+
 function barWidth(count: number, max: number): number {
   if (count <= 0) return 0;
   return Math.max((count / max) * 100, 3);
 }
 
-type BugView = 'uat' | 'production' | 'unclassified';
+function rowSort(left: DashboardUatRow, right: DashboardUatRow): number {
+  return (right.updatedAt || right.submittedAt || '').localeCompare(left.updatedAt || left.submittedAt || '')
+    || left.id.localeCompare(right.id);
+}
 
-const PHASE_FILTER_LABELS: Record<VendorPortalPhaseCategory, string> = {
-  'phase1-uat': 'Phase 1 UAT',
-  'phase2-uat': 'Phase 2 UAT',
-  'other-uat': 'Phase 1 UAT',
-  production: 'Production',
-  unclassified: 'Unclassified',
-};
-
-const BUG_VIEW_LABELS: Record<BugView, string> = {
-  uat: 'UAT bugs',
-  production: 'Production bugs',
-  unclassified: 'Unclassified',
-};
-
-const PAGE_SIZE = 10;
-
-function displaySourceName(name: string): string {
-  return name.replace(/^\d+_/, '');
+function sameFilters(left: VendorPortalBasicFilters, right: VendorPortalBasicFilters): boolean {
+  return BASIC_FIELDS.every(({ stateKey }) => left[stateKey] === right[stateKey]) && left.text === right.text;
 }
 
 export function UatPage({ dashboard, kpiStyle, searchQuery }: UatPageProps) {
-  const [bugView, setBugView] = useState<BugView>('uat');
+  const [bugView, setBugView] = useState<VendorPortalBugView>('uat');
+  const [selectedBug, setSelectedBug] = useState<DashboardUatRow | null>(null);
   const [page, setPage] = useState(0);
+  const [searchMode, setSearchMode] = useState<SearchMode>('basic');
+  const [basicFilters, setBasicFilters] = useState<VendorPortalBasicFilters>({ ...EMPTY_VENDOR_PORTAL_FILTERS });
+  const [advancedDraft, setAdvancedDraft] = useState('');
+  const [appliedAdvancedQuery, setAppliedAdvancedQuery] = useState('');
+  const [advancedError, setAdvancedError] = useState<{ message: string; position?: number } | null>(null);
   const detailRef = useRef<HTMLDivElement>(null);
+  const tabRefs = useRef<Partial<Record<VendorPortalBugView, HTMLButtonElement | null>>>({});
   const uat = dashboard.uat;
-  const normalizedSearch = searchQuery.trim().toLowerCase();
+  const inheritedSearch = searchQuery.trim().toLocaleLowerCase();
   const phaseItems = uat?.byReportedPhase || [];
-  const searchedRows = useMemo(() => (uat?.rows || []).filter((row) =>
-    !normalizedSearch
-    || `${row.id} ${row.subject} ${row.area} ${row.submitter} ${row.status} ${row.priority} ${row.cr} ${row.sourceFile || ''}`.toLowerCase().includes(normalizedSearch)),
-  [normalizedSearch, uat?.rows]);
-  const categoryCount = (category: VendorPortalPhaseCategory): number =>
-    searchedRows.filter((row) => (row.reportedPhase || 'unclassified') === category).length;
-  const viewCounts: Record<BugView, number> = {
-    uat: categoryCount('phase1-uat') + categoryCount('phase2-uat') + categoryCount('other-uat'),
-    production: categoryCount('production'),
-    unclassified: categoryCount('unclassified'),
+
+  const scopedRows = useMemo(() => (uat?.rows || []).filter((row) =>
+    !inheritedSearch
+    || visibleVendorPortalRowValues(row).some((value) => value.toLocaleLowerCase().includes(inheritedSearch))),
+  [inheritedSearch, uat?.rows]);
+
+  const viewCounts: Record<VendorPortalBugView, number> = {
+    uat: rowsForBugView(scopedRows, 'uat').length,
+    production: rowsForBugView(scopedRows, 'production').length,
+    unclassified: rowsForBugView(scopedRows, 'unclassified').length,
   };
-  const availableBugViews: BugView[] = viewCounts.unclassified > 0
+  const availableBugViews: VendorPortalBugView[] = viewCounts.unclassified > 0
     ? ['uat', 'production', 'unclassified']
     : ['uat', 'production'];
+  const activeTabRows = useMemo(() => rowsForBugView(scopedRows, bugView), [bugView, scopedRows]);
 
   const priorityItems = useMemo(() =>
-    (uat?.byPriority || []).map((p) => ({
-      label: p.priority,
-      count: p.count,
-      color: PRIORITY_COLORS[p.priority] || QA.muted,
+    (uat?.byPriority || []).map((item) => ({
+      label: item.priority,
+      count: item.count,
+      color: PRIORITY_COLORS[item.priority] || QA.muted,
     })),
   [uat?.byPriority]);
 
-  const visibleRows = useMemo(() => {
-    const rows = [...searchedRows].sort((left, right) =>
-      (right.submittedAt || right.updatedAt || '').localeCompare(left.submittedAt || left.updatedAt || '')
-      || left.id.localeCompare(right.id));
+  const compiledAdvancedQuery = useMemo(
+    () => compileVendorPortalQuery(appliedAdvancedQuery),
+    [appliedAdvancedQuery],
+  );
 
-    if (bugView === 'uat') {
-      return rows.filter((row) => {
-        const category = row.reportedPhase || 'unclassified';
-        return category === 'phase1-uat' || category === 'phase2-uat' || category === 'other-uat';
-      });
-    }
-    return rows.filter((row) => (row.reportedPhase || 'unclassified') === bugView);
-  }, [bugView, searchedRows]);
+  const visibleRows = useMemo(() => {
+    const filtered = searchMode === 'basic'
+      ? filterVendorPortalRows(activeTabRows, basicFilters)
+      : activeTabRows.filter(compiledAdvancedQuery.predicate || (() => true));
+    return [...filtered].sort(rowSort);
+  }, [activeTabRows, appliedAdvancedQuery, basicFilters, compiledAdvancedQuery.predicate, searchMode]);
+
+  const filterOptions = useMemo(() => Object.fromEntries(BASIC_FIELDS.map(({ key }) => [
+    key,
+    basicFilterOptions(activeTabRows, key, basicFilters),
+  ])) as Record<VendorPortalBasicField, ReturnType<typeof basicFilterOptions>>, [activeTabRows, basicFilters]);
 
   const totalPages = Math.max(1, Math.ceil(visibleRows.length / PAGE_SIZE));
   const safePage = Math.min(page, totalPages - 1);
   const pageRows = visibleRows.slice(safePage * PAGE_SIZE, safePage * PAGE_SIZE + PAGE_SIZE);
   const firstVisible = visibleRows.length === 0 ? 0 : safePage * PAGE_SIZE + 1;
   const lastVisible = Math.min((safePage + 1) * PAGE_SIZE, visibleRows.length);
+  const suggestions = useMemo(() => vendorPortalQuerySuggestions(activeTabRows), [activeTabRows]);
 
   useEffect(() => {
     if (page > totalPages - 1) setPage(Math.max(0, totalPages - 1));
@@ -99,7 +136,8 @@ export function UatPage({ dashboard, kpiStyle, searchQuery }: UatPageProps) {
 
   useEffect(() => {
     setPage(0);
-  }, [normalizedSearch]);
+    setSelectedBug(null);
+  }, [bugView, dashboard.scope.project, dashboard.scope.startDate, dashboard.scope.endDate]);
 
   useEffect(() => {
     if (bugView === 'unclassified' && viewCounts.unclassified === 0) {
@@ -107,6 +145,13 @@ export function UatPage({ dashboard, kpiStyle, searchQuery }: UatPageProps) {
       setPage(0);
     }
   }, [bugView, viewCounts.unclassified]);
+
+  useEffect(() => {
+    setBasicFilters((current) => {
+      const next = clearUnavailableBasicFilters(current, activeTabRows);
+      return sameFilters(current, next) ? current : next;
+    });
+  }, [activeTabRows]);
 
   if (!uat) {
     return (
@@ -116,22 +161,90 @@ export function UatPage({ dashboard, kpiStyle, searchQuery }: UatPageProps) {
     );
   }
 
-  const statusMax = Math.max(1, ...uat.byStatus.map((s) => s.count));
-  const areaMax = Math.max(1, ...uat.byArea.map((a) => a.count));
-  const submitterMax = Math.max(1, ...uat.bySubmitter.map((s) => s.count));
-  function selectBugView(view: BugView, scrollToDetail = false): void {
+  const statusMax = Math.max(1, ...uat.byStatus.map((item) => item.count));
+  const areaMax = Math.max(1, ...uat.byArea.map((item) => item.count));
+  const submitterMax = Math.max(1, ...uat.bySubmitter.map((item) => item.count));
+
+  function selectBugView(view: VendorPortalBugView, scrollToDetail = false): void {
     setBugView(view);
     setPage(0);
     if (scrollToDetail) {
-      window.requestAnimationFrame(() => detailRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+      const behavior = window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth';
+      window.requestAnimationFrame(() => detailRef.current?.scrollIntoView({ behavior, block: 'start' }));
     }
   }
+
+  function handleTabKeyDown(event: React.KeyboardEvent<HTMLButtonElement>, current: VendorPortalBugView): void {
+    const currentIndex = availableBugViews.indexOf(current);
+    let nextIndex = currentIndex;
+    if (event.key === 'ArrowRight') nextIndex = (currentIndex + 1) % availableBugViews.length;
+    else if (event.key === 'ArrowLeft') nextIndex = (currentIndex - 1 + availableBugViews.length) % availableBugViews.length;
+    else if (event.key === 'Home') nextIndex = 0;
+    else if (event.key === 'End') nextIndex = availableBugViews.length - 1;
+    else return;
+    event.preventDefault();
+    const next = availableBugViews[nextIndex];
+    selectBugView(next);
+    window.requestAnimationFrame(() => tabRefs.current[next]?.focus());
+  }
+
+  function updateBasicFilter(key: keyof VendorPortalBasicFilters, value: string): void {
+    setBasicFilters((current) => ({ ...current, [key]: value }));
+    setPage(0);
+  }
+
+  function openAdvancedSearch(): void {
+    const query = basicFiltersToQuery(basicFilters);
+    setAdvancedDraft(query);
+    setAppliedAdvancedQuery(query);
+    setAdvancedError(null);
+    setSearchMode('advanced');
+    setPage(0);
+  }
+
+  function returnToBasicSearch(): void {
+    const converted = advancedQueryToBasicFilters(advancedDraft);
+    if (!converted) {
+      setAdvancedError({
+        message: 'This query uses OR, NOT, ranges, grouping, or field-specific contains logic that Basic Search cannot represent. Clear or simplify it before returning to Basic Search.',
+      });
+      return;
+    }
+    setBasicFilters(converted);
+    setAdvancedError(null);
+    setSearchMode('basic');
+    setPage(0);
+  }
+
+  function applyAdvancedSearch(): void {
+    const compiled = compileVendorPortalQuery(advancedDraft);
+    if (!compiled.predicate) {
+      setAdvancedError({ message: compiled.error || 'The advanced query is invalid.', position: compiled.errorPosition });
+      return;
+    }
+    setAppliedAdvancedQuery(advancedDraft.trim());
+    setAdvancedError(null);
+    setPage(0);
+  }
+
+  function clearAdvancedSearch(): void {
+    setAdvancedDraft('');
+    setAppliedAdvancedQuery('');
+    setAdvancedError(null);
+    setPage(0);
+  }
+
+  const activeSearchDescription = searchMode === 'advanced' && appliedAdvancedQuery
+    ? ` for advanced query "${appliedAdvancedQuery}"`
+    : searchMode === 'basic' && basicFilters.text.trim()
+      ? ` matching "${basicFilters.text.trim()}"`
+      : '';
 
   return (
     <QaPageShell
       title="Vendor Portal Bugs"
       subtitle={`${fmt(uat.total)} bugs · ${uat.open} open`}
-      intro="DLM Vendor Portal bug logs — INC subjects are separated as Production; all remaining non-empty subjects stay in the UAT view. Search filters the bug rows instantly; apply dates only when the reporting period changes."
+      intro="Vendor Portal bugs are separated into UAT and Production views from the imported Subject convention. Use Basic Search for quick criteria or open Advanced Search for a local JQL-style expression."
     >
       <QaKpiGrid cols={4}>
         <QaKpiCard kpiStyle={kpiStyle} label="Total Vendor Portal Bugs" value={fmt(uat.total)}
@@ -157,14 +270,14 @@ export function UatPage({ dashboard, kpiStyle, searchQuery }: UatPageProps) {
         </QaSection>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-[1.1fr_0.9fr] gap-[22px] mb-[22px]">
-        <QaSection title="Bugs by Status" subtitle="Closed vs in-flight vendor portal bugs">
+      <div className="grid grid-cols-1 gap-[22px] mb-[22px] lg:grid-cols-[1.1fr_0.9fr]">
+        <QaSection title="Bugs by Status" subtitle="Source statuses from the current Vendor Portal scope">
           <div className="flex flex-col gap-3">
-            {uat.byStatus.map((r) => (
-              <div key={r.status} className="flex items-center gap-3">
-                <span className="text-[12.5px] w-[130px] shrink-0 truncate">{r.status}</span>
-                <div className="flex-1"><HorizBar pct={barWidth(r.count, statusMax)} color={QA.accent} /></div>
-                <span className="font-mono-qa text-xs text-qa-muted w-7 text-right">{r.count}</span>
+            {uat.byStatus.map((item) => (
+              <div key={item.status} className="flex items-center gap-3">
+                <span className="w-[130px] shrink-0 truncate text-[12.5px]">{item.status}</span>
+                <div className="flex-1"><HorizBar pct={barWidth(item.count, statusMax)} color={QA.accent} /></div>
+                <span className="w-7 text-right font-mono-qa text-xs text-qa-muted">{item.count}</span>
               </div>
             ))}
           </div>
@@ -174,25 +287,25 @@ export function UatPage({ dashboard, kpiStyle, searchQuery }: UatPageProps) {
         </QaSection>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-[22px] mb-[22px]">
+      <div className="grid grid-cols-1 gap-[22px] mb-[22px] lg:grid-cols-2">
         <QaSection title="By Product Area">
           <div className="flex flex-col gap-2.5">
-            {uat.byArea.map((r) => (
-              <div key={r.area} className="flex items-center gap-3">
-                <span className="text-xs w-[150px] shrink-0 truncate">{r.area}</span>
-                <div className="flex-1"><HorizBar pct={barWidth(r.count, areaMax)} color={QA.NA} /></div>
-                <span className="font-mono-qa text-[11px] text-qa-muted w-6 text-right">{r.count}</span>
+            {uat.byArea.map((item) => (
+              <div key={item.area} className="flex items-center gap-3">
+                <span className="w-[150px] shrink-0 truncate text-xs">{item.area}</span>
+                <div className="flex-1"><HorizBar pct={barWidth(item.count, areaMax)} color={QA.NA} /></div>
+                <span className="w-6 text-right font-mono-qa text-[11px] text-qa-muted">{item.count}</span>
               </div>
             ))}
           </div>
         </QaSection>
         <QaSection title="By Submitter">
           <div className="flex flex-col gap-2.5">
-            {uat.bySubmitter.map((r) => (
-              <div key={r.name} className="flex items-center gap-3">
-                <span className="text-xs w-[150px] shrink-0 truncate">{r.name}</span>
-                <div className="flex-1"><HorizBar pct={barWidth(r.count, submitterMax)} color={QA.BLOCKED} /></div>
-                <span className="font-mono-qa text-[11px] text-qa-muted w-6 text-right">{r.count}</span>
+            {uat.bySubmitter.map((item) => (
+              <div key={item.name} className="flex items-center gap-3">
+                <span className="w-[150px] shrink-0 truncate text-xs">{item.name}</span>
+                <div className="flex-1"><HorizBar pct={barWidth(item.count, submitterMax)} color={QA.BLOCKED} /></div>
+                <span className="w-6 text-right font-mono-qa text-[11px] text-qa-muted">{item.count}</span>
               </div>
             ))}
           </div>
@@ -202,100 +315,183 @@ export function UatPage({ dashboard, kpiStyle, searchQuery }: UatPageProps) {
       <div ref={detailRef} className="scroll-mt-4">
         <QaSection
           title={`Vendor Portal Bugs — ${BUG_VIEW_LABELS[bugView]}`}
-          subtitle={`${visibleRows.length} rows · newest submissions first`}
+          subtitle={`${activeTabRows.length} classified rows · ${visibleRows.length} matching · most recently updated first`}
           noPadding
         >
-          <div className="flex flex-col gap-3 border-b border-[#e9e5dc] px-4 py-3 sm:px-[22px] lg:flex-row lg:items-center lg:justify-between">
-            <div className="qa-scroll max-w-full overflow-x-auto overscroll-x-contain" role="tablist" aria-label="Vendor Portal bug environment">
-              <div className="flex min-w-max gap-1.5">
-                {availableBugViews.map((view) => {
-                  const active = bugView === view;
-                  return (
-                    <button
-                      key={view}
-                      type="button"
-                      role="tab"
-                      aria-selected={active}
-                      onClick={() => selectBugView(view)}
-                      className={`shrink-0 border px-3 py-2 font-mono-qa text-[10px] font-semibold ${active ? 'border-qa-ink bg-qa-ink text-white' : 'border-qa-border bg-white text-qa-muted hover:border-qa-ink'}`}
-                    >
-                      {BUG_VIEW_LABELS[view]} · {viewCounts[view]}
-                    </button>
-                  );
-                })}
+          <div className="border-b border-[#e9e5dc] px-4 py-3 sm:px-[22px]">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+              <div className="qa-scroll max-w-full overflow-x-auto overscroll-x-contain" role="tablist" aria-label="Vendor Portal bug environment">
+                <div className="flex min-w-max gap-1.5">
+                  {availableBugViews.map((view) => {
+                    const active = bugView === view;
+                    return (
+                      <button
+                        ref={(node) => { tabRefs.current[view] = node; }}
+                        key={view}
+                        type="button"
+                        role="tab"
+                        aria-selected={active}
+                        tabIndex={active ? 0 : -1}
+                        onClick={() => selectBugView(view)}
+                        onKeyDown={(event) => handleTabKeyDown(event, view)}
+                        className={`shrink-0 border px-3 py-2 font-mono-qa text-[10px] font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-qa-accent ${active ? 'border-qa-ink bg-qa-ink text-white' : 'border-qa-border bg-white text-qa-muted hover:border-qa-ink'}`}
+                      >
+                        {BUG_VIEW_LABELS[view]} · {viewCounts[view]}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+              <div className="flex flex-wrap items-center gap-2 font-mono-qa text-[10.5px] text-qa-muted-light" aria-label="Vendor Portal bug pagination">
+                <span aria-live="polite">{firstVisible}–{lastVisible} of {visibleRows.length}</span>
+                <span>Page {safePage + 1} of {totalPages}</span>
+                <button type="button" aria-label="Go to previous Vendor Portal bug page" onClick={() => setPage((current) => Math.max(0, current - 1))} disabled={safePage === 0} className="border border-qa-border bg-white px-2.5 py-1.5 text-qa-ink disabled:cursor-not-allowed disabled:opacity-40">Previous</button>
+                <button type="button" aria-label="Go to next Vendor Portal bug page" onClick={() => setPage((current) => Math.min(totalPages - 1, current + 1))} disabled={safePage >= totalPages - 1} className="border border-qa-border bg-white px-2.5 py-1.5 text-qa-ink disabled:cursor-not-allowed disabled:opacity-40">Next</button>
               </div>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2 font-mono-qa text-[10.5px] text-qa-muted-light" aria-label="Vendor Portal bug pagination">
-              <span>{firstVisible}–{lastVisible} of {visibleRows.length}</span>
-              <span>Page {safePage + 1} of {totalPages}</span>
-              <button
-                type="button"
-                onClick={() => setPage((current) => Math.max(0, current - 1))}
-                disabled={safePage === 0}
-                className="border border-qa-border bg-white px-2.5 py-1.5 text-qa-ink disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                Previous
-              </button>
-              <button
-                type="button"
-                onClick={() => setPage((current) => Math.min(totalPages - 1, current + 1))}
-                disabled={safePage >= totalPages - 1}
-                className="border border-qa-border bg-white px-2.5 py-1.5 text-qa-ink disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                Next
-              </button>
+            <div className="mt-4 border border-qa-border bg-[#faf8f2] p-3" aria-label={`${searchMode === 'basic' ? 'Basic' : 'Advanced'} Search`}>
+              {searchMode === 'basic' ? (
+                <>
+                  <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                    <strong className="font-mono-qa text-[11px] uppercase tracking-wider">Basic Search</strong>
+                    <button type="button" onClick={openAdvancedSearch} className="min-h-9 border-0 bg-transparent px-2 font-mono-qa text-[11px] font-semibold text-qa-accent underline underline-offset-2 focus-visible:outline focus-visible:outline-2">Advanced Search</button>
+                  </div>
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+                    {BASIC_FIELDS.map(({ key, stateKey, label }) => (
+                      <label key={key} className="min-w-0 text-[11px] font-semibold text-qa-muted">
+                        <span className="mb-1 block">{label}</span>
+                        <select
+                          aria-label={label}
+                          value={basicFilters[stateKey]}
+                          onChange={(event) => updateBasicFilter(stateKey, event.target.value)}
+                          className="min-h-10 w-full min-w-0 border border-qa-border bg-white px-2 text-[12px] text-qa-ink"
+                        >
+                          <option value="">Any</option>
+                          {filterOptions[key].map((option) => (
+                            <option key={option.value.toLocaleLowerCase()} value={option.value}>
+                              {option.value}{key === 'status' ? ` (${option.count})` : ''}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    ))}
+                  </div>
+                  <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-end">
+                    <label className="min-w-0 flex-1 text-[11px] font-semibold text-qa-muted">
+                      <span className="mb-1 block">Search anything</span>
+                      <input
+                        type="search"
+                        aria-label="Search anything"
+                        value={basicFilters.text}
+                        onChange={(event) => updateBasicFilter('text', event.target.value)}
+                        placeholder="Ticket, subject, area, Change Request, priority, status, reported by, or submitted date"
+                        className="min-h-10 w-full border border-qa-border bg-white px-3 text-[12px] text-qa-ink"
+                      />
+                    </label>
+                    {hasBasicFilters(basicFilters) && (
+                      <button type="button" onClick={() => { setBasicFilters({ ...EMPTY_VENDOR_PORTAL_FILTERS }); setPage(0); }} className="min-h-10 border border-qa-ink bg-white px-3 font-mono-qa text-[10.5px] font-semibold uppercase">Clear filters</button>
+                    )}
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                    <strong className="font-mono-qa text-[11px] uppercase tracking-wider">Advanced Search</strong>
+                    <button type="button" onClick={returnToBasicSearch} className="min-h-9 border-0 bg-transparent px-2 font-mono-qa text-[11px] font-semibold text-qa-accent underline underline-offset-2 focus-visible:outline focus-visible:outline-2">Basic Search</button>
+                  </div>
+                  <label className="block text-[11px] font-semibold text-qa-muted">
+                    <span className="mb-1 block">JQL-style query</span>
+                    <input
+                      type="text"
+                      list="vendor-portal-query-suggestions"
+                      aria-label="JQL-style query"
+                      aria-invalid={Boolean(advancedError)}
+                      aria-describedby={advancedError ? 'vendor-portal-query-error' : 'vendor-portal-query-help'}
+                      value={advancedDraft}
+                      onChange={(event) => setAdvancedDraft(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
+                          event.preventDefault();
+                          applyAdvancedSearch();
+                        }
+                      }}
+                      placeholder='status = "Pending" AND priority = "High"'
+                      className="min-h-11 w-full border border-qa-border bg-white px-3 font-mono-qa text-[12px] text-qa-ink"
+                    />
+                    <datalist id="vendor-portal-query-suggestions">
+                      {suggestions.map((suggestion) => <option key={suggestion} value={suggestion} />)}
+                    </datalist>
+                  </label>
+                  <p id="vendor-portal-query-help" className="mb-0 mt-1 text-[11px] text-qa-muted-light">Fields: ticket, subject, area, changeRequest, priority, status, by, submitted, updated, note, text. Apply with Ctrl/Cmd + Enter.</p>
+                  {advancedError && <p id="vendor-portal-query-error" role="alert" className="mb-0 mt-2 text-[12px] text-[#a13d2c]">{advancedError.message}{advancedError.position !== undefined ? ` Near character ${advancedError.position + 1}.` : ''}</p>}
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <button type="button" onClick={applyAdvancedSearch} className="min-h-10 border border-qa-ink bg-qa-ink px-4 font-mono-qa text-[10.5px] font-semibold uppercase text-white">Apply</button>
+                    <button type="button" onClick={clearAdvancedSearch} className="min-h-10 border border-qa-ink bg-white px-4 font-mono-qa text-[10.5px] font-semibold uppercase">Clear</button>
+                  </div>
+                </>
+              )}
             </div>
           </div>
-          <QaTable>
+
+          <QaTable label={`Vendor Portal ${BUG_VIEW_LABELS[bugView]} table`}>
             <QaThead cols={[
-            { label: 'Ticket', className: 'pl-[22px]' },
-            { label: 'Subject' },
-            { label: 'Area' },
-            { label: 'Priority' },
-            { label: 'Status' },
-            { label: 'Phase / Env' },
-            { label: 'Source file' },
-            { label: 'By' },
-            { label: 'Submitted', align: 'right', className: 'pr-[22px]' },
+              { label: 'Ticket', className: 'w-[120px] pl-[22px] whitespace-nowrap' },
+              { label: 'Subject', className: 'min-w-[280px] px-3' },
+              { label: 'Area', className: 'min-w-[150px] px-3' },
+              { label: 'Change Request', className: 'min-w-[150px] px-3' },
+              { label: 'Priority', className: 'w-[110px] px-3 whitespace-nowrap' },
+              { label: 'Status', className: 'w-[170px] px-3 whitespace-nowrap' },
+              { label: 'By', className: 'min-w-[150px] px-3' },
+              { label: 'Submitted', align: 'right', className: 'w-[120px] px-3 whitespace-nowrap' },
+              { label: 'Updated', align: 'right', className: 'w-[120px] px-3 whitespace-nowrap' },
+              { label: 'Note', className: 'min-w-[280px] pr-[22px]' },
             ]} />
             <tbody>
-              {pageRows.map((r) => (
-              <tr key={r.id} className="border-t border-[#f0ede5]">
-                <td className="py-2.5 pl-[22px] font-mono-qa text-[11.5px]" style={{ color: QA.accent }}>{r.id}</td>
-                <td className="max-w-[420px] px-3 py-2.5"><div className="whitespace-normal break-words leading-relaxed">{r.subject}</div></td>
-                <td className="py-2.5 px-3 text-qa-muted whitespace-nowrap">{r.area}</td>
-                <td className="py-2.5 px-3">
-                  <span className="font-mono-qa text-[10px] px-2 py-0.5 text-white" style={{ background: PRIORITY_COLORS[r.priority] || QA.muted }}>
-                    {r.priority}
-                  </span>
-                </td>
-                <td className="py-2.5 px-3 text-[12px]">{r.status}</td>
-                <td className="py-2.5 px-3 whitespace-nowrap">
-                  <span className="font-mono-qa text-[9.5px] text-qa-muted">
-                    {PHASE_FILTER_LABELS[r.reportedPhase || 'unclassified']}
-                  </span>
-                </td>
-                <td className="max-w-[190px] px-3 py-2.5 font-mono-qa text-[10px] text-qa-muted" title={r.sourceFile ? displaySourceName(r.sourceFile) : undefined}>
-                  <div className="truncate">{r.sourceFile ? displaySourceName(r.sourceFile) : '—'}</div>
-                </td>
-                <td className="py-2.5 px-3 text-qa-muted whitespace-nowrap">{r.submitter}</td>
-                <td className="py-2.5 pr-[22px] text-right font-mono-qa text-[11.5px] text-qa-muted whitespace-nowrap">
-                  {r.submittedAt ? r.submittedAt.slice(0, 10) : '—'}
-                </td>
-              </tr>
+              {pageRows.map((row) => (
+                <tr
+                  key={row.id}
+                  tabIndex={0}
+                  aria-label={`View details for Vendor Portal bug ${row.id}`}
+                  onClick={(event) => {
+                    event.currentTarget.focus();
+                    setSelectedBug(row);
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key !== 'Enter' && event.key !== ' ') return;
+                    event.preventDefault();
+                    setSelectedBug(row);
+                  }}
+                  className="cursor-pointer border-t border-[#f0ede5] align-top hover:bg-[#fafaf8] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-qa-accent"
+                >
+                  <td className="w-[120px] whitespace-nowrap py-2.5 pl-[22px] font-mono-qa text-[11.5px]" style={{ color: QA.accent }}>{row.id || '—'}</td>
+                  <td className="min-w-[280px] max-w-[420px] px-3 py-2.5"><div className="break-words leading-relaxed">{row.subject || '—'}</div></td>
+                  <td className="min-w-[150px] max-w-[220px] break-words px-3 py-2.5 text-qa-muted">{row.area || '—'}</td>
+                  <td className="min-w-[150px] max-w-[240px] break-words px-3 py-2.5 font-mono-qa text-[11px] text-qa-muted" title={row.cr?.trim() || undefined}>{row.cr?.trim() || '—'}</td>
+                  <td className="w-[110px] whitespace-nowrap px-3 py-2.5">
+                    <span className="inline-block min-w-[70px] px-2 py-1 text-center font-mono-qa text-[10px] font-semibold text-white" style={{ background: PRIORITY_COLORS[row.priority] || QA.muted }}>{row.priority || '—'}</span>
+                  </td>
+                  <td className="w-[170px] whitespace-nowrap px-3 py-2.5">
+                    <span className="inline-block min-w-[90px] border border-qa-border bg-[#f5f3ed] px-2 py-1 text-center font-mono-qa text-[10px] font-semibold text-qa-ink">{row.status || '—'}</span>
+                  </td>
+                  <td className="min-w-[150px] max-w-[220px] break-words px-3 py-2.5 text-qa-muted">{row.submitter || '—'}</td>
+                  <td className="w-[120px] whitespace-nowrap px-3 py-2.5 text-right font-mono-qa text-[11.5px] text-qa-muted">{submittedDisplayValue(row)}</td>
+                  <td className="w-[120px] whitespace-nowrap px-3 py-2.5 text-right font-mono-qa text-[11.5px] text-qa-muted">{updatedDisplayValue(row)}</td>
+                  <td className="min-w-[280px] max-w-[420px] py-2.5 pr-[22px] text-qa-muted"><div className="line-clamp-3 break-words leading-relaxed" title={row.note?.trim() || undefined}>{row.note?.trim() || '—'}</div></td>
+                </tr>
               ))}
               {visibleRows.length === 0 && (
-              <tr>
-                <td colSpan={9} className="px-4 py-10 text-center text-[12.5px] text-qa-muted-light sm:px-[22px]">
-                  No {BUG_VIEW_LABELS[bugView].toLowerCase()} in the current scope.
-                </td>
-              </tr>
+                <tr>
+                  <td colSpan={10} className="px-4 py-10 text-center text-[12.5px] text-qa-muted-light sm:px-[22px]">
+                    No Vendor Portal {BUG_VIEW_LABELS[bugView].toLowerCase()} match the current search{activeSearchDescription}.
+                  </td>
+                </tr>
               )}
             </tbody>
           </QaTable>
         </QaSection>
       </div>
+      <UatBugDetailDrawer bug={selectedBug} onClose={() => setSelectedBug(null)} />
     </QaPageShell>
   );
 }

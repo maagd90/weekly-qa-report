@@ -8,6 +8,13 @@ import { StackedMonthChart } from './StackedMonthChart';
 import { HorizBar, SegBar, testerSegSegments } from './SegBar';
 import { AiReportUatSection } from './AiReportUatSection';
 import { TestersPerformanceSection } from './TestersPerformanceSection';
+import { projectDisplayName } from '../../lib/projectDisplay';
+import {
+  AiReportWonderMilesEmptyState,
+  AiReportWonderMilesSection,
+  hasWonderMilesExportData,
+} from './AiReportWonderMilesSection';
+import { scopeHasReportCapability, vendorPortalEmptyMessage } from '../../lib/reportCapabilities';
 
 interface AiReportChartsProps {
   dashboard: DashboardPayload;
@@ -28,7 +35,9 @@ export function AiReportCharts({ dashboard, kpiStyle, reportType }: AiReportChar
   const showTestersFull = reportType === 'testers';
   const showCycles = reportType === 'full' || reportType === 'cycles';
   const showDefects = reportType === 'full' || defectReport;
-  const showUat = reportType === 'full' || reportType === 'executive' || defectReport;
+  const showProjectExports = reportType === 'full' || reportType === 'executive' || defectReport;
+  const showVendorPortal = showProjectExports && scopeHasReportCapability(dashboard, 'vendorPortal');
+  const showWonderMiles = showProjectExports && scopeHasReportCapability(dashboard, 'wonderMilesExport');
   const topTesters = [...testers].sort((a, b) => b.executed - a.executed).slice(0, 6);
   const atRiskCycles = dashboard.cyclesByPassPctAsc.slice(0, 5);
 
@@ -40,6 +49,12 @@ export function AiReportCharts({ dashboard, kpiStyle, reportType }: AiReportChar
 
   return (
     <div className="flex flex-col gap-6">
+      {dashboard.scope.project === 'all' && Boolean(dashboard.byProject?.length) && (
+        <div className="pdf-section border border-qa-border bg-white p-5">
+          <div className="font-mono-qa text-[10px] tracking-wider uppercase text-qa-muted-light mb-3">Project Comparison</div>
+          <div className="overflow-x-auto"><table className="w-full min-w-[720px] text-[12.5px] border-collapse"><thead><tr className="border-b border-qa-border text-left font-mono-qa text-[10px] uppercase text-qa-muted-light"><th className="py-2 pr-3">Project</th><th className="py-2 pr-3 text-right">Cases</th><th className="py-2 pr-3 text-right">Executed</th><th className="py-2 pr-3 text-right">Pass %</th><th className="py-2 pr-3 text-right">Open bugs</th><th className="py-2 pr-3 text-right">Blocked</th><th className="py-2 text-right">Cycles</th></tr></thead><tbody>{dashboard.byProject!.map((slice) => <tr key={slice.project} className="border-b border-[#f3f0e8] last:border-b-0"><td className="py-2 pr-3 font-semibold">{projectDisplayName(slice.project)}</td><td className="py-2 pr-3 text-right font-mono-qa">{fmt(slice.overview.totalCases)}</td><td className="py-2 pr-3 text-right font-mono-qa">{fmt(slice.overview.executed)}</td><td className="py-2 pr-3 text-right font-mono-qa" style={{ color: passRateColor(slice.overview.passRate) }}>{slice.overview.passRate}%</td><td className="py-2 pr-3 text-right font-mono-qa">{slice.storyBug.bugOpen}</td><td className="py-2 pr-3 text-right font-mono-qa">{slice.overview.blocked}</td><td className="py-2 text-right font-mono-qa">{slice.cycles.length}</td></tr>)}</tbody></table></div>
+        </div>
+      )}
       {showOverview && (
         <div className="pdf-section flex flex-col gap-5">
           <QaKpiGrid cols={5}>
@@ -150,13 +165,17 @@ export function AiReportCharts({ dashboard, kpiStyle, reportType }: AiReportChar
         </div>
       )}
 
-      {showUat && uat && uat.total > 0 && (
+      {showVendorPortal && uat && uat.total > 0 && (
         <AiReportUatSection uat={uat} />
       )}
 
-      {showUat && !uat?.total && (
+      {showWonderMiles && hasWonderMilesExportData(dashboard) && <AiReportWonderMilesSection dashboard={dashboard} />}
+
+      {showWonderMiles && !hasWonderMilesExportData(dashboard) && <AiReportWonderMilesEmptyState dashboard={dashboard} />}
+
+      {showVendorPortal && !uat?.total && (
         <div className="pdf-section border border-qa-border p-5 bg-[#faf8f2] text-[13px] text-qa-muted">
-          No Vendor Portal bugs in the selected date range. Widen the date range or check that an ODL/production export is staged under Import Data.
+          {vendorPortalEmptyMessage(dashboard)}
         </div>
       )}
     </div>

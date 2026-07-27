@@ -1,6 +1,7 @@
 const HIDDEN_TECHNICAL_WARNING_PATTERNS = [
   /^\[technical\]/i,
   /^\d+:\s*missing submitted date,\s*skipped$/i,
+  /connection skipped because selected project .* does not match configured project/i,
 ];
 
 /**

@@ -68,9 +68,10 @@ function qmetryXsrfToken(cfg: QmetryIntegrationConfig): string | null {
 
 function requestHeaders(cfg: QmetryIntegrationConfig): Record<string, string> | null {
   const auth = authHeader(cfg);
-  if (!auth) return null;
-  const headers: Record<string, string> = { Authorization: auth, Accept: 'application/json' };
   const sessionHeader = qmetrySessionHeader(cfg);
+  if (!auth && !sessionHeader) return null;
+  const headers: Record<string, string> = { Accept: 'application/json' };
+  if (auth) headers.Authorization = auth;
   if (sessionHeader) headers.Cookie = sessionHeader;
   const xsrfToken = qmetryXsrfToken(cfg);
   if (xsrfToken) headers['X-XSRF-TOKEN'] = xsrfToken;

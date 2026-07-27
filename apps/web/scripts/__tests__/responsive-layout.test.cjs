@@ -80,10 +80,36 @@ hasAll('src/pages/SettingsPage.tsx', [
   'function saveConnections()',
   'onClick={saveNarrativeProvider}',
   'onClick={saveBranding}',
-  'saveConnections(); syncLiveMutation.mutate();',
-  'saveConnections(); testMutation.mutate();',
+  'if (saveConnections()) testMutation.mutate();',
+  'if (saveConnections()) syncLiveMutation.mutate();',
+  'Project management',
+  'Update project',
+  'Delete project',
+  'Save connections',
+  'Save & test',
+  'Save & sync data',
+  'allProjectsSelected &&',
+  'Additional source keys',
+  'Choose the applicable QMetry key',
+  'All project connection summary',
+  'all configured projects',
+  'Under All Projects, expand any project to edit its connection.',
+  'This never processes uploaded Excel files.',
+  'if (projectsData.length === 0)',
+  'Migrate saved connections',
+  'never creates projects from API response rows',
 ]);
-hasNone('src/pages/SettingsPage.tsx', ['saveAll']);
+hasNone('src/pages/SettingsPage.tsx', ['saveAll', '+ Add JIRA connection', '+ Add QMetry connection']);
+
+// The JIRA/QMetry connection card UI was extracted out of SettingsPage.tsx
+// for readability; its responsive contract still applies there.
+hasAll('src/components/settings/ConnectionSettings.tsx', [
+  'grid grid-cols-1 gap-2.5 mb-2.5 sm:grid-cols-2',
+  'Only one JIRA connection is allowed per project.',
+  'Only one QMetry connection is allowed per project.',
+  'Project-scoped JQL',
+  'JIRA source project keys',
+]);
 
 hasAll('src/lib/api.ts', [
   "? value : 'template'",
@@ -96,19 +122,32 @@ hasAll('src/pages/AiReportPage.tsx', [
   'Generate Report',
   'No report yet',
 ]);
-hasNone('src/pages/AiReportPage.tsx', ['Generate AI report', 'No AI report yet']);
+hasNone('src/pages/AiReportPage.tsx', ['Generate AI report', 'No AI report yet', 'setReportProject', 'projectOptions']);
 
 hasAll('src/App.tsx', [
   'showRuntimeSearch',
   'showSearch={showRuntimeSearch}',
   'datesChanged={datesChanged}',
   'searchQuery={filters.search}',
+  "vars.tab === 'uat'",
+  "vars.tab === 'wonder-miles'",
+  'batchApi.getDashboard(vars.params)',
+  'batchApi.getUploadedIssueDashboard',
+  'batchApi.searchDashboardByDates(vars.params)',
+  'selectedProjectRecord?.capabilities.wonderMilesExport',
+  'selectedProjectRecord?.capabilities.vendorPortal',
+  "filters.project !== 'all'",
+  'projectRequestSequence.current === 0',
 ]);
 
 hasAll('src/pages/TestersPage.tsx', [
   'qualityAssuranceSearch',
   'searchText.toLowerCase()',
   'Search updates this page instantly',
+  'Quality Assurance Performance by Project',
+  'Quality Assurance Performance by Project',
+  'Quality Assurance project breakdown',
+  'projectSliceAsDashboard',
 ]);
 
 hasAll('src/components/qa/TestersPerformanceSection.tsx', [
@@ -120,17 +159,96 @@ hasAll('src/components/qa/TestersPerformanceSection.tsx', [
 hasAll('src/pages/CyclesPage.tsx', [
   'searchQuery.trim().toLowerCase()',
   'filters loaded cycle names and keys instantly',
+  'Test Cycle Summary by Project',
+  "`${c.project || ''}:${c.key}`",
+  'Test Cycle project breakdown',
 ]);
 
 hasAll('src/pages/TraceabilityPage.tsx', [
   'searchQuery.trim().toLowerCase()',
   'Search filters these rows instantly',
+  'Requirements Traceability by Project',
+  'projectDisplayName(w.project)',
+  'Traceability project breakdown',
+]);
+
+hasAll('src/pages/ImportStatusPage.tsx', [
+  'qa-import-project',
+  "selectedProject === 'all' ? importProjectKey : selectedProject",
+  'the masthead remains All Projects',
+  'setImportProjectKey(event.target.value)',
+  'Save Mapping',
+  'Import Data',
+  'Mapping profile v',
+  'currentMappingIsSaved',
+  'pendingMappingCount',
+]);
+
+hasAll('src/components/qa/AiReportCharts.tsx', ['Project Comparison', 'dashboard.byProject!.map']);
+hasAll('src/components/qa/ProjectBreakdownTabs.tsx', ['projectSliceAsDashboard', "['all', ...projects.map", 'projectDisplayName(project, dashboard.scope.projectNamesByKey)']);
+hasAll('src/pages/AiReportPage.tsx', ['QA Report project breakdown', 'visibleChartData', 'projectSliceAsDashboard']);
+hasAll('src/components/qa/AiReportWonderMilesSection.tsx', ['Wonder Miles Export Data', 'uploadedRows', 'Open Bugs', 'sourceFile']);
+hasAll('src/components/qa/ReportPrintContent.tsx', ['Wonder Miles Export Data', '<WonderMilesRows dashboard={dashboard} />']);
+hasAll('src/components/qa/ReportPrintContent.tsx', ['Portfolio Project Comparison', '<ProjectComparison dashboard={dashboard} />']);
+
+hasAll('src/pages/WonderMilesExportPage.tsx', [
+  'Wonder Miles Export Data',
+  'uploaded spreadsheets only',
+  'Live Jira and QMetry connection data is excluded',
+  'Wonder Miles Stories',
+  'Wonder Miles Bugs',
+  'Source file',
+  'StatusTabs',
+  'Page {page + 1} of {totalPages}',
+  'max-w-full overflow-x-auto overscroll-x-contain',
+  'selectedStory',
+  'WonderMilesDetailDrawer',
+  'onSelect(row)',
+  'cursor-pointer',
+]);
+
+hasAll('src/components/layout/QaTabNav.tsx', [
+  "showWonderMilesExport = false",
+  "append('wonder-miles', 'Wonder Miles Export Data')",
 ]);
 
 hasAll('src/pages/UatPage.tsx', [
-  'searchQuery.trim().toLowerCase()',
-  'searchedRows',
-  'Search filters the bug rows instantly',
+  'searchQuery.trim().toLocaleLowerCase()',
+  'visibleVendorPortalRowValues',
+  'Use Basic Search for quick criteria',
+  'selectedBug',
+  'UatBugDetailDrawer',
+  'setSelectedBug(row)',
+  'cursor-pointer',
+]);
+
+hasAll('src/components/qa/DetailDrawerBase.tsx', [
+  'fixed inset-0 z-50 flex justify-end',
+  'bg-black/30',
+  'overflow-y-auto',
+  "event.key === 'Escape'",
+  "event.key !== 'Tab'",
+  "document.addEventListener('keydown'",
+  'previouslyFocusedRef.current?.focus()',
+]);
+
+hasAll('src/components/qa/UatBugDetailDrawer.tsx', [
+  'DetailDrawerBase',
+  'Last Updated At',
+  'Last Updated By',
+  'updatedBy',
+  'Ticket ID',
+  'Latest Note',
+  'Source File',
+]);
+
+hasAll('src/components/qa/WonderMilesDetailDrawer.tsx', [
+  'DetailDrawerBase',
+  'Summary',
+  'Environment',
+  'Change Request',
+  'Last Updated By',
+  'Source File',
 ]);
 
 hasAll('src/components/qa/VendorPortalPhaseChart.tsx', [
@@ -145,20 +263,21 @@ hasAll('src/components/qa/VendorPortalPhaseChart.tsx', [
 
 hasAll('src/pages/UatPage.tsx', [
   "uat?.byReportedPhase || []",
-  "row.reportedPhase || 'unclassified'",
-  "category === 'other-uat'",
+  'rowsForBugView',
   'VendorPortalPhaseChart',
   'Bug Distribution by Environment & Phase',
   'every other non-empty subject → Phase 1',
   'availableBugViews',
   "viewCounts.unclassified > 0",
-  "type BugView = 'uat' | 'production' | 'unclassified'",
+  'VendorPortalBugView',
   'max-w-full overflow-x-auto overscroll-x-contain',
   'Page {safePage + 1} of {totalPages}',
-  'Source file',
+  "label: 'Change Request'",
+  'Advanced Search',
+  'JQL-style query',
   'pageRows.map',
 ]);
-hasNone('src/pages/UatPage.tsx', ['ODL source file', "(['uat', 'production', 'unclassified'] as BugView[])"]);
+hasNone('src/pages/UatPage.tsx', ['ODL source file', 'Source file', 'Phase / Env']);
 
 hasAll('src/pages/TraceabilityPage.tsx', [
   'compareNewestFirst',
@@ -195,11 +314,21 @@ hasAll('src/pages/ImportStatusPage.tsx', [
   'Promise.all(selectedFiles.map',
   'multiple className="hidden"',
   'handleFiles(e.dataTransfer.files)',
+  'File project',
+  'Choose which project files to manage; the masthead remains All Projects',
+  "disabled={selectedProject !== 'all'}",
+  'custom layouts pause for mapping',
+  'batchApi.syncInputFiles(selected.id',
+  'onImportedDataChanged?.(result.dashboard ?? null)',
+  '!selected ?',
 ]);
+hasNone('src/pages/ImportStatusPage.tsx', ['New project key', 'New project name', 'Create project']);
 
 hasAll('src/App.tsx', [
   'min-w-0 overflow-x-hidden',
   'overflow-x-hidden overflow-y-auto',
+  'setBaseDashboard(freshDashboard)',
+  'setFilteredByTab({})',
 ]);
 
 hasAll('src/index.css', [

@@ -378,6 +378,21 @@ async function testOnPremContractAndTesterResolution(): Promise<void> {
   assert.equal(byKey.get('DLM-TC-4')?.tester, 'Nested Tester');
 }
 
+async function testCookieOnlySessionAuthentication(): Promise<void> {
+  const calls: FetchCall[] = [];
+  installContractMock(calls);
+  const cfg = qmetryConfig() as QmetryIntegrationConfig & { sessionHeader?: string };
+  cfg.auth = { type: 'basic' };
+  cfg.sessionHeader = 'JSESSIONID=cookie-only; atlassian.xsrf.token=cookie-token';
+
+  const result = await fetchQmetryExecutions(cfg, { startDate: '2026-07-01', endDate: '2026-07-07', project: 'DLM' });
+  assert.equal(result.error, undefined);
+  assert.ok(calls.length > 0);
+  const headers = calls[0].init.headers as Record<string, string>;
+  assert.equal(headers.Authorization, undefined);
+  assert.equal(headers.Cookie, 'JSESSIONID=cookie-only; atlassian.xsrf.token=cookie-token');
+}
+
 async function testFieldRetryKeepsPostContract(): Promise<void> {
   const calls: FetchCall[] = [];
   installInvalidFieldsMock(calls);
@@ -412,6 +427,7 @@ async function testAggregateFallbackIsExplicitAndConcise(): Promise<void> {
 async function main(): Promise<void> {
   await testExecutionSummaryUsesActualExecutionDateQql();
   await testOnPremContractAndTesterResolution();
+  await testCookieOnlySessionAuthentication();
   await testFieldRetryKeepsPostContract();
   await testAggregateFallbackIsExplicitAndConcise();
   console.log('qmetryClient tests passed');
